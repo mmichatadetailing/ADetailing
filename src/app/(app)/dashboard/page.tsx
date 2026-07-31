@@ -20,6 +20,7 @@ import {
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Avatar } from "@/components/avatar";
+import { DashboardCharts } from "@/components/dashboard-charts";
 import { PageHeader } from "@/components/page-header";
 import { useWorkspace } from "@/components/workspace-provider";
 import { StatusBadge } from "@/components/status-badge";
@@ -39,6 +40,7 @@ import {
   unpaidAmount,
 } from "@/lib/domain/calculations";
 import { interventionStatusLabels, paymentStatusLabels, quoteStatusLabels } from "@/lib/domain/labels";
+import { buildDashboardChartData } from "@/lib/domain/dashboard-charts";
 import { getPeriodRange, isDateInRange, monthKey, type DashboardPeriod } from "@/lib/domain/periods";
 import { useDemoStore } from "@/lib/demo/store";
 import { formatDate, formatMoney } from "@/lib/utils";
@@ -80,6 +82,14 @@ export default function DashboardPage() {
     ...upcoming.filter((item) => item.status === "scheduled").map((item) => { const client = data.clients.find((entry) => entry.id === item.clientId); return { icon: Sparkles, title: `Confirmer ${client?.company || `${client?.firstName ?? ""} ${client?.lastName ?? ""}`.trim() || item.title}`, detail: `${formatDate(item.startAt, { weekday: "long", hour: "2-digit", minute: "2-digit" })} · ${item.workers.length} collaborateur(s)`, color: "text-violet-300", href: "/prestations" }; }),
   ].slice(0, 4);
   const receivedReviews = data.reviews.filter((review) => review.receivedAt && review.receivedAt.slice(0, 7) === monthKey(new Date())).length;
+  const dashboardYear = data.settings.pilotYear || new Date().getFullYear();
+  const dashboardCharts = useMemo(() => buildDashboardChartData({
+    year: dashboardYear,
+    objectives: data.objectives,
+    invoices: data.invoices,
+    payments: data.payments,
+    expenses: data.expenses,
+  }), [dashboardYear, data.expenses, data.invoices, data.objectives, data.payments]);
   const kpis = [
     { label: "CA encaissé", value: formatMoney(collected), detail: period, icon: Banknote, color: "text-emerald-300", tone: "from-emerald-50/90 to-ink-850", href: "/finances" },
     { label: "CA facturé", value: formatMoney(invoiced), detail: period, icon: ReceiptText, color: "text-sky-300", tone: "from-sky-50/90 to-ink-850", href: "/documents" },
@@ -110,6 +120,8 @@ export default function DashboardPage() {
           </Link>
         ))}
       </section>
+
+      <DashboardCharts year={dashboardYear} revenue={dashboardCharts.revenue} cashFlow={dashboardCharts.cashFlow} />
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(330px,.75fr)]">
         <Card>
