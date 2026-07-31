@@ -7,6 +7,8 @@ import { canManageTeam, requireAuthenticatedWorkspace } from "@/lib/supabase/wor
 export const runtime = "nodejs";
 
 const invitationSchema = z.object({
+  firstName: z.string().trim().min(2).max(80),
+  lastName: z.string().trim().min(2).max(80),
   email: z.email(),
   role: z.enum(["partner", "employee"]),
   weeklyCapacityMinutes: z.number().int().min(60).max(4800),
@@ -46,6 +48,8 @@ export async function POST(request: Request) {
       .from("organization_invitations")
       .insert({
         organization_id: workspace.organizationId,
+        invited_first_name: input.firstName,
+        invited_last_name: input.lastName,
         email,
         role: input.role,
         location_id: workspace.locationId,
@@ -53,7 +57,7 @@ export async function POST(request: Request) {
         token_hash: tokenHash,
         invited_by: workspace.user.id,
       })
-      .select("id,email,role,weekly_capacity_minutes,expires_at,created_at")
+      .select("id,invited_first_name,invited_last_name,email,role,weekly_capacity_minutes,expires_at,created_at")
       .single();
     if (error) throw error;
 
@@ -62,6 +66,8 @@ export async function POST(request: Request) {
     return NextResponse.json({
       invitation: {
         id: data.id,
+        firstName: data.invited_first_name,
+        lastName: data.invited_last_name,
         email: data.email,
         role: data.role,
         weeklyCapacityMinutes: data.weekly_capacity_minutes,

@@ -41,6 +41,8 @@ export interface WorkspaceIdentity {
 
 export interface TeamInvitation {
   id: string;
+  firstName: string;
+  lastName: string;
   email: string;
   role: Exclude<MemberRole, "admin">;
   weeklyCapacityMinutes: number;
@@ -141,7 +143,7 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User):
     supabase.from("activity_logs").select("*").eq("organization_id", organizationId).order("occurred_at", { ascending: false }).limit(100),
     supabase.from("messages").select("*,conversations(kind,entity_type,entity_id,conversation_members(profile_id,last_read_at))").eq("organization_id", organizationId).is("deleted_at", null).order("created_at"),
     supabase.from("app_settings").select("key,value").eq("organization_id", organizationId),
-    supabase.from("organization_invitations").select("id,email,role,weekly_capacity_minutes,expires_at,accepted_at,revoked_at,created_at").eq("organization_id", organizationId).order("created_at", { ascending: false }),
+    supabase.from("organization_invitations").select("id,invited_first_name,invited_last_name,email,role,weekly_capacity_minutes,expires_at,accepted_at,revoked_at,created_at").eq("organization_id", organizationId).order("created_at", { ascending: false }),
   ]);
   const firstError = results.find((result) => result.error)?.error;
   if (firstError) throw firstError;
@@ -245,6 +247,8 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User):
   };
   const invitations: TeamInvitation[] = invitationRows.map((row) => ({
     id: text(row, "id"),
+    firstName: text(row, "invited_first_name"),
+    lastName: text(row, "invited_last_name"),
     email: text(row, "email"),
     role: text(row, "role", "employee") as TeamInvitation["role"],
     weeklyCapacityMinutes: number(row, "weekly_capacity_minutes", 2100),

@@ -11,7 +11,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 
 type AuthMode = "login" | "signup" | "reset";
-type InvitationContext = { organization_name: string; invited_email: string; invited_role: "partner" | "employee"; expires_at: string; invitation_status: "pending" | "accepted" | "expired" | "revoked" };
+type InvitationContext = { organization_name: string; invited_email: string; invited_role: "partner" | "employee"; invited_first_name: string; invited_last_name: string; expires_at: string; invitation_status: "pending" | "accepted" | "expired" | "revoked" };
 
 export default function LoginPage() {
   const [mode, setMode] = useState<AuthMode>("login");
@@ -39,6 +39,8 @@ export default function LoginPage() {
       if (context.invitation_status !== "pending" && context.invitation_status !== "accepted") return setInvitationError(context.invitation_status === "expired" ? "Cette invitation a expiré. Demandez-en une nouvelle." : "Cette invitation a été révoquée.");
       setInvitation(context);
       setEmail(context.invited_email);
+      setFirstName(context.invited_first_name);
+      setLastName(context.invited_last_name);
       setOrganizationName(context.organization_name);
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
