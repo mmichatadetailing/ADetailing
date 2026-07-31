@@ -1,0 +1,10 @@
+{
+  "name": "ADetailing Pilotage",
+  "short_name": "ADetailing",
+  "description": "Pilotage opérationnel et financier",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#f8f7fc",
+  "theme_color": "#f9734f",
+  "icons": []
+}
