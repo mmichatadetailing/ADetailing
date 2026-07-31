@@ -8,6 +8,7 @@ import type {
   AppSettings,
   Client,
   Expense,
+  Intervention,
   InterventionStatus,
   Lead,
   LeadStage,
@@ -85,6 +86,31 @@ export interface NewServiceInput {
   targetProductCost: number;
 }
 
+export interface NewAppointmentInput {
+  clientId: string;
+  vehicleId: string;
+  serviceId?: string;
+  title: string;
+  startAt: string;
+  plannedDurationMinutes: number;
+  workerIds: string[];
+  address: string;
+  revenueAllocated: number;
+}
+
+export interface InterventionEditInput {
+  clientId: string;
+  vehicleId: string;
+  title: string;
+  status: InterventionStatus;
+  startAt?: string;
+  plannedDurationMinutes: number;
+  address: string;
+  notes?: string;
+  workers: Array<{ memberId: string; plannedMinutes: number }>;
+  items: Array<{ id?: string; serviceId?: string; label: string; quantity: number; revenueAllocated: number }>;
+}
+
 interface DemoActions {
   hydrateFromSupabase: (data: AppData) => void;
   resetDemo: () => void;
@@ -93,9 +119,12 @@ interface DemoActions {
   addLead: (input: NewLeadInput) => string;
   moveLead: (leadId: string, stage: LeadStage) => void;
   addExpense: (input: NewExpenseInput) => string;
+  addAppointment: (input: NewAppointmentInput) => string;
   addPayment: (invoiceId: string, amount: number, method: string) => string;
   importHenrriDocument: (document: ParsedHenrriDocument, fileName: string) => string;
   linkInvoiceToQuote: (invoiceId: string, quoteId: string) => void;
+  linkInvoiceToIntervention: (interventionId: string, invoiceId?: string) => void;
+  updateIntervention: (interventionId: string, input: InterventionEditInput) => void;
   setInterventionStatus: (interventionId: string, status: InterventionStatus) => void;
   updateInterventionActuals: (
     interventionId: string,
@@ -297,6 +326,35 @@ export const useDemoStore = create<DemoStore>()(
         }));
         return expense.id;
       },
+      addAppointment: (input) => {
+        const service = input.serviceId ? get().services.find((item) => item.id === input.serviceId) : undefined;
+        const intervention: Intervention = {
+          ...entityBase(),
+          clientId: input.clientId,
+          vehicleId: input.vehicleId,
+          status: "scheduled",
+          title: input.title.trim(),
+          startAt: input.startAt,
+          endAt: new Date(new Date(input.startAt).getTime() + input.plannedDurationMinutes * 60_000).toISOString(),
+          plannedDurationMinutes: input.plannedDurationMinutes,
+          preparationMinutes: 0,
+          cleanupMinutes: 0,
+          workers: [...new Set(input.workerIds)].map((memberId) => ({ memberId, plannedMinutes: input.plannedDurationMinutes })),
+          items: [{ id: createId(), serviceId: service?.id, label: input.title.trim(), quantity: 1, revenueAllocated: input.revenueAllocated }],
+          productCost: service?.targetProductCost ?? 0,
+          travelCost: service?.targetTravelCost ?? 0,
+          otherDirectCosts: 0,
+          address: input.address.trim(),
+          checklistDone: 0,
+          checklistTotal: 0,
+          depositAmount: 0,
+        };
+        set((state) => ({
+          interventions: [intervention, ...state.interventions],
+          activities: [activity("comment_added", "Rendez-vous créé", intervention.title, "intervention", intervention.id), ...state.activities],
+        }));
+        return intervention.id;
+      },
       addPayment: (invoiceId, amount, method) => {
         const payment: Payment = {
           ...entityBase(),
@@ -409,6 +467,41 @@ export const useDemoStore = create<DemoStore>()(
           invoices: state.invoices.map((invoice) => invoice.id === invoiceId ? { ...invoice, quoteId, updatedAt: nowIso() } : invoice),
         }));
         persistMutation({ action: "linkInvoiceToQuote", invoiceId, quoteId });
+      },
+      linkInvoiceToIntervention: (interventionId, invoiceId) => {
+        set((state) => ({
+          interventions: state.interventions.map((item) => item.id === interventionId ? { ...item, invoiceId, updatedAt: nowIso() } : item),
+        }));
+        persistMutation({ action: "linkInvoiceToIntervention", interventionId, invoiceId: invoiceId ?? null });
+      },
+      updateIntervention: (interventionId, input) => {
+        set((state) => ({
+          interventions: state.interventions.map((item) => {
+            if (item.id !== interventionId) return item;
+            const nextStatus = input.status === "to_schedule" && input.startAt ? "scheduled" : input.status;
+            return {
+              ...item,
+              clientId: input.clientId,
+              vehicleId: input.vehicleId,
+              quoteId: input.clientId === item.clientId ? item.quoteId : undefined,
+              invoiceId: input.clientId === item.clientId ? item.invoiceId : undefined,
+              title: input.title.trim(),
+              status: nextStatus,
+              startAt: input.startAt,
+              endAt: input.startAt ? new Date(new Date(input.startAt).getTime() + input.plannedDurationMinutes * 60_000).toISOString() : undefined,
+              plannedDurationMinutes: input.plannedDurationMinutes,
+              address: input.address.trim(),
+              notes: input.notes?.trim() || undefined,
+              workers: input.workers.map((worker) => ({
+                ...worker,
+                actualMinutes: item.workers.find((existing) => existing.memberId === worker.memberId)?.actualMinutes,
+              })),
+              items: input.items.map((line) => ({ ...line, id: line.id ?? createId() })),
+              updatedAt: nowIso(),
+            };
+          }),
+        }));
+        persistMutation({ action: "updateIntervention", interventionId, ...input });
       },
       setInterventionStatus: (interventionId, status) => {
         set((state) => ({

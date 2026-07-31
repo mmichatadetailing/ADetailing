@@ -7,19 +7,18 @@ import interactionPlugin, { Draggable, type EventReceiveArg, type EventResizeDon
 import listPlugin from "@fullcalendar/list";
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
-import { AlertTriangle, CalendarDays, CalendarPlus2, GripVertical, Link2, MapPin, UserRound, UsersRound } from "lucide-react";
+import { AlertTriangle, CalendarDays, CalendarPlus2, GripVertical, Link2, UserRound, UsersRound } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
-import { StatusBadge } from "@/components/status-badge";
+import { InterventionDetail } from "@/components/intervention-detail";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
 import { useWorkspace } from "@/components/workspace-provider";
 import { useDemoStore } from "@/lib/demo/store";
-import { interventionStatusLabels } from "@/lib/domain/labels";
 import { dateKey } from "@/lib/domain/periods";
 import { canViewTeamPlanning, filterPlanningForUser } from "@/lib/domain/planning";
 import type { Intervention } from "@/lib/domain/types";
@@ -237,21 +236,8 @@ export default function PlanningPage() {
         </div>
       </Modal>
 
-      <Modal open={Boolean(selected)} onClose={() => setSelected(null)} title={selected?.title ?? "Intervention"} description={selected ? interventionStatusLabels[selected.status] : undefined}>
-        {selected && (
-          <div className="space-y-4">
-            <div className="flex flex-wrap gap-2">
-              <StatusBadge status={selected.status}>{interventionStatusLabels[selected.status]}</StatusBadge>
-              <Badge>{selected.plannedDurationMinutes / 60} h</Badge>
-              <Badge>{selected.workers.length} collaborateur(s)</Badge>
-            </div>
-            <div className="rounded-xl border border-white/[0.07] p-4">
-              <p className="flex items-center gap-2 text-xs text-zinc-500"><MapPin className="size-3.5" /> {selected.address}</p>
-              <p className="mt-3 text-xs text-zinc-500">{selected.items.map((item) => item.label).join(" + ")}</p>
-            </div>
-            {!selected.startAt && <p className="text-xs text-zinc-600">Cliquez sur un créneau du calendrier pour planifier cette prestation.</p>}
-          </div>
-        )}
+      <Modal open={Boolean(selected)} onClose={() => setSelected(null)} title={selected?.title ?? "Dossier prestation"} description="Rendez-vous · réalisation · facture · paiement" className="sm:max-w-5xl">
+        {selected && <InterventionDetail key={selected.id} interventionId={selected.id} />}
       </Modal>
     </div>
   );
