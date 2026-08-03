@@ -1,12 +1,14 @@
 "use client";
 
-import { Banknote, CalendarClock, CircleDollarSign, Landmark, PackageSearch, Plus, ReceiptText, Repeat2, ShieldCheck, WalletCards } from "lucide-react";
-import { useState } from "react";
+import { Banknote, CalendarClock, CircleDollarSign, Landmark, PackageSearch, Pencil, Plus, ReceiptText, Repeat2, Save, ShieldCheck, Trash2, TriangleAlert, WalletCards } from "lucide-react";
+import { useState, type FormEvent } from "react";
+import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Input, Select } from "@/components/ui/field";
+import { Field, Input, Select } from "@/components/ui/field";
+import { Modal } from "@/components/ui/modal";
 import {
   cashBalance,
   collectedRevenue,
@@ -18,7 +20,7 @@ import {
 } from "@/lib/domain/calculations";
 import { monthKey } from "@/lib/domain/periods";
 import type { Expense } from "@/lib/domain/types";
-import { useDemoStore } from "@/lib/demo/store";
+import { useDemoStore, type NewExpenseInput } from "@/lib/demo/store";
 import { formatDate, formatMoney } from "@/lib/utils";
 
 const recurrenceLabels: Record<Expense["recurrence"], string> = {
@@ -34,11 +36,76 @@ const familyLabels: Record<Expense["family"], string> = {
   personal: "Personnel",
 };
 
+function vatRateForExpense(expense: Expense) {
+  if (expense.amountExcludingTax <= 0) return 0;
+  return Math.round(expense.vatAmount / expense.amountExcludingTax * 1_000) / 10;
+}
+
+function ExpenseEditor({ expense, onCancel, onSave }: { expense: Expense; onCancel: () => void; onSave: (input: NewExpenseInput) => void }) {
+  const [date, setDate] = useState(expense.date.slice(0, 10));
+  const [recurrence, setRecurrence] = useState<Expense["recurrence"]>(expense.recurrence);
+  const [family, setFamily] = useState<Expense["family"]>(expense.family);
+  const [category, setCategory] = useState(expense.category);
+  const [supplier, setSupplier] = useState(expense.supplier);
+  const [description, setDescription] = useState(expense.description);
+  const [amountEuros, setAmountEuros] = useState(expense.amountIncludingTax / 100);
+  const [vatRate, setVatRate] = useState(vatRateForExpense(expense));
+  const [paid, setPaid] = useState(expense.paid);
+
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!date) return toast.error("Indiquez une date.");
+    if (category.trim().length < 2) return toast.error("Indiquez une catégorie.");
+    if (description.trim().length < 2) return toast.error("Indiquez une description.");
+    if (!Number.isFinite(amountEuros) || amountEuros <= 0) return toast.error("Le montant doit être supérieur à zéro.");
+    if (!Number.isFinite(vatRate) || vatRate < 0 || vatRate > 100) return toast.error("Le taux de TVA doit être compris entre 0 et 100 %.");
+    onSave({
+      date,
+      recurrence,
+      family,
+      category: category.trim(),
+      supplier: supplier.trim(),
+      description: description.trim(),
+      amountIncludingTax: Math.round(amountEuros * 100),
+      vatRateBasisPoints: Math.round(vatRate * 100),
+      paid,
+    });
+  };
+
+  return (
+    <form className="grid gap-4" onSubmit={submit}>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Fréquence"><Select autoFocus value={recurrence} onChange={(event) => setRecurrence(event.target.value as Expense["recurrence"])}><option value="one_off">Ponctuelle</option><option value="monthly">Tous les mois</option><option value="annual">Tous les ans</option></Select></Field>
+        <Field label={recurrence === "one_off" ? "Date de la dépense" : "Première échéance"}><Input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></Field>
+      </div>
+      <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-xs text-violet-800">
+        {recurrence === "monthly" ? "Cette charge sera recalculée tous les mois à partir de cette date." : recurrence === "annual" ? "Cette charge sera recalculée chaque année au mois de cette échéance." : "Cette charge ne sera comptée qu’une seule fois."}
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Famille"><Select value={family} onChange={(event) => setFamily(event.target.value as Expense["family"])}><option value="fixed">Fixe</option><option value="variable">Variable</option><option value="investment">Investissement</option><option value="personal">Personnel</option></Select></Field>
+        <Field label="Catégorie"><Input value={category} onChange={(event) => setCategory(event.target.value)} /></Field>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Fournisseur" hint="Facultatif"><Input value={supplier} onChange={(event) => setSupplier(event.target.value)} /></Field>
+        <Field label="Description"><Input value={description} onChange={(event) => setDescription(event.target.value)} /></Field>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Montant TTC (€)"><Input min="0.01" step="0.01" type="number" value={amountEuros} onChange={(event) => setAmountEuros(Number(event.target.value))} /></Field>
+        <Field label="TVA (%)"><Input min="0" max="100" step="0.1" type="number" value={vatRate} onChange={(event) => setVatRate(Number(event.target.value))} /></Field>
+      </div>
+      <label className="flex items-center gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-sm font-semibold text-zinc-700"><input type="checkbox" className="accent-brand-500" checked={paid} onChange={(event) => setPaid(event.target.checked)} /> {recurrence === "one_off" ? "Dépense déjà payée" : "Prélèvement automatique à chaque échéance"}</label>
+      <div className="flex justify-end gap-2 pt-2"><Button variant="ghost" onClick={onCancel}>Annuler</Button><Button type="submit"><Save className="size-4" /> Enregistrer les modifications</Button></div>
+    </form>
+  );
+}
+
 export default function FinancesPage() {
   const data = useDemoStore();
   const [tab, setTab] = useState<"expenses" | "assets">("expenses");
   const [selectedMonth, setSelectedMonth] = useState(() => monthKey(new Date()));
   const [recurrenceFilter, setRecurrenceFilter] = useState<"all" | Expense["recurrence"]>("all");
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [deletingExpense, setDeletingExpense] = useState<Expense | null>(null);
 
   const monthLabel = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" }).format(new Date(`${selectedMonth}-01T12:00:00`));
   const selectedExpenses = projectedExpensesForMonth(data.expenses, selectedMonth);
@@ -55,6 +122,17 @@ export default function FinancesPage() {
     .sort((a, b) => b.date.localeCompare(a.date));
 
   const openExpenseForm = () => window.dispatchEvent(new CustomEvent("adetailing:open-add", { detail: "expense" }));
+  const saveExpense = (expense: Expense, input: NewExpenseInput) => {
+    data.updateExpense(expense.id, input);
+    setEditingExpense(null);
+    toast.success("Charge modifiée", { description: "Les statistiques et projections ont été recalculées." });
+  };
+  const deleteExpense = () => {
+    if (!deletingExpense) return;
+    data.removeExpense(deletingExpense.id);
+    setDeletingExpense(null);
+    toast.success("Charge supprimée");
+  };
 
   return (
     <div className="space-y-7">
@@ -69,6 +147,19 @@ export default function FinancesPage() {
           </div>
         )}
       />
+
+      <Modal open={Boolean(editingExpense)} onClose={() => setEditingExpense(null)} title="Modifier la charge" description={editingExpense ? `${recurrenceLabels[editingExpense.recurrence]} · ${editingExpense.description}` : undefined}>
+        {editingExpense && <ExpenseEditor key={editingExpense.id} expense={editingExpense} onCancel={() => setEditingExpense(null)} onSave={(input) => saveExpense(editingExpense, input)} />}
+      </Modal>
+
+      <Modal open={Boolean(deletingExpense)} onClose={() => setDeletingExpense(null)} title="Supprimer cette charge ?" description={deletingExpense?.description}>
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
+          <p className="flex items-center gap-2 text-sm font-bold text-red-700"><TriangleAlert className="size-4" /> Cette charge disparaîtra de vos calculs</p>
+          <p className="mt-2 text-xs leading-5 text-red-600">{deletingExpense?.recurrence === "one_off" ? "Le décaissement ponctuel ne sera plus comptabilisé dans la trésorerie ni dans les statistiques." : "Toutes les projections liées à cette charge récurrente seront retirées des mois concernés."}</p>
+        </div>
+        {deletingExpense && <div className="mt-4 grid gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-xs text-zinc-600"><p><strong className="text-zinc-900">{deletingExpense.description}</strong> · {formatMoney(deletingExpense.amountIncludingTax)}</p><p>{recurrenceLabels[deletingExpense.recurrence]} · première date le {formatDate(deletingExpense.date)}</p></div>}
+        <div className="mt-5 flex justify-end gap-2"><Button variant="ghost" onClick={() => setDeletingExpense(null)}>Annuler</Button><Button variant="danger" onClick={deleteExpense}><Trash2 className="size-4" /> Supprimer définitivement</Button></div>
+      </Modal>
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
@@ -121,8 +212,8 @@ export default function FinancesPage() {
             <div className="flex items-center gap-2"><Select aria-label="Filtrer par fréquence" className="w-[170px]" value={recurrenceFilter} onChange={(event) => setRecurrenceFilter(event.target.value as typeof recurrenceFilter)}><option value="all">Toutes les fréquences</option><option value="one_off">Ponctuelles</option><option value="monthly">Mensuelles</option><option value="annual">Annuelles</option></Select><Badge>{visibleExpenses.length} charge(s)</Badge></div>
           </CardHeader>
           <CardContent className="overflow-x-auto px-0 pb-1">
-            <table className="w-full min-w-[960px] text-left text-xs">
-              <thead className="text-[10px] tracking-wider text-zinc-600 uppercase"><tr>{["Début / date", "Fréquence", "Famille", "Catégorie", "Fournisseur", "Description", "TTC / échéance", "TVA", "Paiement"].map((head) => <th key={head} className="px-4 py-3 font-semibold first:pl-5">{head}</th>)}</tr></thead>
+            <table className="w-full min-w-[1120px] text-left text-xs">
+              <thead className="text-[10px] tracking-wider text-zinc-600 uppercase"><tr>{["Début / date", "Fréquence", "Famille", "Catégorie", "Fournisseur", "Description", "TTC / échéance", "TVA", "Paiement", "Actions"].map((head) => <th key={head} className="px-4 py-3 font-semibold first:pl-5 last:pr-5">{head}</th>)}</tr></thead>
               <tbody className="divide-y divide-white/[0.055]">
                 {visibleExpenses.map((expense) => (
                   <tr key={expense.id} className="hover:bg-white/[0.02]">
@@ -135,9 +226,10 @@ export default function FinancesPage() {
                     <td className="px-4 py-4 font-bold">{formatMoney(expense.amountIncludingTax)}</td>
                     <td className="px-4 py-4 text-zinc-500">{formatMoney(expense.vatAmount)}</td>
                     <td className="px-4 py-4"><Badge variant={expense.paid ? "green" : "yellow"}>{expense.recurrence === "one_off" ? (expense.paid ? "Payée" : "À payer") : (expense.paid ? "Automatique" : "À valider")}</Badge></td>
+                    <td className="px-4 py-4 pr-5"><div className="flex items-center gap-1"><Button size="sm" variant="secondary" onClick={() => setEditingExpense(expense)}><Pencil className="size-3.5" /> Modifier</Button><Button size="sm" variant="ghost" className="text-red-600" aria-label={`Supprimer ${expense.description}`} onClick={() => setDeletingExpense(expense)}><Trash2 className="size-3.5" /></Button></div></td>
                   </tr>
                 ))}
-                {visibleExpenses.length === 0 && <tr><td colSpan={9} className="px-5 py-10 text-center text-sm text-zinc-500">Aucune charge ne correspond à ce filtre.</td></tr>}
+                {visibleExpenses.length === 0 && <tr><td colSpan={10} className="px-5 py-10 text-center text-sm text-zinc-500">Aucune charge ne correspond à ce filtre.</td></tr>}
               </tbody>
             </table>
           </CardContent>
