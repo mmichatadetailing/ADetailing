@@ -32,7 +32,7 @@ import { Progress } from "@/components/ui/progress";
 import { grossMargin, hourlyMargin, paymentStatusForInvoice } from "@/lib/domain/calculations";
 import { getInterventionWorkflow, type WorkflowStepId } from "@/lib/domain/intervention-workflow";
 import { interventionStatusLabels, paymentStatusLabels } from "@/lib/domain/labels";
-import type { InterventionStatus } from "@/lib/domain/types";
+import type { InterventionStatus, Service } from "@/lib/domain/types";
 import { useDemoStore } from "@/lib/demo/store";
 import { formatDate, formatMoney } from "@/lib/utils";
 
@@ -57,6 +57,12 @@ function paymentTimestamp(date: string) {
 
 function hours(minutes: number) {
   return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(minutes / 60);
+}
+
+function servicePriceRange(service: Service | undefined, vehicleFormat: string) {
+  return service?.prices.find((price) => price.vehicleFormat === vehicleFormat)
+    ?? service?.prices.find((price) => price.vehicleFormat === "Tous formats")
+    ?? service?.prices[0];
 }
 
 type EditableLine = { id?: string; serviceId: string; label: string; quantity: number; revenueAllocated: number; revenueEuros: number };
@@ -130,7 +136,8 @@ export function InterventionDetail({ interventionId, startEditing = false }: { i
 
   const chooseService = (index: number, serviceId: string) => {
     const service = data.services.find((item) => item.id === serviceId);
-    setItems((lines) => lines.map((line, lineIndex) => lineIndex === index ? { ...line, serviceId, label: service?.name ?? line.label, revenueEuros: (service?.prices.find((price) => price.vehicleFormat === vehicleFormat)?.amount ?? service?.prices[0]?.amount ?? line.revenueAllocated) / 100 } : line));
+    const priceRange = servicePriceRange(service, vehicleFormat);
+    setItems((lines) => lines.map((line, lineIndex) => lineIndex === index ? { ...line, serviceId, label: service?.name ?? line.label, revenueEuros: priceRange ? priceRange.amount / 100 : line.revenueEuros } : line));
   };
 
   const saveDetails = () => {
@@ -241,7 +248,17 @@ export function InterventionDetail({ interventionId, startEditing = false }: { i
             <div className="grid gap-4 sm:grid-cols-3"><Field label="Date"><Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></Field><Field label="Heure"><Input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} /></Field><Field label="Durée prévue (h)"><Input min="0.25" max="24" step="0.25" type="number" value={plannedHours} onChange={(event) => setPlannedHours(Number(event.target.value))} /></Field></div>
             <Field label="Adresse"><Input value={address} onChange={(event) => setAddress(event.target.value)} /></Field>
             <Field label="Collaborateurs" hint="Cliquez pour affecter ou retirer une personne."><div className="grid gap-2 sm:grid-cols-2">{data.team.filter((member) => member.active || current.workers.some((worker) => worker.memberId === member.id)).map((member) => { const selected = workerHours[member.id] !== undefined; return <div key={member.id} className={`rounded-xl border p-3 ${selected ? "border-brand-200 bg-brand-50" : "border-zinc-200"}`}><button type="button" className="flex w-full items-center gap-2 text-left" onClick={() => toggleWorker(member.id)}><Avatar label={member.initials} color={member.color} size="sm" /><span className="text-xs font-semibold">{member.firstName} {member.lastName}</span><span className="ml-auto text-[10px] text-zinc-500">{selected ? "Affecté" : "Ajouter"}</span></button>{selected && <Input className="mt-2" aria-label={`Heures prévues pour ${member.firstName}`} min="0" max="24" step="0.25" type="number" value={workerHours[member.id]} onChange={(event) => setWorkerHours((state) => ({ ...state, [member.id]: Number(event.target.value) }))} />}</div>; })}</div></Field>
-            <div><div className="flex items-center justify-between"><div><p className="text-sm font-bold">Lignes de prestation</p><p className="mt-1 text-xs text-zinc-500">Chaque ligne et son montant restent modifiables.</p></div><Button size="sm" variant="secondary" onClick={() => setItems((lines) => [...lines, { id: undefined, serviceId: "", label: "Nouvelle prestation", quantity: 1, revenueAllocated: 0, revenueEuros: 0 }])}><Plus className="size-3.5" /> Ajouter</Button></div><div className="mt-3 grid gap-3">{items.map((item, index) => <div key={item.id ?? `line-${index}`} className="grid gap-3 rounded-xl border border-zinc-200 p-3 sm:grid-cols-[1fr_90px_120px_auto]"><Field label="Catalogue"><Select value={item.serviceId} onChange={(event) => chooseService(index, event.target.value)}><option value="">Personnalisée</option>{data.services.filter((service) => !service.archivedAt).map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}</Select></Field><Field label="Quantité"><Input min="0.1" step="0.1" type="number" value={item.quantity} onChange={(event) => setItems((lines) => lines.map((line, lineIndex) => lineIndex === index ? { ...line, quantity: Number(event.target.value) } : line))} /></Field><Field label="Montant (€)"><Input min="0" step="0.01" type="number" value={item.revenueEuros} onChange={(event) => setItems((lines) => lines.map((line, lineIndex) => lineIndex === index ? { ...line, revenueEuros: Number(event.target.value) } : line))} /></Field><Button className="self-end" aria-label="Supprimer la ligne" size="sm" variant="ghost" disabled={items.length === 1} onClick={() => setItems((lines) => lines.filter((_, lineIndex) => lineIndex !== index))}><Trash2 className="size-4" /></Button><div className="sm:col-span-full"><Field label="Libellé"><Input value={item.label} onChange={(event) => setItems((lines) => lines.map((line, lineIndex) => lineIndex === index ? { ...line, label: event.target.value } : line))} /></Field></div></div>)}</div></div>
+            <div>
+              <div className="flex items-center justify-between"><div><p className="text-sm font-bold">Lignes de prestation</p><p className="mt-1 text-xs text-zinc-500">La fourchette du catalogue vous guide ; le montant final reste entièrement modifiable.</p></div><Button size="sm" variant="secondary" onClick={() => setItems((lines) => [...lines, { id: undefined, serviceId: "", label: "Nouvelle prestation", quantity: 1, revenueAllocated: 0, revenueEuros: 0 }])}><Plus className="size-3.5" /> Ajouter</Button></div>
+              <div className="mt-3 grid gap-3">
+                {items.map((item, index) => {
+                  const service = data.services.find((entry) => entry.id === item.serviceId);
+                  const priceRange = servicePriceRange(service, vehicleFormat);
+                  const rangeHint = priceRange ? `Repère ${vehicleFormat || priceRange.vehicleFormat} : ${formatMoney(priceRange.amount)} à ${formatMoney(priceRange.maximumAmount ?? priceRange.amount)}` : undefined;
+                  return <div key={item.id ?? `line-${index}`} className="grid gap-3 rounded-xl border border-zinc-200 p-3 sm:grid-cols-[1fr_90px_150px_auto]"><Field label="Catalogue"><Select value={item.serviceId} onChange={(event) => chooseService(index, event.target.value)}><option value="">Personnalisée</option>{data.services.filter((entry) => !entry.archivedAt).map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</Select></Field><Field label="Quantité"><Input min="0.1" step="0.1" type="number" value={item.quantity} onChange={(event) => setItems((lines) => lines.map((line, lineIndex) => lineIndex === index ? { ...line, quantity: Number(event.target.value) } : line))} /></Field><Field label="Montant final (€)" hint={rangeHint}><Input min="0" step="0.01" type="number" value={item.revenueEuros} onChange={(event) => setItems((lines) => lines.map((line, lineIndex) => lineIndex === index ? { ...line, revenueEuros: Number(event.target.value) } : line))} /></Field><Button className="self-end" aria-label="Supprimer la ligne" size="sm" variant="ghost" disabled={items.length === 1} onClick={() => setItems((lines) => lines.filter((_, lineIndex) => lineIndex !== index))}><Trash2 className="size-4" /></Button><div className="sm:col-span-full"><Field label="Libellé"><Input value={item.label} onChange={(event) => setItems((lines) => lines.map((line, lineIndex) => lineIndex === index ? { ...line, label: event.target.value } : line))} /></Field></div></div>;
+                })}
+              </div>
+            </div>
             <Field label="Notes internes"><Textarea value={notes} onChange={(event) => setNotes(event.target.value)} /></Field>
             <div className="flex justify-end"><Button onClick={saveDetails}><Save className="size-4" /> Enregistrer toutes les modifications</Button></div>
           </div>

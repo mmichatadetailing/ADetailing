@@ -107,6 +107,7 @@ export interface Lead extends BaseEntity {
 export interface ServicePrice {
   vehicleFormat: string;
   amount: Money;
+  maximumAmount?: Money;
 }
 
 export interface Service extends BaseEntity {

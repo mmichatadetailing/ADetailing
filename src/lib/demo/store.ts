@@ -81,7 +81,7 @@ export interface NewServiceInput {
   name: string;
   kind: Service["kind"];
   category: string;
-  price: number;
+  prices: Array<{ vehicleFormat: string; amount: number; maximumAmount: number }>;
   targetDurationMinutes: number;
   targetProductCost: number;
 }
@@ -602,7 +602,7 @@ export const useDemoStore = create<DemoStore>()(
           name: input.name,
           clientDescription: "Description à compléter",
           internalDescription: "",
-          prices: [{ vehicleFormat: "Tous formats", amount: input.price }],
+          prices: input.prices,
           targetDurationMinutes: input.targetDurationMinutes,
           targetProductCost: input.targetProductCost,
           targetTravelCost: 0,

@@ -8,6 +8,7 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { useDemoStore } from "@/lib/demo/store";
+import { formatMoney } from "@/lib/utils";
 import { useWorkspace } from "./workspace-provider";
 import { Button } from "./ui/button";
 import { Field, Input, Select } from "./ui/field";
@@ -168,9 +169,11 @@ function AppointmentForm({ close }: { close: () => void }) {
   const [address, setAddress] = useState(initialClient ? [initialClient.address, initialClient.postalCode, initialClient.city].filter(Boolean).join(" ") : "");
   const [workerIds, setWorkerIds] = useState<string[]>(activeTeam[0]?.id ? [activeTeam[0].id] : []);
   const [submitting, setSubmitting] = useState(false);
-  const priceFor = (nextServiceId: string, nextVehicleFormat: string) => {
+  const rangeFor = (nextServiceId: string, nextVehicleFormat: string) => {
     const service = activeServices.find((item) => item.id === nextServiceId);
-    return (service?.prices.find((item) => item.vehicleFormat === nextVehicleFormat)?.amount ?? service?.prices[0]?.amount ?? 0) / 100;
+    return service?.prices.find((item) => item.vehicleFormat === nextVehicleFormat)
+      ?? service?.prices.find((item) => item.vehicleFormat === "Tous formats")
+      ?? service?.prices[0];
   };
 
   const chooseClient = (nextClientId: string) => {
@@ -181,7 +184,8 @@ function AppointmentForm({ close }: { close: () => void }) {
 
   const chooseVehicleFormat = (nextVehicleFormat: string) => {
     setVehicleFormat(nextVehicleFormat);
-    if (serviceId) setPriceEuros(priceFor(serviceId, nextVehicleFormat));
+    const range = rangeFor(serviceId, nextVehicleFormat);
+    if (range) setPriceEuros(range.amount / 100);
   };
 
   const chooseServiceLabel = (nextLabel: string) => {
@@ -191,9 +195,12 @@ function AppointmentForm({ close }: { close: () => void }) {
     setServiceId(service?.id ?? "");
     if (service) {
       setDurationHours(service.targetDurationMinutes / 60);
-      setPriceEuros(priceFor(service.id, vehicleFormat));
+      const range = rangeFor(service.id, vehicleFormat);
+      if (range) setPriceEuros(range.amount / 100);
     }
   };
+
+  const selectedRange = rangeFor(serviceId, vehicleFormat);
 
   const submit = async () => {
     const title = serviceLabel.trim();
@@ -230,15 +237,16 @@ function AppointmentForm({ close }: { close: () => void }) {
         <Field label="Catégorie du véhicule" hint="Facultatif"><Select value={vehicleFormat} onChange={(event) => chooseVehicleFormat(event.target.value)}><option value="">Non renseignée</option>{appointmentVehicleFormats.map((format) => <option key={format} value={format}>{format}</option>)}</Select></Field>
       </div>
       <div className="grid gap-4 sm:grid-cols-[1.35fr_.65fr]">
-        <Field label="Formule ou prestation" hint={serviceId ? "Prestation du catalogue reconnue : durée et tarif préremplis." : "Saisie libre : écrivez n’importe quel intitulé."}>
+        <Field label="Formule ou prestation" hint={serviceId ? "Prestation du catalogue reconnue : durée et fourchette retrouvées." : "Saisie libre : écrivez n’importe quel intitulé."}>
           <div className="grid gap-2">
             <Input list="adetailing-service-options" value={serviceLabel} onChange={(event) => chooseServiceLabel(event.target.value)} placeholder="Ex. Formule Premium ou nettoyage ponctuel" autoComplete="off" />
             <datalist id="adetailing-service-options">{activeServices.map((service) => <option key={service.id} value={service.name} />)}</datalist>
             {activeServices.length > 0 && <div className="flex flex-wrap gap-1.5" aria-label="Prestations enregistrées">{activeServices.slice(0, 5).map((service) => <button key={service.id} type="button" onClick={() => chooseServiceLabel(service.name)} className={`focus-ring rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition ${serviceId === service.id ? "border-brand-300 bg-brand-50 text-brand-700" : "border-zinc-200 bg-white text-zinc-500 hover:border-brand-200 hover:text-brand-700"}`}>{service.name}</button>)}</div>}
           </div>
         </Field>
-        <Field label="Montant prévu (€)"><Input min="0" step="0.01" type="number" value={priceEuros} onChange={(event) => setPriceEuros(Number(event.target.value))} /></Field>
+        <Field label="Prix final prévu (€)" hint="Libre et modifiable pour cette prestation."><Input min="0" step="0.01" type="number" value={priceEuros} onChange={(event) => setPriceEuros(Number(event.target.value))} /></Field>
       </div>
+      {selectedRange && <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-xs text-violet-800"><strong>Repère catalogue{vehicleFormat ? ` · ${vehicleFormat}` : ""} :</strong> {formatMoney(selectedRange.amount)} à {formatMoney(selectedRange.maximumAmount ?? selectedRange.amount)}. Vous restez libre de fixer le prix final.</div>}
       <div className="grid gap-4 sm:grid-cols-3">
         <Field label={completed ? "Date de réalisation" : "Date"}><Input min={completed ? undefined : new Date().toISOString().slice(0, 10)} type="date" value={date} onChange={(event) => setDate(event.target.value)} /></Field>
         <Field label="Heure"><Input type="time" value={time} onChange={(event) => setTime(event.target.value)} /></Field>
