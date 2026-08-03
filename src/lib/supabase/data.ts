@@ -132,7 +132,7 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User):
     supabase.from("clients").select("*,lead_sources(name)").eq("organization_id", organizationId).is("archived_at", null).order("created_at", { ascending: false }),
     supabase.from("vehicles").select("*,vehicle_formats(name)").eq("organization_id", organizationId).is("archived_at", null).order("created_at", { ascending: false }),
     supabase.from("leads").select("*,lead_sources(name)").eq("organization_id", organizationId).is("archived_at", null).order("requested_at", { ascending: false }),
-    supabase.from("services").select("*,service_categories(name),service_prices(amount_cents,maximum_amount_cents,vehicle_formats(name)),service_aliases(alias)").eq("organization_id", organizationId).is("archived_at", null).order("display_order"),
+    supabase.from("services").select("*,service_categories(name),service_prices(amount_cents,maximum_amount_cents,pricing_label,minimum_vehicle_count,maximum_vehicle_count,vehicle_formats(name)),service_aliases(alias)").eq("organization_id", organizationId).is("archived_at", null).order("display_order"),
     supabase.from("quotes").select("*,quote_items(*)").eq("organization_id", organizationId).is("archived_at", null).order("issued_at", { ascending: false }),
     supabase.from("invoices").select("*,invoice_items(*)").eq("organization_id", organizationId).is("archived_at", null).order("issued_at", { ascending: false }),
     supabase.from("payments").select("*").eq("organization_id", organizationId).order("paid_at", { ascending: false }),
@@ -195,8 +195,18 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User):
     nextActionAt: optionalText(row, "next_action_at"), lostReason: optionalText(row, "lost_reason"), notes: optionalText(row, "notes"),
   }));
   const services: Service[] = serviceRows.map((row) => ({
-    ...base(row), kind: text(row, "kind", "formula") as Service["kind"], category: text(one(row.service_categories), "name", "Sans catégorie"), name: text(row, "name"),
-    clientDescription: text(row, "client_description"), internalDescription: text(row, "internal_description"), prices: rows(row.service_prices).map((price) => ({ vehicleFormat: text(one(price.vehicle_formats), "name", "Tous formats"), amount: number(price, "amount_cents"), maximumAmount: number(price, "maximum_amount_cents", number(price, "amount_cents")) })),
+    ...base(row), kind: text(row, "kind", "formula") as Service["kind"], pricingMode: text(row, "pricing_mode", "vehicle_format") as Service["pricingMode"], category: text(one(row.service_categories), "name", "Sans catégorie"), name: text(row, "name"),
+    clientDescription: text(row, "client_description"), internalDescription: text(row, "internal_description"), prices: rows(row.service_prices).map((price) => {
+      const vehicleFormat = optionalText(one(price.vehicle_formats), "name");
+      return {
+        label: text(price, "pricing_label", vehicleFormat ?? "Tous formats"),
+        vehicleFormat,
+        minimumVehicleCount: nullableNumber(price, "minimum_vehicle_count") ?? undefined,
+        maximumVehicleCount: nullableNumber(price, "maximum_vehicle_count") ?? undefined,
+        amount: number(price, "amount_cents"),
+        maximumAmount: number(price, "maximum_amount_cents", number(price, "amount_cents")),
+      };
+    }).sort((left, right) => (left.minimumVehicleCount ?? 0) - (right.minimumVehicleCount ?? 0)),
     targetDurationMinutes: number(row, "target_duration_minutes"), targetProductCost: number(row, "target_product_cost_cents"), targetTravelCost: number(row, "target_travel_cost_cents"), targetHourlyMargin: number(row, "target_hourly_margin_cents"),
     vatRateBasisPoints: number(row, "vat_rate_basis_points", 2000), active: bool(row, "active", true), archivedAt: optionalText(row, "archived_at"), displayOrder: number(row, "display_order"), aliases: rows(row.service_aliases).map((alias) => text(alias, "alias")), recommendedWorkers: number(row, "recommended_workers", 1), photosRequired: bool(row, "photos_required"),
   }));

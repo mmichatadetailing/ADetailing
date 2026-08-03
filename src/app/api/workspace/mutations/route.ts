@@ -7,6 +7,7 @@ import { normalizeText } from "@/lib/utils";
 const leadStages = ["received", "qualify", "quote_to_prepare", "quote_sent", "follow_up", "won", "lost"] as const;
 const interventionStatuses = ["to_schedule", "scheduled", "confirmed", "in_progress", "completed", "cancelled"] as const;
 const serviceKinds = ["formula", "option", "subscription", "pack"] as const;
+const servicePricingModes = ["vehicle_format", "vehicle_count", "custom"] as const;
 const expenseMutationFields = {
   expenseId: z.uuid(),
   date: z.iso.date(),
@@ -43,7 +44,26 @@ const mutationSchema = z.discriminatedUnion("action", [
   }),
   z.object({ action: z.literal("completeIntervention"), interventionId: z.uuid(), actualDurationMinutes: z.number().int().min(0), productCost: z.number().int().min(0), travelCost: z.number().int().min(0), otherDirectCosts: z.number().int().min(0), workerMinutes: z.record(z.string(), z.number().int().min(0)) }),
   z.object({ action: z.literal("incrementChecklist"), interventionId: z.uuid() }),
-  z.object({ action: z.literal("addService"), name: z.string().trim().min(2), kind: z.enum(serviceKinds), category: z.string().trim().min(2), prices: z.array(z.object({ vehicleFormat: z.string().trim().min(1).max(80), amount: z.number().int().min(0), maximumAmount: z.number().int().min(0) }).refine((price) => price.maximumAmount >= price.amount, "La borne haute doit être supérieure ou égale à la borne basse.")).min(1).max(30).refine((prices) => new Set(prices.map((price) => price.vehicleFormat)).size === prices.length), targetDurationMinutes: z.number().int().positive(), targetProductCost: z.number().int().min(0) }),
+  z.object({
+    action: z.literal("addService"),
+    name: z.string().trim().min(2),
+    kind: z.enum(serviceKinds),
+    category: z.string().trim().min(2),
+    pricingMode: z.enum(servicePricingModes),
+    prices: z.array(z.object({
+      label: z.string().trim().min(1).max(100),
+      vehicleFormat: z.string().trim().min(1).max(80).optional(),
+      minimumVehicleCount: z.number().int().min(1).optional(),
+      maximumVehicleCount: z.number().int().min(1).optional(),
+      amount: z.number().int().min(0),
+      maximumAmount: z.number().int().min(0),
+    }).refine((price) => price.maximumAmount >= price.amount, "La borne haute doit être supérieure ou égale à la borne basse.")
+      .refine((price) => price.maximumVehicleCount === undefined || (price.minimumVehicleCount !== undefined && price.maximumVehicleCount >= price.minimumVehicleCount), "La tranche de véhicules est invalide."))
+      .min(1).max(30)
+      .refine((prices) => new Set(prices.map((price) => normalizeText(price.label))).size === prices.length, "Chaque règle tarifaire doit avoir un libellé unique."),
+    targetDurationMinutes: z.number().int().positive(),
+    targetProductCost: z.number().int().min(0),
+  }),
   z.object({ action: z.literal("duplicateService"), serviceId: z.uuid() }),
   z.object({ action: z.literal("archiveService"), serviceId: z.uuid() }),
   z.object({ action: z.literal("reorderService"), serviceId: z.uuid(), direction: z.union([z.literal(-1), z.literal(1)]) }),
@@ -216,6 +236,26 @@ export async function POST(request: Request) {
     }
 
     if (input.action === "addService") {
+      if (input.kind !== "subscription" && input.pricingMode !== "vehicle_format") {
+        throw new Error("Les paliers et règles libres sont réservés aux abonnements.");
+      }
+      if (input.pricingMode === "vehicle_format" && input.prices.some((price) => !price.vehicleFormat)) {
+        throw new Error("Chaque tarif doit être associé à un type de véhicule.");
+      }
+      if (input.pricingMode === "vehicle_format" && new Set(input.prices.map((price) => price.vehicleFormat)).size !== input.prices.length) {
+        throw new Error("Chaque type de véhicule ne peut apparaître qu’une seule fois.");
+      }
+      if (input.pricingMode === "vehicle_count") {
+        const tiers = [...input.prices].sort((left, right) => (left.minimumVehicleCount ?? 0) - (right.minimumVehicleCount ?? 0));
+        if (tiers.some((tier) => tier.minimumVehicleCount === undefined)) throw new Error("Chaque palier doit indiquer un nombre minimum de véhicules.");
+        if (tiers[0]?.minimumVehicleCount !== 1) throw new Error("Le premier palier doit commencer à 1 véhicule.");
+        for (let index = 0; index < tiers.length; index += 1) {
+          const tier = tiers[index]!;
+          const next = tiers[index + 1];
+          if (tier.maximumVehicleCount === undefined && next) throw new Error("Seul le dernier palier peut être sans limite maximale.");
+          if (next && next.minimumVehicleCount !== (tier.maximumVehicleCount ?? 0) + 1) throw new Error("Les paliers doivent se suivre sans trou ni chevauchement.");
+        }
+      }
       const categoryResult = await supabase.from("service_categories").select("id").eq("organization_id", organizationId).eq("name", input.category).limit(1).maybeSingle();
       ensureNoError(categoryResult.error);
       let category = categoryResult.data;
@@ -225,7 +265,7 @@ export async function POST(request: Request) {
         category = result.data;
       }
       if (!category) throw new Error("Catégorie introuvable.");
-      const formatNames = input.prices.map((price) => price.vehicleFormat).filter((format) => format !== "Tous formats");
+      const formatNames = input.prices.map((price) => price.vehicleFormat).filter((format): format is string => Boolean(format && format !== "Tous formats"));
       const { data: formats, error: formatsError } = formatNames.length
         ? await supabase.from("vehicle_formats").select("id,name").eq("organization_id", organizationId).in("name", formatNames)
         : { data: [], error: null };
@@ -234,10 +274,10 @@ export async function POST(request: Request) {
       const formatIds = new Map((formats ?? []).map((format) => [format.name, format.id]));
       const { data: lastServices, error: orderError } = await supabase.from("services").select("display_order").eq("organization_id", organizationId).order("display_order", { ascending: false }).limit(1);
       ensureNoError(orderError);
-      const { data: service, error } = await supabase.from("services").insert({ organization_id: organizationId, kind: input.kind, category_id: category.id, name: input.name, client_description: "Description à compléter", internal_description: "", target_duration_minutes: input.targetDurationMinutes, target_product_cost_cents: input.targetProductCost, target_hourly_margin_cents: 0, display_order: (lastServices?.[0]?.display_order ?? 0) + 1, created_by: userId }).select("id").single();
+      const { data: service, error } = await supabase.from("services").insert({ organization_id: organizationId, kind: input.kind, pricing_mode: input.pricingMode, category_id: category.id, name: input.name, client_description: "Description à compléter", internal_description: "", target_duration_minutes: input.targetDurationMinutes, target_product_cost_cents: input.targetProductCost, target_hourly_margin_cents: 0, display_order: (lastServices?.[0]?.display_order ?? 0) + 1, created_by: userId }).select("id").single();
       ensureNoError(error);
       if (!service) throw new Error("Offre introuvable après création.");
-      const { error: priceError } = await supabase.from("service_prices").insert(input.prices.map((price) => ({ organization_id: organizationId, service_id: service.id, vehicle_format_id: formatIds.get(price.vehicleFormat) ?? null, amount_cents: price.amount, maximum_amount_cents: price.maximumAmount, created_by: userId })));
+      const { error: priceError } = await supabase.from("service_prices").insert(input.prices.map((price) => ({ organization_id: organizationId, service_id: service.id, vehicle_format_id: price.vehicleFormat ? formatIds.get(price.vehicleFormat) ?? null : null, pricing_label: price.label, minimum_vehicle_count: price.minimumVehicleCount ?? null, maximum_vehicle_count: price.maximumVehicleCount ?? null, amount_cents: price.amount, maximum_amount_cents: price.maximumAmount, created_by: userId })));
       ensureNoError(priceError);
       return NextResponse.json({ ok: true, id: service.id });
     }
@@ -246,11 +286,11 @@ export async function POST(request: Request) {
       const { data: source, error: sourceError } = await supabase.from("services").select("*,service_prices(*),service_aliases(*)").eq("organization_id", organizationId).eq("id", input.serviceId).single();
       ensureNoError(sourceError);
       if (!source) throw new Error("Offre introuvable.");
-      const { data: service, error } = await supabase.from("services").insert({ organization_id: organizationId, kind: source.kind, category_id: source.category_id, name: `${source.name} — copie ${Date.now().toString().slice(-4)}`, client_description: source.client_description, internal_description: source.internal_description, target_duration_minutes: source.target_duration_minutes, target_product_cost_cents: source.target_product_cost_cents, target_travel_cost_cents: source.target_travel_cost_cents, target_hourly_margin_cents: source.target_hourly_margin_cents, vat_rate_basis_points: source.vat_rate_basis_points, checklist_template_id: source.checklist_template_id, recommended_workers: source.recommended_workers, photos_required: source.photos_required, active: false, display_order: source.display_order + 1, created_by: userId }).select("id").single();
+      const { data: service, error } = await supabase.from("services").insert({ organization_id: organizationId, kind: source.kind, pricing_mode: source.pricing_mode ?? "vehicle_format", category_id: source.category_id, name: `${source.name} — copie ${Date.now().toString().slice(-4)}`, client_description: source.client_description, internal_description: source.internal_description, target_duration_minutes: source.target_duration_minutes, target_product_cost_cents: source.target_product_cost_cents, target_travel_cost_cents: source.target_travel_cost_cents, target_hourly_margin_cents: source.target_hourly_margin_cents, vat_rate_basis_points: source.vat_rate_basis_points, checklist_template_id: source.checklist_template_id, recommended_workers: source.recommended_workers, photos_required: source.photos_required, active: false, display_order: source.display_order + 1, created_by: userId }).select("id").single();
       ensureNoError(error);
       if (!service) throw new Error("Copie introuvable après création.");
       if (source.service_prices?.length) {
-        const { error: pricesError } = await supabase.from("service_prices").insert(source.service_prices.map((price: Record<string, unknown>) => ({ organization_id: organizationId, service_id: service.id, vehicle_format_id: price.vehicle_format_id, amount_cents: price.amount_cents, maximum_amount_cents: price.maximum_amount_cents ?? price.amount_cents, valid_from: price.valid_from, valid_until: price.valid_until, created_by: userId })));
+        const { error: pricesError } = await supabase.from("service_prices").insert(source.service_prices.map((price: Record<string, unknown>) => ({ organization_id: organizationId, service_id: service.id, vehicle_format_id: price.vehicle_format_id, pricing_label: price.pricing_label ?? "Tarif standard", minimum_vehicle_count: price.minimum_vehicle_count, maximum_vehicle_count: price.maximum_vehicle_count, amount_cents: price.amount_cents, maximum_amount_cents: price.maximum_amount_cents ?? price.amount_cents, valid_from: price.valid_from, valid_until: price.valid_until, created_by: userId })));
         ensureNoError(pricesError);
       }
       return NextResponse.json({ ok: true, id: service.id });

@@ -32,7 +32,8 @@ import { Progress } from "@/components/ui/progress";
 import { grossMargin, hourlyMargin, paymentStatusForInvoice } from "@/lib/domain/calculations";
 import { getInterventionWorkflow, type WorkflowStepId } from "@/lib/domain/intervention-workflow";
 import { interventionStatusLabels, paymentStatusLabels } from "@/lib/domain/labels";
-import type { InterventionStatus, Service } from "@/lib/domain/types";
+import { getServicePricingMode, servicePriceRuleLabel, suggestedServicePrice } from "@/lib/domain/service-pricing";
+import type { InterventionStatus } from "@/lib/domain/types";
 import { useDemoStore } from "@/lib/demo/store";
 import { formatDate, formatMoney } from "@/lib/utils";
 
@@ -59,13 +60,7 @@ function hours(minutes: number) {
   return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(minutes / 60);
 }
 
-function servicePriceRange(service: Service | undefined, vehicleFormat: string) {
-  return service?.prices.find((price) => price.vehicleFormat === vehicleFormat)
-    ?? service?.prices.find((price) => price.vehicleFormat === "Tous formats")
-    ?? service?.prices[0];
-}
-
-type EditableLine = { id?: string; serviceId: string; label: string; quantity: number; revenueAllocated: number; revenueEuros: number };
+type EditableLine = { id?: string; serviceId: string; label: string; quantity: number; revenueAllocated: number; revenueEuros: number; pricingRuleLabel?: string };
 
 export function InterventionDetail({ interventionId, startEditing = false }: { interventionId: string; startEditing?: boolean }) {
   const data = useDemoStore();
@@ -137,8 +132,32 @@ export function InterventionDetail({ interventionId, startEditing = false }: { i
 
   const chooseService = (index: number, serviceId: string) => {
     const service = data.services.find((item) => item.id === serviceId);
-    const priceRange = servicePriceRange(service, vehicleFormat);
-    setItems((lines) => lines.map((line, lineIndex) => lineIndex === index ? { ...line, serviceId, label: service?.name ?? line.label, revenueEuros: priceRange ? priceRange.amount / 100 : line.revenueEuros } : line));
+    setItems((lines) => lines.map((line, lineIndex) => {
+      if (lineIndex !== index) return line;
+      const pricing = suggestedServicePrice(service, { vehicleFormat, vehicleCount: line.quantity });
+      const mode = service ? getServicePricingMode(service) : "vehicle_format";
+      return { ...line, serviceId, label: service?.name ?? line.label, pricingRuleLabel: pricing ? servicePriceRuleLabel(pricing.rule, mode) : undefined, revenueEuros: pricing ? pricing.minimumAmount / 100 : line.revenueEuros };
+    }));
+  };
+
+  const choosePricingRule = (index: number, pricingRuleLabel: string) => {
+    setItems((lines) => lines.map((line, lineIndex) => {
+      if (lineIndex !== index) return line;
+      const service = data.services.find((entry) => entry.id === line.serviceId);
+      const pricing = suggestedServicePrice(service, { vehicleFormat, vehicleCount: line.quantity, priceLabel: pricingRuleLabel });
+      return { ...line, pricingRuleLabel, revenueEuros: pricing ? pricing.minimumAmount / 100 : line.revenueEuros };
+    }));
+  };
+
+  const updateLineQuantity = (index: number, quantity: number) => {
+    setItems((lines) => lines.map((line, lineIndex) => {
+      if (lineIndex !== index) return line;
+      const service = data.services.find((entry) => entry.id === line.serviceId);
+      const pricing = getServicePricingMode(service ?? { pricingMode: "vehicle_format" }) === "vehicle_count"
+        ? suggestedServicePrice(service, { vehicleFormat, vehicleCount: quantity })
+        : undefined;
+      return { ...line, quantity, revenueEuros: pricing ? pricing.minimumAmount / 100 : line.revenueEuros };
+    }));
   };
 
   const saveDetails = () => {
@@ -147,6 +166,10 @@ export function InterventionDetail({ interventionId, startEditing = false }: { i
     if (!Number.isFinite(plannedHours) || plannedHours < 0.25 || plannedHours > 24) return toast.error("La durée prévue doit être comprise entre 15 minutes et 24 heures");
     if (Object.keys(workerHours).length === 0) return toast.error("Affectez au moins un collaborateur");
     if (items.length === 0 || items.some((item) => item.label.trim().length < 2 || item.quantity <= 0 || item.revenueEuros < 0)) return toast.error("Vérifiez les lignes de prestation");
+    if (items.some((item) => {
+      const service = data.services.find((entry) => entry.id === item.serviceId);
+      return service && getServicePricingMode(service) === "vehicle_count" && (!Number.isInteger(item.quantity) || item.quantity < 1);
+    })) return toast.error("Le nombre de véhicules doit être un nombre entier positif");
     const startAt = startDate && startTime ? new Date(`${startDate}T${startTime}`).toISOString() : undefined;
     data.updateIntervention(current.id, {
       clientId,
@@ -261,9 +284,10 @@ export function InterventionDetail({ interventionId, startEditing = false }: { i
               <div className="mt-3 grid gap-3">
                 {items.map((item, index) => {
                   const service = data.services.find((entry) => entry.id === item.serviceId);
-                  const priceRange = servicePriceRange(service, vehicleFormat);
-                  const rangeHint = priceRange ? `Repère ${vehicleFormat || priceRange.vehicleFormat} : ${formatMoney(priceRange.amount)} à ${formatMoney(priceRange.maximumAmount ?? priceRange.amount)}` : undefined;
-                  return <div key={item.id ?? `line-${index}`} className="grid gap-3 rounded-xl border border-zinc-200 p-3 sm:grid-cols-[1fr_90px_150px_auto]"><Field label="Catalogue"><Select value={item.serviceId} onChange={(event) => chooseService(index, event.target.value)}><option value="">Personnalisée</option>{data.services.filter((entry) => !entry.archivedAt).map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</Select></Field><Field label="Quantité"><Input min="0.1" step="0.1" type="number" value={item.quantity} onChange={(event) => setItems((lines) => lines.map((line, lineIndex) => lineIndex === index ? { ...line, quantity: Number(event.target.value) } : line))} /></Field><Field label="Montant final (€)" hint={rangeHint}><Input min="0" step="0.01" type="number" value={item.revenueEuros} onChange={(event) => setItems((lines) => lines.map((line, lineIndex) => lineIndex === index ? { ...line, revenueEuros: Number(event.target.value) } : line))} /></Field><Button className="self-end" aria-label="Supprimer la ligne" size="sm" variant="ghost" disabled={items.length === 1} onClick={() => setItems((lines) => lines.filter((_, lineIndex) => lineIndex !== index))}><Trash2 className="size-4" /></Button><div className="sm:col-span-full"><Field label="Libellé"><Input value={item.label} onChange={(event) => setItems((lines) => lines.map((line, lineIndex) => lineIndex === index ? { ...line, label: event.target.value } : line))} /></Field></div></div>;
+                  const mode = service ? getServicePricingMode(service) : "vehicle_format";
+                  const pricing = suggestedServicePrice(service, { vehicleFormat, vehicleCount: item.quantity, priceLabel: item.pricingRuleLabel });
+                  const rangeHint = pricing ? mode === "vehicle_count" ? `${servicePriceRuleLabel(pricing.rule, mode)} · ${formatMoney(pricing.unitAmount)}/véhicule · total ${formatMoney(pricing.minimumAmount)}` : `Repère ${servicePriceRuleLabel(pricing.rule, mode)} : ${formatMoney(pricing.minimumAmount)} à ${formatMoney(pricing.maximumAmount)}` : undefined;
+                  return <div key={item.id ?? `line-${index}`} className="grid gap-3 rounded-xl border border-zinc-200 p-3 sm:grid-cols-[1fr_90px_150px_auto]"><Field label="Catalogue"><Select value={item.serviceId} onChange={(event) => chooseService(index, event.target.value)}><option value="">Personnalisée</option>{data.services.filter((entry) => !entry.archivedAt).map((entry) => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</Select></Field><Field label={mode === "vehicle_count" ? "Véhicules" : "Quantité"}><Input min={mode === "vehicle_count" ? "1" : "0.1"} step={mode === "vehicle_count" ? "1" : "0.1"} type="number" value={item.quantity} onChange={(event) => updateLineQuantity(index, Number(event.target.value))} /></Field><Field label="Montant final (€)" hint={rangeHint}><Input min="0" step="0.01" type="number" value={item.revenueEuros} onChange={(event) => setItems((lines) => lines.map((line, lineIndex) => lineIndex === index ? { ...line, revenueEuros: Number(event.target.value) } : line))} /></Field><Button className="self-end" aria-label="Supprimer la ligne" size="sm" variant="ghost" disabled={items.length === 1} onClick={() => setItems((lines) => lines.filter((_, lineIndex) => lineIndex !== index))}><Trash2 className="size-4" /></Button>{mode === "custom" && service && <div className="sm:col-span-full"><Field label="Règle tarifaire"><Select value={item.pricingRuleLabel ?? servicePriceRuleLabel(service.prices[0]!, mode)} onChange={(event) => choosePricingRule(index, event.target.value)}>{service.prices.map((price, priceIndex) => { const label = servicePriceRuleLabel(price, mode); return <option key={`${label}-${priceIndex}`} value={label}>{label}</option>; })}</Select></Field></div>}<div className="sm:col-span-full"><Field label="Libellé"><Input value={item.label} onChange={(event) => setItems((lines) => lines.map((line, lineIndex) => lineIndex === index ? { ...line, label: event.target.value } : line))} /></Field></div></div>;
                 })}
               </div>
             </div>

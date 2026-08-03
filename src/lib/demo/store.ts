@@ -15,6 +15,7 @@ import type {
   MonthlyObjective,
   Payment,
   Service,
+  ServicePricingMode,
   Vehicle,
 } from "@/lib/domain/types";
 import { normalizePhone } from "@/lib/utils";
@@ -82,7 +83,15 @@ export interface NewServiceInput {
   name: string;
   kind: Service["kind"];
   category: string;
-  prices: Array<{ vehicleFormat: string; amount: number; maximumAmount: number }>;
+  pricingMode: ServicePricingMode;
+  prices: Array<{
+    label: string;
+    vehicleFormat?: string;
+    minimumVehicleCount?: number;
+    maximumVehicleCount?: number;
+    amount: number;
+    maximumAmount: number;
+  }>;
   targetDurationMinutes: number;
   targetProductCost: number;
 }
@@ -654,6 +663,7 @@ export const useDemoStore = create<DemoStore>()(
         const service: Service = {
           ...entityBase(),
           kind: input.kind,
+          pricingMode: input.pricingMode,
           category: input.category,
           name: input.name,
           clientDescription: "Description à compléter",

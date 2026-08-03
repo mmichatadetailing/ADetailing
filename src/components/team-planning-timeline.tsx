@@ -16,9 +16,9 @@ import type { Client, Intervention, TeamMember } from "@/lib/domain/types";
 import { cn, formatDate } from "@/lib/utils";
 
 const RESOURCE_WIDTH = 220;
-const DAY_WIDTH = 455;
+const DEFAULT_DAY_WIDTH = 455;
 const ROW_HEIGHT = 112;
-const HOURS = Array.from({ length: PLANNING_END_HOUR - PLANNING_START_HOUR }, (_, index) => PLANNING_START_HOUR + index);
+const HOURS = Array.from({ length: PLANNING_END_HOUR - PLANNING_START_HOUR + 1 }, (_, index) => PLANNING_START_HOUR + index);
 const DRAG_TYPE = "application/x-adetailing-intervention";
 
 type DragPayload = { interventionId: string; sourceMemberId?: string };
@@ -55,6 +55,8 @@ export function TeamPlanningTimeline({
   onSelect,
   onMove,
   onEmptySlot,
+  dayWidth = DEFAULT_DAY_WIDTH,
+  showDayLabels = true,
 }: {
   members: TeamMember[];
   interventions: Intervention[];
@@ -65,9 +67,11 @@ export function TeamPlanningTimeline({
   onSelect: (intervention: Intervention) => void;
   onMove: (payload: DragPayload, targetMemberId: string, start: Date) => void;
   onEmptySlot: (memberId: string, start: Date) => void;
+  dayWidth?: number;
+  showDayLabels?: boolean;
 }) {
   const today = new Date();
-  const timelineWidth = days.length * DAY_WIDTH;
+  const timelineWidth = days.length * dayWidth;
 
   const readDrag = (event: DragEvent) => {
     try {
@@ -95,13 +99,13 @@ export function TeamPlanningTimeline({
               {days.map((day) => {
                 const todayDay = isSamePlanningDay(day, today);
                 return (
-                  <div key={day.toISOString()} className={cn("shrink-0 border-r border-zinc-200", todayDay && "bg-orange-50/55")} style={{ width: DAY_WIDTH }}>
-                    <div className="flex h-12 items-center justify-between border-b border-zinc-100 px-4">
+                  <div key={day.toISOString()} className={cn("shrink-0 border-r border-zinc-200", todayDay && "bg-orange-50/55")} style={{ width: dayWidth }}>
+                    {showDayLabels && <div className="flex h-12 items-center justify-between border-b border-zinc-100 px-4">
                       <div><p className={cn("text-xs font-extrabold capitalize", todayDay ? "text-brand-700" : "text-zinc-900")}>{formatDate(day.toISOString(), { weekday: "long" })}</p><p className="text-[10px] text-zinc-500">{formatDate(day.toISOString(), { day: "2-digit", month: "long" })}</p></div>
                       {todayDay && <Badge variant="orange">Aujourd’hui</Badge>}
-                    </div>
-                    <div className="relative h-8">
-                      {HOURS.map((hour) => <span key={hour} className="absolute top-2 -translate-x-1/2 text-[9px] font-bold text-zinc-500" style={{ left: `${(hour - PLANNING_START_HOUR) / (PLANNING_END_HOUR - PLANNING_START_HOUR) * 100}%` }}>{hour}h</span>)}
+                    </div>}
+                    <div className={cn("relative", showDayLabels ? "h-8" : "h-11")}>
+                      {HOURS.map((hour) => <span key={hour} className="absolute top-2 text-[9px] font-bold text-zinc-500" style={{ left: `${(hour - PLANNING_START_HOUR) / (PLANNING_END_HOUR - PLANNING_START_HOUR) * 100}%`, transform: hour === PLANNING_START_HOUR ? "translateX(8px)" : hour === PLANNING_END_HOUR ? "translateX(calc(-100% - 8px))" : "translateX(-50%)" }}>{hour}h</span>)}
                     </div>
                   </div>
                 );
@@ -129,7 +133,7 @@ export function TeamPlanningTimeline({
                     <div
                       key={`${member.id}-${day.toISOString()}`}
                       className={cn("group/day relative shrink-0 border-r border-zinc-200 transition-colors hover:bg-brand-50/35", todayDay && "bg-orange-50/25")}
-                      style={{ width: DAY_WIDTH, height: ROW_HEIGHT }}
+                      style={{ width: dayWidth, height: ROW_HEIGHT }}
                       aria-label={`Planning de ${member.firstName} le ${formatDate(day.toISOString())}`}
                       onClick={(event) => onEmptySlot(member.id, dateAtPlanningPosition(day, (event.clientX - event.currentTarget.getBoundingClientRect().left) / event.currentTarget.getBoundingClientRect().width))}
                       onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }}

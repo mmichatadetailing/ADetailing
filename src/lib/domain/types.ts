@@ -29,6 +29,7 @@ export type QuoteStatus =
 export type InvoiceStatus = "imported" | "to_review" | "issued" | "cancelled" | "credit_note";
 export type PaymentStatus = "unpaid" | "partial" | "paid" | "overdue";
 export type ServiceKind = "formula" | "option" | "subscription" | "pack";
+export type ServicePricingMode = "vehicle_format" | "vehicle_count" | "custom";
 
 export interface BaseEntity {
   id: UUID;
@@ -105,13 +106,17 @@ export interface Lead extends BaseEntity {
 }
 
 export interface ServicePrice {
-  vehicleFormat: string;
+  label?: string;
+  vehicleFormat?: string;
+  minimumVehicleCount?: number;
+  maximumVehicleCount?: number;
   amount: Money;
   maximumAmount?: Money;
 }
 
 export interface Service extends BaseEntity {
   kind: ServiceKind;
+  pricingMode?: ServicePricingMode;
   category: string;
   name: string;
   clientDescription: string;

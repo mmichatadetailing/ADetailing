@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
+import { getServicePricingMode, servicePriceRuleLabel, suggestedServicePrice } from "@/lib/domain/service-pricing";
 import { useDemoStore } from "@/lib/demo/store";
 import { formatMoney } from "@/lib/utils";
 import { useWorkspace } from "./workspace-provider";
@@ -156,6 +157,8 @@ function AppointmentForm({ close }: { close: () => void }) {
   const initialClient = data.clients[0];
   const [clientId, setClientId] = useState(initialClient?.id ?? "");
   const [vehicleFormat, setVehicleFormat] = useState("");
+  const [vehicleCount, setVehicleCount] = useState(1);
+  const [customPricingLabel, setCustomPricingLabel] = useState("");
   const [serviceId, setServiceId] = useState("");
   const [serviceLabel, setServiceLabel] = useState("");
   const [date, setDate] = useState(() => {
@@ -170,11 +173,9 @@ function AppointmentForm({ close }: { close: () => void }) {
   const [address, setAddress] = useState(initialClient ? [initialClient.address, initialClient.postalCode, initialClient.city].filter(Boolean).join(" ") : "");
   const [workerId, setWorkerId] = useState(activeTeam[0]?.id ?? "");
   const [submitting, setSubmitting] = useState(false);
-  const rangeFor = (nextServiceId: string, nextVehicleFormat: string) => {
+  const pricingFor = (nextServiceId: string, nextVehicleFormat: string, nextVehicleCount: number, nextPriceLabel = customPricingLabel) => {
     const service = activeServices.find((item) => item.id === nextServiceId);
-    return service?.prices.find((item) => item.vehicleFormat === nextVehicleFormat)
-      ?? service?.prices.find((item) => item.vehicleFormat === "Tous formats")
-      ?? service?.prices[0];
+    return suggestedServicePrice(service, { vehicleFormat: nextVehicleFormat, vehicleCount: nextVehicleCount, priceLabel: nextPriceLabel });
   };
 
   const chooseClient = (nextClientId: string) => {
@@ -185,8 +186,15 @@ function AppointmentForm({ close }: { close: () => void }) {
 
   const chooseVehicleFormat = (nextVehicleFormat: string) => {
     setVehicleFormat(nextVehicleFormat);
-    const range = rangeFor(serviceId, nextVehicleFormat);
-    if (range) setPriceEuros(range.amount / 100);
+    const pricing = pricingFor(serviceId, nextVehicleFormat, vehicleCount);
+    if (pricing) setPriceEuros(pricing.minimumAmount / 100);
+  };
+
+  const chooseVehicleCount = (nextVehicleCount: number) => {
+    const count = Math.max(1, Math.floor(nextVehicleCount || 1));
+    setVehicleCount(count);
+    const pricing = pricingFor(serviceId, vehicleFormat, count);
+    if (pricing) setPriceEuros(pricing.minimumAmount / 100);
   };
 
   const chooseServiceLabel = (nextLabel: string) => {
@@ -196,12 +204,25 @@ function AppointmentForm({ close }: { close: () => void }) {
     setServiceId(service?.id ?? "");
     if (service) {
       setDurationHours(service.targetDurationMinutes / 60);
-      const range = rangeFor(service.id, vehicleFormat);
-      if (range) setPriceEuros(range.amount / 100);
+      const pricingMode = getServicePricingMode(service);
+      const nextPriceLabel = pricingMode === "custom" && service.prices[0] ? servicePriceRuleLabel(service.prices[0], pricingMode) : "";
+      setCustomPricingLabel(nextPriceLabel);
+      const pricing = pricingFor(service.id, vehicleFormat, vehicleCount, nextPriceLabel);
+      if (pricing) setPriceEuros(pricing.minimumAmount / 100);
+    } else {
+      setCustomPricingLabel("");
     }
   };
 
-  const selectedRange = rangeFor(serviceId, vehicleFormat);
+  const selectedService = activeServices.find((service) => service.id === serviceId);
+  const selectedPricing = pricingFor(serviceId, vehicleFormat, vehicleCount);
+  const selectedPricingMode = selectedService ? getServicePricingMode(selectedService) : undefined;
+
+  const chooseCustomPricing = (label: string) => {
+    setCustomPricingLabel(label);
+    const pricing = pricingFor(serviceId, vehicleFormat, vehicleCount, label);
+    if (pricing) setPriceEuros(pricing.minimumAmount / 100);
+  };
 
   const submit = async () => {
     const title = serviceLabel.trim();
@@ -237,6 +258,8 @@ function AppointmentForm({ close }: { close: () => void }) {
         <Field label="Client"><Select autoFocus value={clientId} onChange={(event) => chooseClient(event.target.value)}>{data.clients.map((client) => <option key={client.id} value={client.id}>{client.company || `${client.firstName} ${client.lastName}`}</option>)}</Select></Field>
         <Field label="Catégorie du véhicule" hint="Facultatif"><Select value={vehicleFormat} onChange={(event) => chooseVehicleFormat(event.target.value)}><option value="">Non renseignée</option>{appointmentVehicleFormats.map((format) => <option key={format} value={format}>{format}</option>)}</Select></Field>
       </div>
+      {selectedPricingMode === "vehicle_count" && <Field label="Nombre de véhicules dans l’abonnement" hint="Le palier et le montant total sont recalculés automatiquement."><Input min="1" step="1" type="number" value={vehicleCount} onChange={(event) => chooseVehicleCount(Number(event.target.value))} /></Field>}
+      {selectedPricingMode === "custom" && selectedService && <Field label="Règle tarifaire"><Select value={customPricingLabel} onChange={(event) => chooseCustomPricing(event.target.value)}>{selectedService.prices.map((price, index) => { const label = servicePriceRuleLabel(price, "custom"); return <option key={`${label}-${index}`} value={label}>{label}</option>; })}</Select></Field>}
       <div className="grid gap-4 sm:grid-cols-[1.35fr_.65fr]">
         <Field label="Formule ou prestation" hint={serviceId ? "Prestation du catalogue reconnue : durée et fourchette retrouvées." : "Saisie libre : écrivez n’importe quel intitulé."}>
           <div className="grid gap-2">
@@ -247,7 +270,7 @@ function AppointmentForm({ close }: { close: () => void }) {
         </Field>
         <Field label="Prix final prévu (€)" hint="Libre et modifiable pour cette prestation."><Input min="0" step="0.01" type="number" value={priceEuros} onChange={(event) => setPriceEuros(Number(event.target.value))} /></Field>
       </div>
-      {selectedRange && <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-xs text-violet-800"><strong>Repère catalogue{vehicleFormat ? ` · ${vehicleFormat}` : ""} :</strong> {formatMoney(selectedRange.amount)} à {formatMoney(selectedRange.maximumAmount ?? selectedRange.amount)}. Vous restez libre de fixer le prix final.</div>}
+      {selectedPricing && selectedService && <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-xs text-violet-800"><strong>Repère catalogue · {servicePriceRuleLabel(selectedPricing.rule, getServicePricingMode(selectedService))} :</strong> {selectedPricingMode === "vehicle_count" ? `${formatMoney(selectedPricing.unitAmount)} par véhicule · total conseillé ${formatMoney(selectedPricing.minimumAmount)}` : `${formatMoney(selectedPricing.minimumAmount)} à ${formatMoney(selectedPricing.maximumAmount)}`}. Vous restez libre de fixer le prix final.</div>}
       <div className="grid gap-4 sm:grid-cols-3">
         <Field label={completed ? "Date de réalisation" : "Date"}><Input min={completed ? undefined : new Date().toISOString().slice(0, 10)} type="date" value={date} onChange={(event) => setDate(event.target.value)} /></Field>
         <Field label="Heure"><Input type="time" value={time} onChange={(event) => setTime(event.target.value)} /></Field>
