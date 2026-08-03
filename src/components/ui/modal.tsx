@@ -39,9 +39,9 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="modal-title"
-        className={cn("modal-panel max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl border border-white/10 bg-ink-900 shadow-[0_28px_90px_rgba(47,40,72,.22)] sm:my-auto sm:max-w-xl sm:rounded-3xl", className)}
+        className={cn("modal-panel max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl border border-black/[0.1] bg-white shadow-[0_28px_90px_rgba(47,40,72,.22)] sm:my-auto sm:max-w-xl sm:rounded-3xl", className)}
       >
-        <header className="sticky top-0 z-10 flex items-start justify-between border-b border-white/[0.07] bg-ink-900/90 p-5 backdrop-blur-xl">
+        <header className="sticky top-0 z-10 flex items-start justify-between border-b border-black/[0.07] bg-white/90 p-5 backdrop-blur-xl">
           <div>
             <h2 id="modal-title" className="text-lg font-bold tracking-tight">{title}</h2>
             {description && <p className="mt-1 text-sm text-zinc-500">{description}</p>}

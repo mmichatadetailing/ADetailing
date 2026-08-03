@@ -7,6 +7,18 @@ import { normalizeText } from "@/lib/utils";
 const leadStages = ["received", "qualify", "quote_to_prepare", "quote_sent", "follow_up", "won", "lost"] as const;
 const interventionStatuses = ["to_schedule", "scheduled", "confirmed", "in_progress", "completed", "cancelled"] as const;
 const serviceKinds = ["formula", "option", "subscription", "pack"] as const;
+const expenseMutationFields = {
+  expenseId: z.uuid(),
+  date: z.iso.date(),
+  recurrence: z.enum(["one_off", "monthly", "annual"]),
+  family: z.enum(["fixed", "variable", "investment", "personal"]),
+  category: z.string().trim().min(2).max(120),
+  supplier: z.string().trim().max(160),
+  description: z.string().trim().min(2).max(500),
+  amountIncludingTax: z.number().int().positive(),
+  vatRateBasisPoints: z.number().int().min(0).max(10_000),
+  paid: z.boolean(),
+};
 
 const henrriLineSchema = z.object({
   designation: z.string(),
@@ -20,6 +32,8 @@ const henrriLineSchema = z.object({
 
 const mutationSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("moveLead"), leadId: z.uuid(), stage: z.enum(leadStages) }),
+  z.object({ action: z.literal("updateExpense"), ...expenseMutationFields }),
+  z.object({ action: z.literal("removeExpense"), expenseId: z.uuid() }),
   z.object({ action: z.literal("rescheduleIntervention"), interventionId: z.uuid(), startAt: z.iso.datetime(), endAt: z.iso.datetime() }),
   z.object({ action: z.literal("setInterventionStatus"), interventionId: z.uuid(), status: z.enum(interventionStatuses) }),
   z.object({
@@ -94,6 +108,34 @@ export async function POST(request: Request) {
       if (nextAction) patch.next_action = nextAction;
       const { error } = await supabase.from("leads").update(patch).eq("organization_id", organizationId).eq("id", input.leadId);
       ensureNoError(error);
+    }
+
+    if (input.action === "updateExpense") {
+      const amountExcludingTax = Math.round(input.amountIncludingTax / (1 + input.vatRateBasisPoints / 10_000));
+      const { data: expense, error } = await supabase.from("expenses").update({
+        expense_date: input.date,
+        family: input.family,
+        category: input.category,
+        supplier: input.supplier || null,
+        description: input.description,
+        amount_including_tax_cents: input.amountIncludingTax,
+        amount_excluding_tax_cents: amountExcludingTax,
+        vat_rate_basis_points: input.vatRateBasisPoints,
+        vat_amount_cents: input.amountIncludingTax - amountExcludingTax,
+        vat_recoverable: input.family !== "personal",
+        recurrence: input.recurrence,
+        allocated_month: `${input.date.slice(0, 7)}-01`,
+        paid: input.paid,
+        paid_at: input.paid ? `${input.date}T12:00:00.000Z` : null,
+      }).eq("organization_id", organizationId).eq("id", input.expenseId).is("archived_at", null).select("id").single();
+      ensureNoError(error);
+      if (!expense) throw new Error("Charge introuvable.");
+    }
+
+    if (input.action === "removeExpense") {
+      const { data: expense, error } = await supabase.from("expenses").update({ archived_at: new Date().toISOString() }).eq("organization_id", organizationId).eq("id", input.expenseId).is("archived_at", null).select("id").single();
+      ensureNoError(error);
+      if (!expense) throw new Error("Charge introuvable.");
     }
 
     if (input.action === "rescheduleIntervention") {

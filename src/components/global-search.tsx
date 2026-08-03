@@ -50,7 +50,7 @@ export function GlobalSearch() {
           {results.map((result, index) => (
             <Link key={`${result.type}-${result.title}-${index}`} href={result.href} onClick={() => setOpen(false)} className="focus-ring row-interactive flex items-center gap-4 rounded-xl p-3">
               <span className="w-16 text-[10px] font-bold tracking-wider text-brand-400 uppercase">{result.type}</span>
-              <span className="min-w-0"><span className="block truncate text-sm font-semibold text-white">{result.title}</span><span className="block truncate text-xs text-zinc-500">{result.detail}</span></span>
+              <span className="min-w-0"><span className="block truncate text-sm font-semibold text-zinc-200">{result.title}</span><span className="block truncate text-xs text-zinc-500">{result.detail}</span></span>
             </Link>
           ))}
         </div>

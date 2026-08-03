@@ -122,6 +122,8 @@ interface DemoActions {
   addLead: (input: NewLeadInput) => string;
   moveLead: (leadId: string, stage: LeadStage) => void;
   addExpense: (input: NewExpenseInput) => string;
+  updateExpense: (expenseId: string, input: NewExpenseInput) => void;
+  removeExpense: (expenseId: string) => void;
   addAppointment: (input: NewAppointmentInput) => string;
   addPayment: (invoiceId: string, amount: number, method: string) => string;
   addInterventionPayment: (interventionId: string, amount: number, method: string, paidAt: string) => string;
@@ -331,6 +333,38 @@ export const useDemoStore = create<DemoStore>()(
             : state.assets,
         }));
         return expense.id;
+      },
+      updateExpense: (expenseId, input) => {
+        const amountExcludingTax = Math.round(
+          input.amountIncludingTax / (1 + input.vatRateBasisPoints / 10_000),
+        );
+        set((state) => ({
+          expenses: state.expenses.map((expense) => expense.id === expenseId
+            ? {
+                ...expense,
+                date: input.date,
+                family: input.family,
+                category: input.category.trim(),
+                supplier: input.supplier.trim(),
+                description: input.description.trim(),
+                amountIncludingTax: input.amountIncludingTax,
+                amountExcludingTax,
+                vatAmount: input.amountIncludingTax - amountExcludingTax,
+                vatRecoverable: input.family !== "personal",
+                recurrence: input.recurrence,
+                allocatedMonth: input.date.slice(0, 7),
+                paid: input.paid,
+                paidAt: input.paid ? input.date : undefined,
+                paymentMethod: input.paid ? expense.paymentMethod ?? "Carte" : undefined,
+                updatedAt: nowIso(),
+              }
+            : expense),
+        }));
+        persistMutation({ action: "updateExpense", expenseId, ...input, date: input.date.slice(0, 10) });
+      },
+      removeExpense: (expenseId) => {
+        set((state) => ({ expenses: state.expenses.filter((expense) => expense.id !== expenseId) }));
+        persistMutation({ action: "removeExpense", expenseId });
       },
       addAppointment: (input) => {
         const service = input.serviceId ? get().services.find((item) => item.id === input.serviceId) : undefined;

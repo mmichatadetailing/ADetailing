@@ -326,7 +326,7 @@ export function GlobalAdd() {
       <Modal open={open} onClose={close} title="Ajouter" description="Une saisie courte, le reste pourra être complété plus tard.">
         <div className="mb-5 grid grid-cols-2 gap-2 rounded-xl bg-white/[0.035] p-1 sm:grid-cols-4">
           {([['appointment', 'Prestation'], ['lead', 'Demande'], ['client', 'Client'], ['expense', 'Dépense']] as const).map(([value, label]) => (
-            <button key={value} data-active={kind === value} className={`focus-ring tab-interactive rounded-lg px-3 py-2 text-xs font-semibold ${kind === value ? 'bg-white/10 text-white' : 'text-zinc-500'}`} onClick={() => setKind(value)}>{label}</button>
+            <button key={value} data-active={kind === value} className={`focus-ring tab-interactive rounded-lg px-3 py-2 text-xs font-semibold ${kind === value ? 'bg-brand-50 text-brand-700 shadow-sm' : 'text-zinc-500'}`} onClick={() => setKind(value)}>{label}</button>
           ))}
         </div>
         {kind === "appointment" && <AppointmentForm close={close} />}

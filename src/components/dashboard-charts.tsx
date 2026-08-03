@@ -43,16 +43,22 @@ export function DashboardCharts({
   year,
   revenue,
   cashFlow,
+  focusMonth,
+  periodLabel,
 }: {
   year: number;
   revenue: RevenueChartPoint[];
   cashFlow: CashFlowChartPoint[];
+  focusMonth?: string;
+  periodLabel: string;
 }) {
-  const annualRealized = revenue.reduce((sum, item) => sum + item.realized, 0);
-  const annualObjective = revenue.reduce((sum, item) => sum + (item.objective ?? 0), 0);
-  const annualCashFlow = cashFlow.reduce((sum, item) => sum + item.cashFlow, 0);
-  const positiveMonths = cashFlow.filter((item) => item.cashFlow > 0).length;
-  const negativeMonths = cashFlow.filter((item) => item.cashFlow < 0).length;
+  const periodRevenue = focusMonth ? revenue.filter((item) => item.key === focusMonth) : revenue;
+  const periodCashFlow = focusMonth ? cashFlow.filter((item) => item.key === focusMonth) : cashFlow;
+  const annualRealized = periodRevenue.reduce((sum, item) => sum + item.realized, 0);
+  const annualObjective = periodRevenue.reduce((sum, item) => sum + (item.objective ?? 0), 0);
+  const annualCashFlow = periodCashFlow.reduce((sum, item) => sum + item.cashFlow, 0);
+  const positiveMonths = periodCashFlow.filter((item) => item.cashFlow > 0).length;
+  const negativeMonths = periodCashFlow.filter((item) => item.cashFlow < 0).length;
 
   return (
     <section className="grid gap-5 xl:grid-cols-[1.08fr_.92fr]">
@@ -62,19 +68,19 @@ export function DashboardCharts({
             <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-orange-100 text-brand-600 shadow-sm"><Target className="size-[18px]" /></span>
             <div>
               <h2 className="font-bold">Objectif & chiffre d’affaires</h2>
-              <p className="mt-1 text-xs text-zinc-500">CA facturé comparé aux objectifs mensuels renseignés.</p>
+              <p className="mt-1 text-xs text-zinc-500">Exercice {year} complet ; la période analysée est mise en avant.</p>
             </div>
           </div>
-          <Badge variant="orange">Exercice {year}</Badge>
+          <Badge variant="orange">{periodLabel}</Badge>
         </CardHeader>
         <CardContent className="pt-1">
           <div className="mb-5 grid gap-3 rounded-2xl border border-white/8 bg-ink-900/70 p-4 sm:grid-cols-2">
             <div>
-              <p className="text-[10px] font-bold tracking-[.12em] text-zinc-600 uppercase">CA facturé</p>
+              <p className="text-[10px] font-bold tracking-[.12em] text-zinc-600 uppercase">CA facturé · période</p>
               <p className="mt-1 text-xl font-extrabold tracking-tight text-brand-600">{formatMoney(annualRealized)}</p>
             </div>
             <div className="sm:border-l sm:border-white/8 sm:pl-4">
-              <p className="text-[10px] font-bold tracking-[.12em] text-zinc-600 uppercase">Objectifs renseignés</p>
+              <p className="text-[10px] font-bold tracking-[.12em] text-zinc-600 uppercase">Objectif · période</p>
               <p className="mt-1 text-xl font-extrabold tracking-tight">{formatMoney(annualObjective)}</p>
             </div>
           </div>
@@ -101,7 +107,9 @@ export function DashboardCharts({
                     labelStyle={{ color: "#172033", fontWeight: 800, marginBottom: 6 }}
                     formatter={(value, name) => [tooltipMoney(value), name === "realized" ? "CA réalisé" : "Objectif"]}
                   />
-                  <Bar dataKey="realized" name="CA réalisé" fill="url(#dashboardRevenueBar)" radius={[7, 7, 3, 3]} maxBarSize={30} animationDuration={700} />
+                  <Bar dataKey="realized" name="CA réalisé" fill="url(#dashboardRevenueBar)" radius={[7, 7, 3, 3]} maxBarSize={30} animationDuration={700}>
+                    {revenue.map((item) => <Cell key={item.key} fill="url(#dashboardRevenueBar)" opacity={!focusMonth || item.key === focusMonth ? 1 : 0.22} />)}
+                  </Bar>
                   <Line dataKey="objective" name="Objectif" type="monotone" stroke="#7653c6" strokeWidth={2.5} strokeDasharray="6 5" connectNulls={false} dot={{ r: 4, fill: "#ffffff", stroke: "#7653c6", strokeWidth: 2 }} activeDot={{ r: 6, fill: "#7653c6", stroke: "#ffffff", strokeWidth: 3 }} animationDuration={700} />
                 </ComposedChart>
               </ResponsiveContainer>
@@ -116,7 +124,7 @@ export function DashboardCharts({
             <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-emerald-100 text-emerald-700 shadow-sm"><WalletCards className="size-[18px]" /></span>
             <div>
               <h2 className="font-bold">Cash-flow mensuel</h2>
-              <p className="mt-1 text-xs text-zinc-500">Encaissements diminués des dépenses réellement payées.</p>
+              <p className="mt-1 text-xs text-zinc-500">Contexte annuel {year}, avec la période analysée mise en avant.</p>
             </div>
           </div>
           <Badge variant={annualCashFlow >= 0 ? "green" : "red"}>{annualCashFlow >= 0 ? "Positif" : "Négatif"}</Badge>
@@ -125,7 +133,7 @@ export function DashboardCharts({
           <div className="mb-5 rounded-2xl border border-white/8 bg-ink-900/70 p-4">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
-                <p className="text-[10px] font-bold tracking-[.12em] text-zinc-600 uppercase">Solde net de l’exercice</p>
+                <p className="text-[10px] font-bold tracking-[.12em] text-zinc-600 uppercase">Solde net · période</p>
                 <p className={`mt-1 flex items-center gap-1.5 text-xl font-extrabold tracking-tight ${annualCashFlow >= 0 ? "text-emerald-700" : "text-red-600"}`}>
                   {annualCashFlow >= 0 ? <ArrowUpRight className="size-5" /> : <ArrowDownRight className="size-5" />}
                   {formatMoney(annualCashFlow)}
@@ -163,7 +171,7 @@ export function DashboardCharts({
                     formatter={(value) => [tooltipMoney(value), "Cash-flow net"]}
                   />
                   <Bar dataKey="cashFlow" name="Cash-flow net" radius={[7, 7, 7, 7]} maxBarSize={28} animationDuration={700}>
-                    {cashFlow.map((item) => <Cell key={item.key} fill={item.cashFlow >= 0 ? "url(#dashboardCashPositive)" : "url(#dashboardCashNegative)"} />)}
+                    {cashFlow.map((item) => <Cell key={item.key} fill={item.cashFlow >= 0 ? "url(#dashboardCashPositive)" : "url(#dashboardCashNegative)"} opacity={!focusMonth || item.key === focusMonth ? 1 : 0.2} />)}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>

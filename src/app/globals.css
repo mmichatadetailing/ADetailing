@@ -2,7 +2,7 @@
 
 @theme inline {
   --font-sans: "Avenir Next", "Segoe UI Variable", "Segoe UI", Arial, sans-serif;
-  --color-white: #172033;
+  --color-white: #ffffff;
   --color-on-accent: #fffdf9;
   --color-brand-50: #fff7ed;
   --color-brand-100: #ffedd5;
@@ -49,6 +49,14 @@
 * {
   box-sizing: border-box;
   border-color: var(--border);
+}
+
+:where([class*="border-white"]) {
+  border-color: rgba(41, 50, 71, 0.1);
+}
+
+:where([class*="divide-white"]) > :not(:last-child) {
+  border-color: rgba(41, 50, 71, 0.075);
 }
 
 html {

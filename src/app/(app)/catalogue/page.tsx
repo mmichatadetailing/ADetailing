@@ -92,7 +92,7 @@ export default function CataloguePage() {
 
       <div className="-mx-4 overflow-x-auto px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
         <div className="flex w-max gap-1 rounded-xl border border-white/[0.07] bg-white/[0.025] p-1">
-          {tabs.map((item) => <button key={item.id} onClick={() => setTab(item.id)} className={`focus-ring rounded-lg px-3 py-2 text-xs font-semibold transition ${tab === item.id ? "bg-white/[0.085] text-white" : "text-zinc-500 hover:text-zinc-300"}`}>{item.label}</button>)}
+          {tabs.map((item) => <button key={item.id} onClick={() => setTab(item.id)} className={`focus-ring rounded-lg px-3 py-2 text-xs font-semibold transition ${tab === item.id ? "bg-brand-50 text-brand-700 shadow-sm" : "text-zinc-500 hover:text-zinc-300"}`}>{item.label}</button>)}
         </div>
       </div>
 
