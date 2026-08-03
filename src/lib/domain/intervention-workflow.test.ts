@@ -23,4 +23,16 @@ describe("parcours d’une prestation", () => {
     const paid = [...partial, { ...base, id: "payment-2", invoiceId: invoice.id, amount: 8_000, paidAt: "2026-07-03", method: "Virement" }] satisfies Payment[];
     expect(getInterventionWorkflow({ ...intervention, invoiceId: invoice.id }, invoice, paid).isComplete).toBe(true);
   });
+
+  it("permet un encaissement manuel sans facture", () => {
+    const pricedIntervention = { ...intervention, items: [{ id: "line", label: "Formule", quantity: 1, revenueAllocated: 12_000 }] };
+    const partial = [{ ...base, id: "manual-1", interventionId: intervention.id, amount: 4_000, paidAt: "2026-07-02", method: "Carte" }] satisfies Payment[];
+    const partialResult = getInterventionWorkflow(pricedIntervention, undefined, partial);
+    expect(partialResult.currentStep).toBe("payment");
+    expect(partialResult.steps[2]?.detail).toBe("Sans facture");
+    expect(partialResult.outstanding).toBe(8_000);
+
+    const paid = [...partial, { ...base, id: "manual-2", interventionId: intervention.id, amount: 8_000, paidAt: "2026-07-03", method: "Espèces" }] satisfies Payment[];
+    expect(getInterventionWorkflow(pricedIntervention, undefined, paid).isComplete).toBe(true);
+  });
 });

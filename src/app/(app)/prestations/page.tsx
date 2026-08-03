@@ -48,8 +48,8 @@ function PrestationsPageContent() {
     if (!matchesQuery) return false;
     if (filter === "upcoming") return ["to_schedule", "scheduled", "confirmed"].includes(intervention.status);
     if (filter === "in_progress") return intervention.status === "in_progress";
-    if (filter === "to_invoice") return intervention.status === "completed" && !invoice;
-    if (filter === "to_collect") return Boolean(invoice) && !workflow.isComplete;
+    if (filter === "to_invoice") return intervention.status === "completed" && !invoice && workflow.paymentMode !== "manual";
+    if (filter === "to_collect") return (Boolean(invoice) || workflow.paymentMode === "manual") && !workflow.isComplete;
     if (filter === "done") return workflow.isComplete;
     if (filter === "cancelled") return intervention.status === "cancelled";
     return true;
@@ -59,7 +59,7 @@ function PrestationsPageContent() {
     return first.localeCompare(second);
   }), [data.clients, data.vehicles, filter, query, rows]);
 
-  const toInvoice = rows.filter(({ intervention, invoice }) => intervention.status === "completed" && !invoice).length;
+  const toInvoice = rows.filter(({ intervention, invoice, workflow }) => intervention.status === "completed" && !invoice && workflow.paymentMode !== "manual").length;
   const toCollect = rows.reduce((sum, { workflow }) => sum + workflow.outstanding, 0);
   const inProgress = rows.filter(({ intervention }) => intervention.status === "in_progress").length;
   const selected = data.interventions.find((item) => item.id === selectedId);

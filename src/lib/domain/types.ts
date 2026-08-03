@@ -174,7 +174,8 @@ export interface Invoice extends BaseEntity {
 }
 
 export interface Payment extends BaseEntity {
-  invoiceId: UUID;
+  invoiceId?: UUID;
+  interventionId?: UUID;
   amount: Money;
   paidAt: ISODate;
   method: string;

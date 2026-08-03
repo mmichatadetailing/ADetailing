@@ -123,6 +123,7 @@ interface DemoActions {
   addExpense: (input: NewExpenseInput) => string;
   addAppointment: (input: NewAppointmentInput) => string;
   addPayment: (invoiceId: string, amount: number, method: string) => string;
+  addInterventionPayment: (interventionId: string, amount: number, method: string) => string;
   importHenrriDocument: (document: ParsedHenrriDocument, fileName: string) => string;
   linkInvoiceToQuote: (invoiceId: string, quoteId: string) => void;
   linkInvoiceToIntervention: (interventionId: string, invoiceId?: string) => void;
@@ -384,6 +385,24 @@ export const useDemoStore = create<DemoStore>()(
           ],
         }));
         persistMutation({ action: "addPayment", invoiceId, amount, method });
+        return payment.id;
+      },
+      addInterventionPayment: (interventionId, amount, method) => {
+        const payment: Payment = {
+          ...entityBase(),
+          interventionId,
+          amount,
+          paidAt: nowIso(),
+          method,
+        };
+        set((state) => ({
+          payments: [payment, ...state.payments],
+          activities: [
+            activity("payment_added", "Paiement manuel ajouté", `${amount / 100} €`, "intervention", interventionId),
+            ...state.activities,
+          ],
+        }));
+        persistMutation({ action: "addInterventionPayment", interventionId, amount, method });
         return payment.id;
       },
       importHenrriDocument: (document, fileName) => {

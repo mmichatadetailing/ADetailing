@@ -57,6 +57,12 @@ export function paymentsForInvoice(invoiceId: string, payments: Payment[]): Mone
     .reduce((sum, payment) => sum + payment.amount, 0);
 }
 
+export function paymentsForIntervention(interventionId: string, payments: Payment[]): Money {
+  return payments
+    .filter((payment) => payment.interventionId === interventionId)
+    .reduce((sum, payment) => sum + payment.amount, 0);
+}
+
 export function paymentStatusForInvoice(
   invoice: Invoice,
   payments: Payment[],

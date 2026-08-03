@@ -36,6 +36,7 @@ const mutationSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("updateObjective"), month: z.string().regex(/^\d{4}-\d{2}$/), revenueTarget: z.number().int().min(0) }),
   z.object({ action: z.literal("mergeClients"), primaryId: z.uuid(), duplicateId: z.uuid() }),
   z.object({ action: z.literal("addPayment"), invoiceId: z.uuid(), amount: z.number().int().positive(), method: z.string().trim().min(2).max(80) }),
+  z.object({ action: z.literal("addInterventionPayment"), interventionId: z.uuid(), amount: z.number().int().positive(), method: z.string().trim().min(2).max(80) }),
   z.object({ action: z.literal("linkInvoiceToIntervention"), interventionId: z.uuid(), invoiceId: z.uuid().nullable() }),
   z.object({ action: z.literal("linkInvoiceToQuote"), invoiceId: z.uuid(), quoteId: z.uuid() }),
   z.object({ action: z.literal("importHenrriDocument"), fileName: z.string().trim().min(1).max(255), document: z.object({
@@ -235,11 +236,34 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, id: data.id });
     }
 
+    if (input.action === "addInterventionPayment") {
+      const { data: intervention, error: interventionError } = await supabase.from("interventions").select("id,status,invoice_id").eq("organization_id", organizationId).eq("id", input.interventionId).single();
+      ensureNoError(interventionError);
+      if (!intervention) throw new Error("Prestation introuvable.");
+      if (intervention.status !== "completed") throw new Error("La prestation doit être terminée avant d’enregistrer son paiement.");
+      if (intervention.invoice_id) throw new Error("Cette prestation possède déjà une facture : enregistrez le paiement sur la facture.");
+      const { data: items, error: itemsError } = await supabase.from("intervention_items").select("revenue_allocated_cents").eq("organization_id", organizationId).eq("intervention_id", input.interventionId);
+      ensureNoError(itemsError);
+      const total = items?.reduce((sum, item) => sum + Number(item.revenue_allocated_cents), 0) ?? 0;
+      if (total <= 0) throw new Error("Renseignez le montant de la prestation avant de valider son paiement.");
+      const { data: payments, error: paymentsError } = await supabase.from("payments").select("amount_cents").eq("organization_id", organizationId).eq("intervention_id", input.interventionId);
+      ensureNoError(paymentsError);
+      const alreadyPaid = payments?.reduce((sum, payment) => sum + Number(payment.amount_cents), 0) ?? 0;
+      if (alreadyPaid + input.amount > total) throw new Error("Le paiement dépasse le solde restant de la prestation.");
+      const { data, error } = await supabase.from("payments").insert({ organization_id: organizationId, location_id: locationId, invoice_id: null, intervention_id: input.interventionId, amount_cents: input.amount, paid_at: new Date().toISOString(), method: input.method, created_by: userId }).select("id").single();
+      ensureNoError(error);
+      if (!data) throw new Error("Paiement introuvable après création.");
+      return NextResponse.json({ ok: true, id: data.id });
+    }
+
     if (input.action === "linkInvoiceToIntervention") {
       const { data: intervention, error: interventionError } = await supabase.from("interventions").select("id,client_id").eq("organization_id", organizationId).eq("id", input.interventionId).single();
       ensureNoError(interventionError);
       if (!intervention) throw new Error("Prestation introuvable.");
       if (input.invoiceId) {
+        const { data: directPayment, error: directPaymentError } = await supabase.from("payments").select("id").eq("organization_id", organizationId).eq("intervention_id", input.interventionId).limit(1).maybeSingle();
+        ensureNoError(directPaymentError);
+        if (directPayment) throw new Error("Cette prestation possède déjà un paiement manuel et ne peut plus être liée à une facture.");
         const { data: invoice, error: invoiceError } = await supabase.from("invoices").select("id,client_id").eq("organization_id", organizationId).eq("id", input.invoiceId).single();
         ensureNoError(invoiceError);
         if (!invoice || invoice.client_id !== intervention.client_id) throw new Error("Cette facture ne correspond pas au client de la prestation.");

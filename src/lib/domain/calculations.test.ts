@@ -9,6 +9,7 @@ import {
   objectiveProgress,
   occupancyRate,
   paymentStatusForInvoice,
+  paymentsForIntervention,
   paymentsForInvoice,
 } from "./calculations";
 import type { Intervention, Invoice, Lead, MonthlyObjective, Payment } from "./types";
@@ -38,6 +39,10 @@ describe("calculs financiers", () => {
   it("détecte une remise implicite de 10 %", () => expect(inferDiscount(1, 6_900, 6_210)).toEqual({ amount: 690, rateBasisPoints: 1_000, detected: true }));
   it("ignore une remise lorsque le prix brut est nul", () => expect(inferDiscount(0, 10_000, -500)).toEqual({ amount: 0, rateBasisPoints: 0, detected: false }));
   it("additionne plusieurs paiements", () => expect(paymentsForInvoice("f1", [payment("p1", 5_000), payment("p2", 2_000)])).toBe(7_000));
+  it("additionne les paiements manuels d’une prestation sans les mélanger aux factures", () => {
+    const direct = { ...base, id: "direct", interventionId: "i1", amount: 8_000, paidAt: "2026-07-10", method: "Carte" } satisfies Payment;
+    expect(paymentsForIntervention("i1", [payment("invoice", 5_000), direct])).toBe(8_000);
+  });
   it("distingue paiement partiel et facture payée", () => {
     expect(paymentStatusForInvoice(invoice, [payment("p1", 5_000)], new Date("2026-07-10"))).toBe("partial");
     expect(paymentStatusForInvoice(invoice, [payment("p1", 12_000)], new Date("2026-07-10"))).toBe("paid");
