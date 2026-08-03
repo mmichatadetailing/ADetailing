@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
-import { paymentsForInvoice } from "@/lib/domain/calculations";
+import { clientRevenueMetrics } from "@/lib/domain/calculations";
 import type { Client } from "@/lib/domain/types";
 import { useDemoStore } from "@/lib/demo/store";
 import { formatDate, formatMoney, initials, normalizePhone, normalizeText } from "@/lib/utils";
@@ -43,11 +43,7 @@ export default function ClientsPage() {
   }, [data.clients]);
 
   const clientMetrics = (clientId: string) => {
-    const invoices = data.invoices.filter((invoice) => invoice.clientId === clientId);
-    const invoiced = invoices.reduce((sum, invoice) => sum + invoice.totalIncludingTax, 0);
-    const collected = invoices.reduce((sum, invoice) => sum + paymentsForInvoice(invoice.id, data.payments), 0);
-    const interventions = data.interventions.filter((item) => item.clientId === clientId);
-    return { invoices, invoiced, collected, interventions };
+    return clientRevenueMetrics(clientId, data.invoices, data.interventions, data.payments);
   };
 
   return (
@@ -71,7 +67,7 @@ export default function ClientsPage() {
             <button key={client.id} onClick={() => setSelected(client)} className="focus-ring group grid gap-4 rounded-2xl border border-white/[0.07] bg-ink-850/90 p-4 text-left transition hover:-translate-y-0.5 hover:border-white/[0.13] sm:grid-cols-[minmax(240px,1.2fr)_minmax(180px,1fr)_repeat(3,minmax(90px,.45fr))_24px] sm:items-center sm:p-5">
               <div className="flex min-w-0 items-center gap-3"><Avatar label={initials(client.firstName, client.lastName)} color={client.kind === "business" ? "#38bdf8" : owner?.color} /><div className="min-w-0"><div className="flex items-center gap-2"><p className="truncate text-sm font-bold text-zinc-200">{client.company || `${client.firstName} ${client.lastName}`}</p>{client.kind === "business" && <Building2 className="size-3.5 text-sky-400" />}</div><p className="mt-1 truncate text-xs text-zinc-500">{client.email || client.phone} · {client.city}</p></div></div>
               <div className="flex flex-wrap gap-1.5">{vehicles.length ? vehicles.map((vehicle) => <Badge key={vehicle.id}>{vehicle.make} {vehicle.model}</Badge>) : <span className="text-xs text-zinc-600">Aucun véhicule</span>}</div>
-              <div><p className="text-[10px] font-semibold tracking-wider text-zinc-600 uppercase">Facturé</p><p className="mt-1 text-sm font-bold">{formatMoney(metrics.invoiced)}</p></div>
+              <div><p className="text-[10px] font-semibold tracking-wider text-zinc-600 uppercase">Facturé / réalisé</p><p className="mt-1 text-sm font-bold">{formatMoney(metrics.revenue)}</p></div>
               <div><p className="text-[10px] font-semibold tracking-wider text-zinc-600 uppercase">Encaissé</p><p className="mt-1 text-sm font-bold text-emerald-300">{formatMoney(metrics.collected)}</p></div>
               <div><p className="text-[10px] font-semibold tracking-wider text-zinc-600 uppercase">Prestations</p><p className="mt-1 text-sm font-bold">{metrics.interventions.length}</p></div>
               <ChevronRight className="hidden size-4 text-zinc-700 transition group-hover:translate-x-0.5 group-hover:text-zinc-400 sm:block" />
@@ -86,8 +82,8 @@ export default function ClientsPage() {
           const vehicles = data.vehicles.filter((vehicle) => vehicle.clientId === selected.id);
           return <div className="space-y-6">
             <div className="flex flex-wrap gap-2"><a href={`tel:${selected.phone}`}><Button size="sm"><Phone className="size-3.5" /> Appeler</Button></a><a href={`mailto:${selected.email}`}><Button size="sm" variant="secondary"><Mail className="size-3.5" /> E-mail</Button></a></div>
-            <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">{[
-              ["Facturé", formatMoney(metrics.invoiced)], ["Encaissé", formatMoney(metrics.collected)], ["Panier moyen", formatMoney(metrics.invoices.length ? Math.round(metrics.invoiced / metrics.invoices.length) : 0)], ["Prestations", String(metrics.interventions.length)],
+            <section className="grid grid-cols-2 gap-3 sm:grid-cols-3">{[
+              ["Facturé", formatMoney(metrics.invoiced)], ["Réalisé sans facture", formatMoney(metrics.completedRevenue)], ["Total réalisé", formatMoney(metrics.revenue)], ["Encaissé", formatMoney(metrics.collected)], ["Panier moyen", formatMoney(metrics.revenueEntryCount ? Math.round(metrics.revenue / metrics.revenueEntryCount) : 0)], ["Prestations", String(metrics.interventions.length)],
             ].map(([label, value]) => <div key={label} className="rounded-xl border border-white/[0.07] bg-white/[0.025] p-3"><p className="text-[10px] font-semibold tracking-wider text-zinc-600 uppercase">{label}</p><p className="mt-2 text-lg font-bold">{value}</p></div>)}</section>
             <section><h3 className="mb-3 text-sm font-bold">Coordonnées</h3><div className="grid gap-3 rounded-2xl border border-white/[0.07] p-4 text-sm sm:grid-cols-2"><p><span className="block text-xs text-zinc-600">Téléphone</span>{selected.phone}</p><p><span className="block text-xs text-zinc-600">E-mail</span>{selected.email || "—"}</p><p><span className="block text-xs text-zinc-600">Adresse</span>{selected.address || "À compléter"}</p><p><span className="block text-xs text-zinc-600">Acquisition</span>{selected.source}</p></div></section>
             <section><h3 className="mb-3 text-sm font-bold">Véhicules</h3><div className="grid gap-3 sm:grid-cols-2">{vehicles.map((vehicle) => <div key={vehicle.id} className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-4"><div className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-xl bg-orange-400/10 text-orange-300"><Car className="size-4" /></span><div><p className="text-sm font-bold">{vehicle.make} {vehicle.model}</p><p className="text-xs text-zinc-500">{vehicle.registration} · {vehicle.format}</p></div></div></div>)}</div></section>

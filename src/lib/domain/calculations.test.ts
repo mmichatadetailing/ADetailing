@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   actualPersonMinutes,
   calculateVat,
+  clientRevenueMetrics,
   conversionRate,
   grossMargin,
   hourlyMargin,
@@ -46,6 +47,16 @@ describe("calculs financiers", () => {
   it("additionne les paiements manuels d’une prestation sans les mélanger aux factures", () => {
     const direct = { ...base, id: "direct", interventionId: "i1", amount: 8_000, paidAt: "2026-07-10", method: "Carte" } satisfies Payment;
     expect(paymentsForIntervention("i1", [payment("invoice", 5_000), direct])).toBe(8_000);
+  });
+  it("agrège les revenus d'un client avec et sans facture sans double comptage", () => {
+    const linkedIntervention = { ...intervention, invoiceId: invoice.id };
+    const directIntervention = { ...intervention, id: "i2", invoiceId: undefined, items: [{ ...intervention.items[0]!, id: "l2", revenueAllocated: 8_000 }] };
+    const scheduledIntervention = { ...intervention, id: "i3", status: "scheduled" as const, items: [{ ...intervention.items[0]!, id: "l3", revenueAllocated: 5_000 }] };
+    const directPayment = { ...base, id: "direct", interventionId: "i2", amount: 8_000, paidAt: "2026-07-10", method: "Carte" } satisfies Payment;
+    const metrics = clientRevenueMetrics("c1", [invoice], [linkedIntervention, directIntervention, scheduledIntervention], [payment("invoice", 5_000), directPayment]);
+    expect(metrics.revenue).toBe(20_000);
+    expect(metrics.collected).toBe(13_000);
+    expect(metrics.revenueEntryCount).toBe(2);
   });
   it("distingue paiement partiel et facture payée", () => {
     expect(paymentStatusForInvoice(invoice, [payment("p1", 5_000)], new Date("2026-07-10"))).toBe("partial");

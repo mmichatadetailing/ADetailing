@@ -13,10 +13,11 @@ import { Field, Input, Select } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { Progress } from "@/components/ui/progress";
 import type { MemberRole } from "@/lib/domain/types";
+import { memberRoleDisplayLabel, memberRoleDisplayVariant } from "@/lib/domain/member-roles";
 import { useDemoStore } from "@/lib/demo/store";
 import { formatDate } from "@/lib/utils";
 
-const roleLabels: Record<MemberRole, string> = { admin: "Administrateur", partner: "Associé", employee: "Collaborateur" };
+const invitationRoleLabels: Record<Exclude<MemberRole, "admin">, string> = { partner: "Associé", employee: "Collaborateur" };
 
 function formatHours(minutes: number) {
   return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(minutes / 60);
@@ -201,7 +202,7 @@ export default function TeamPage() {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-bold">{`${invitation.firstName} ${invitation.lastName}`.trim() || "Invitation en attente"}</p>
                   <p className="mt-1 truncate text-xs text-zinc-600">{invitation.email}</p>
-                  <p className="mt-1 text-[10px] text-zinc-500">{roleLabels[invitation.role]} · {formatHours(invitation.weeklyCapacityMinutes)} h/semaine · expire le {formatDate(invitation.expiresAt)}</p>
+                  <p className="mt-1 text-[10px] text-zinc-500">{invitationRoleLabels[invitation.role]} · {formatHours(invitation.weeklyCapacityMinutes)} h/semaine · expire le {formatDate(invitation.expiresAt)}</p>
                 </div>
                 <Button size="sm" variant="ghost" disabled={busy === invitation.id} onClick={() => void revokeInvitation(invitation.id)}><Trash2 className="size-3.5" /> Révoquer</Button>
               </div>
@@ -225,7 +226,7 @@ export default function TeamPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-sm font-bold">{member.firstName} {member.lastName}</p>
-                      <Badge variant={member.role === "admin" ? "orange" : member.role === "partner" ? "blue" : "neutral"}>{roleLabels[member.role]}</Badge>
+                      <Badge variant={memberRoleDisplayVariant(member.role)}>{memberRoleDisplayLabel(member.role)}</Badge>
                       {member.id === workspace?.userId && <Badge variant="green">Vous</Badge>}
                       {pendingAccount && <Badge variant="blue">Compte à activer</Badge>}
                       {!member.active && <Badge variant="red">Inactif</Badge>}

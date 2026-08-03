@@ -134,6 +134,41 @@ export function paymentsForIntervention(interventionId: string, payments: Paymen
     .reduce((sum, payment) => sum + payment.amount, 0);
 }
 
+export function clientRevenueMetrics(
+  clientId: string,
+  invoices: Invoice[],
+  interventions: Intervention[],
+  payments: Payment[],
+) {
+  const clientInvoices = invoices.filter((invoice) => invoice.clientId === clientId);
+  const issuedInvoices = clientInvoices.filter((invoice) => invoice.status === "issued");
+  const issuedInvoiceIds = new Set(issuedInvoices.map((invoice) => invoice.id));
+  const clientInterventions = interventions.filter((intervention) => intervention.clientId === clientId);
+  const completedWithoutIssuedInvoice = clientInterventions.filter(
+    (intervention) => intervention.status === "completed" && (!intervention.invoiceId || !issuedInvoiceIds.has(intervention.invoiceId)),
+  );
+  const invoiced = issuedInvoices.reduce((sum, invoice) => sum + invoice.totalIncludingTax, 0);
+  const completedRevenue = completedWithoutIssuedInvoice.reduce(
+    (sum, intervention) => sum + intervention.items.reduce((itemSum, item) => itemSum + item.revenueAllocated, 0),
+    0,
+  );
+  const clientInvoiceIds = new Set(clientInvoices.map((invoice) => invoice.id));
+  const clientInterventionIds = new Set(clientInterventions.map((intervention) => intervention.id));
+  const collected = payments
+    .filter((payment) => (payment.invoiceId && clientInvoiceIds.has(payment.invoiceId)) || (payment.interventionId && clientInterventionIds.has(payment.interventionId)))
+    .reduce((sum, payment) => sum + payment.amount, 0);
+
+  return {
+    invoices: clientInvoices,
+    interventions: clientInterventions,
+    invoiced,
+    completedRevenue,
+    revenue: invoiced + completedRevenue,
+    collected,
+    revenueEntryCount: issuedInvoices.length + completedWithoutIssuedInvoice.length,
+  };
+}
+
 export function paymentStatusForInvoice(
   invoice: Invoice,
   payments: Payment[],
