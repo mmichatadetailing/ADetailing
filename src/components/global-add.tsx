@@ -146,10 +146,10 @@ function AppointmentForm({ close }: { close: () => void }) {
   const activeServices = data.services.filter((service) => service.active && !service.archivedAt);
   const initialClient = data.clients[0];
   const initialVehicle = data.vehicles.find((vehicle) => vehicle.clientId === initialClient?.id);
-  const initialService = activeServices[0];
   const [clientId, setClientId] = useState(initialClient?.id ?? "");
   const [vehicleId, setVehicleId] = useState(initialVehicle?.id ?? "");
-  const [serviceId, setServiceId] = useState(initialService?.id ?? "");
+  const [serviceId, setServiceId] = useState("");
+  const [serviceLabel, setServiceLabel] = useState("");
   const [date, setDate] = useState(() => {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -157,8 +157,8 @@ function AppointmentForm({ close }: { close: () => void }) {
   });
   const [time, setTime] = useState("09:00");
   const [completed, setCompleted] = useState(false);
-  const [durationHours, setDurationHours] = useState((initialService?.targetDurationMinutes ?? 120) / 60);
-  const [priceEuros, setPriceEuros] = useState((initialService?.prices[0]?.amount ?? 0) / 100);
+  const [durationHours, setDurationHours] = useState(2);
+  const [priceEuros, setPriceEuros] = useState(0);
   const [address, setAddress] = useState(initialClient ? [initialClient.address, initialClient.postalCode, initialClient.city].filter(Boolean).join(" ") : "");
   const [workerIds, setWorkerIds] = useState<string[]>(activeTeam[0]?.id ? [activeTeam[0].id] : []);
   const [submitting, setSubmitting] = useState(false);
@@ -175,31 +175,35 @@ function AppointmentForm({ close }: { close: () => void }) {
     const vehicle = data.vehicles.find((item) => item.clientId === nextClientId);
     setClientId(nextClientId);
     setVehicleId(vehicle?.id ?? "");
-    setPriceEuros(priceFor(serviceId, vehicle?.id ?? ""));
+    if (serviceId) setPriceEuros(priceFor(serviceId, vehicle?.id ?? ""));
     setAddress(client ? [client.address, client.postalCode, client.city].filter(Boolean).join(" ") : "");
   };
 
   const chooseVehicle = (nextVehicleId: string) => {
     setVehicleId(nextVehicleId);
-    setPriceEuros(priceFor(serviceId, nextVehicleId));
+    if (serviceId) setPriceEuros(priceFor(serviceId, nextVehicleId));
   };
 
-  const chooseService = (nextServiceId: string) => {
-    const service = activeServices.find((item) => item.id === nextServiceId);
-    setServiceId(nextServiceId);
-    setDurationHours((service?.targetDurationMinutes ?? 120) / 60);
-    setPriceEuros(priceFor(nextServiceId, vehicleId));
+  const chooseServiceLabel = (nextLabel: string) => {
+    setServiceLabel(nextLabel);
+    const normalizedLabel = nextLabel.trim().toLocaleLowerCase("fr-FR");
+    const service = activeServices.find((item) => item.name.trim().toLocaleLowerCase("fr-FR") === normalizedLabel);
+    setServiceId(service?.id ?? "");
+    if (service) {
+      setDurationHours(service.targetDurationMinutes / 60);
+      setPriceEuros(priceFor(service.id, vehicleId));
+    }
   };
 
   const submit = async () => {
-    const service = activeServices.find((item) => item.id === serviceId);
+    const title = serviceLabel.trim();
     if (!clientId) return toast.error("Sélectionnez un client");
     if (!vehicleId) return toast.error("Ajoutez ou sélectionnez un véhicule pour ce client");
-    if (!service) return toast.error("Sélectionnez une prestation");
+    if (title.length < 2) return toast.error("Indiquez la formule ou la prestation réalisée");
     if (workerIds.length === 0) return toast.error("Affectez au moins un collaborateur");
     if (!date || !time || !Number.isFinite(durationHours) || durationHours <= 0) return toast.error("Le créneau est incomplet");
     const startAt = new Date(`${date}T${time}`).toISOString();
-    const input = { clientId, vehicleId, serviceId, title: service.name, startAt, plannedDurationMinutes: Math.round(durationHours * 60), workerIds, address, revenueAllocated: Math.round(priceEuros * 100), completed };
+    const input = { clientId, vehicleId, serviceId: serviceId || undefined, title, startAt, plannedDurationMinutes: Math.round(durationHours * 60), workerIds, address, revenueAllocated: Math.round(priceEuros * 100), completed };
     setSubmitting(true);
     try {
       const id = mode === "supabase" ? await createRecord({ kind: "appointment", ...input }) : addAppointment(input);
@@ -227,7 +231,13 @@ function AppointmentForm({ close }: { close: () => void }) {
         <Field label="Véhicule"><Select value={vehicleId} onChange={(event) => chooseVehicle(event.target.value)}><option value="">Sélectionner…</option>{clientVehicles.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.make} {vehicle.model} · {vehicle.registration || "sans immatriculation"}</option>)}</Select></Field>
       </div>
       <div className="grid gap-4 sm:grid-cols-[1.35fr_.65fr]">
-        <Field label="Prestation"><Select value={serviceId} onChange={(event) => chooseService(event.target.value)}><option value="">Sélectionner…</option>{activeServices.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}</Select></Field>
+        <Field label="Formule ou prestation" hint={serviceId ? "Prestation du catalogue reconnue : durée et tarif préremplis." : "Saisie libre : écrivez n’importe quel intitulé."}>
+          <div className="grid gap-2">
+            <Input list="adetailing-service-options" value={serviceLabel} onChange={(event) => chooseServiceLabel(event.target.value)} placeholder="Ex. Formule Premium ou nettoyage ponctuel" autoComplete="off" />
+            <datalist id="adetailing-service-options">{activeServices.map((service) => <option key={service.id} value={service.name} />)}</datalist>
+            {activeServices.length > 0 && <div className="flex flex-wrap gap-1.5" aria-label="Prestations enregistrées">{activeServices.slice(0, 5).map((service) => <button key={service.id} type="button" onClick={() => chooseServiceLabel(service.name)} className={`focus-ring rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition ${serviceId === service.id ? "border-brand-300 bg-brand-50 text-brand-700" : "border-zinc-200 bg-white text-zinc-500 hover:border-brand-200 hover:text-brand-700"}`}>{service.name}</button>)}</div>}
+          </div>
+        </Field>
         <Field label="Montant prévu (€)"><Input min="0" step="0.01" type="number" value={priceEuros} onChange={(event) => setPriceEuros(Number(event.target.value))} /></Field>
       </div>
       <div className="grid gap-4 sm:grid-cols-3">
