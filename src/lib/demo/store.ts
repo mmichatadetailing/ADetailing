@@ -123,7 +123,8 @@ interface DemoActions {
   addExpense: (input: NewExpenseInput) => string;
   addAppointment: (input: NewAppointmentInput) => string;
   addPayment: (invoiceId: string, amount: number, method: string) => string;
-  addInterventionPayment: (interventionId: string, amount: number, method: string) => string;
+  addInterventionPayment: (interventionId: string, amount: number, method: string, paidAt: string) => string;
+  updateInterventionPayment: (paymentId: string, input: { amount: number; method: string; paidAt: string }) => void;
   importHenrriDocument: (document: ParsedHenrriDocument, fileName: string) => string;
   linkInvoiceToQuote: (invoiceId: string, quoteId: string) => void;
   linkInvoiceToIntervention: (interventionId: string, invoiceId?: string) => void;
@@ -387,12 +388,12 @@ export const useDemoStore = create<DemoStore>()(
         persistMutation({ action: "addPayment", invoiceId, amount, method });
         return payment.id;
       },
-      addInterventionPayment: (interventionId, amount, method) => {
+      addInterventionPayment: (interventionId, amount, method, paidAt) => {
         const payment: Payment = {
           ...entityBase(),
           interventionId,
           amount,
-          paidAt: nowIso(),
+          paidAt,
           method,
         };
         set((state) => ({
@@ -402,8 +403,20 @@ export const useDemoStore = create<DemoStore>()(
             ...state.activities,
           ],
         }));
-        persistMutation({ action: "addInterventionPayment", interventionId, amount, method });
+        persistMutation({ action: "addInterventionPayment", interventionId, amount, method, paidAt });
         return payment.id;
+      },
+      updateInterventionPayment: (paymentId, input) => {
+        const currentPayment = get().payments.find((payment) => payment.id === paymentId && payment.interventionId);
+        if (!currentPayment) return;
+        set((state) => ({
+          payments: state.payments.map((payment) => payment.id === paymentId ? { ...payment, amount: input.amount, method: input.method, paidAt: input.paidAt, updatedAt: nowIso() } : payment),
+          activities: [
+            activity("payment_added", "Paiement manuel modifié", `${input.amount / 100} €`, "intervention", currentPayment.interventionId),
+            ...state.activities,
+          ],
+        }));
+        persistMutation({ action: "updateInterventionPayment", paymentId, amount: input.amount, method: input.method, paidAt: input.paidAt });
       },
       importHenrriDocument: (document, fileName) => {
         const displayName = document.company || document.clientName || "Client à vérifier";

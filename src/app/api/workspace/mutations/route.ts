@@ -36,7 +36,8 @@ const mutationSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("updateObjective"), month: z.string().regex(/^\d{4}-\d{2}$/), revenueTarget: z.number().int().min(0) }),
   z.object({ action: z.literal("mergeClients"), primaryId: z.uuid(), duplicateId: z.uuid() }),
   z.object({ action: z.literal("addPayment"), invoiceId: z.uuid(), amount: z.number().int().positive(), method: z.string().trim().min(2).max(80) }),
-  z.object({ action: z.literal("addInterventionPayment"), interventionId: z.uuid(), amount: z.number().int().positive(), method: z.string().trim().min(2).max(80) }),
+  z.object({ action: z.literal("addInterventionPayment"), interventionId: z.uuid(), amount: z.number().int().positive(), method: z.string().trim().min(2).max(80), paidAt: z.iso.datetime() }),
+  z.object({ action: z.literal("updateInterventionPayment"), paymentId: z.uuid(), amount: z.number().int().positive(), method: z.string().trim().min(2).max(80), paidAt: z.iso.datetime() }),
   z.object({ action: z.literal("linkInvoiceToIntervention"), interventionId: z.uuid(), invoiceId: z.uuid().nullable() }),
   z.object({ action: z.literal("linkInvoiceToQuote"), invoiceId: z.uuid(), quoteId: z.uuid() }),
   z.object({ action: z.literal("importHenrriDocument"), fileName: z.string().trim().min(1).max(255), document: z.object({
@@ -237,6 +238,7 @@ export async function POST(request: Request) {
     }
 
     if (input.action === "addInterventionPayment") {
+      if (new Date(input.paidAt).getTime() > Date.now()) throw new Error("La date du paiement ne peut pas être dans le futur.");
       const { data: intervention, error: interventionError } = await supabase.from("interventions").select("id,status,invoice_id").eq("organization_id", organizationId).eq("id", input.interventionId).single();
       ensureNoError(interventionError);
       if (!intervention) throw new Error("Prestation introuvable.");
@@ -250,10 +252,27 @@ export async function POST(request: Request) {
       ensureNoError(paymentsError);
       const alreadyPaid = payments?.reduce((sum, payment) => sum + Number(payment.amount_cents), 0) ?? 0;
       if (alreadyPaid + input.amount > total) throw new Error("Le paiement dépasse le solde restant de la prestation.");
-      const { data, error } = await supabase.from("payments").insert({ organization_id: organizationId, location_id: locationId, invoice_id: null, intervention_id: input.interventionId, amount_cents: input.amount, paid_at: new Date().toISOString(), method: input.method, created_by: userId }).select("id").single();
+      const { data, error } = await supabase.from("payments").insert({ organization_id: organizationId, location_id: locationId, invoice_id: null, intervention_id: input.interventionId, amount_cents: input.amount, paid_at: input.paidAt, method: input.method, created_by: userId }).select("id").single();
       ensureNoError(error);
       if (!data) throw new Error("Paiement introuvable après création.");
       return NextResponse.json({ ok: true, id: data.id });
+    }
+
+    if (input.action === "updateInterventionPayment") {
+      if (new Date(input.paidAt).getTime() > Date.now()) throw new Error("La date du paiement ne peut pas être dans le futur.");
+      const { data: payment, error: paymentError } = await supabase.from("payments").select("id,intervention_id").eq("organization_id", organizationId).eq("id", input.paymentId).single();
+      ensureNoError(paymentError);
+      if (!payment?.intervention_id) throw new Error("Paiement manuel introuvable.");
+      const { data: items, error: itemsError } = await supabase.from("intervention_items").select("revenue_allocated_cents").eq("organization_id", organizationId).eq("intervention_id", payment.intervention_id);
+      ensureNoError(itemsError);
+      const total = items?.reduce((sum, item) => sum + Number(item.revenue_allocated_cents), 0) ?? 0;
+      const { data: otherPayments, error: otherPaymentsError } = await supabase.from("payments").select("amount_cents").eq("organization_id", organizationId).eq("intervention_id", payment.intervention_id).neq("id", input.paymentId);
+      ensureNoError(otherPaymentsError);
+      const paidExcludingCurrent = otherPayments?.reduce((sum, item) => sum + Number(item.amount_cents), 0) ?? 0;
+      if (paidExcludingCurrent + input.amount > total) throw new Error("Le paiement dépasse le montant total de la prestation.");
+      const { error } = await supabase.from("payments").update({ amount_cents: input.amount, method: input.method, paid_at: input.paidAt }).eq("organization_id", organizationId).eq("id", input.paymentId);
+      ensureNoError(error);
+      return NextResponse.json({ ok: true, id: input.paymentId });
     }
 
     if (input.action === "linkInvoiceToIntervention") {

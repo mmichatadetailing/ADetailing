@@ -46,6 +46,15 @@ function localDateParts(value?: string) {
   return { date: local.slice(0, 10), time: local.slice(11, 16) };
 }
 
+function todayDateValue() {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+}
+
+function paymentTimestamp(date: string) {
+  return date === todayDateValue() ? new Date().toISOString() : new Date(`${date}T12:00:00`).toISOString();
+}
+
 function hours(minutes: number) {
   return new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 2 }).format(minutes / 60);
 }
@@ -83,6 +92,11 @@ export function InterventionDetail({ interventionId, startEditing = false }: { i
   const [invoiceChoice, setInvoiceChoice] = useState("");
   const [paymentEuros, setPaymentEuros] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState("Carte");
+  const [paymentDate, setPaymentDate] = useState(todayDateValue);
+  const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null);
+  const [editingPaymentEuros, setEditingPaymentEuros] = useState(0);
+  const [editingPaymentMethod, setEditingPaymentMethod] = useState("Carte");
+  const [editingPaymentDate, setEditingPaymentDate] = useState(todayDateValue);
 
   if (!current) return <p className="rounded-2xl border border-dashed border-zinc-200 p-8 text-center text-sm text-zinc-500">Cette prestation n’existe plus ou n’est pas accessible.</p>;
 
@@ -177,9 +191,28 @@ export function InterventionDetail({ interventionId, startEditing = false }: { i
     const amount = paymentEuros > 0 ? paymentEuros : manualOutstanding / 100;
     if (amount <= 0) return toast.error("Saisissez le montant reçu");
     if (Math.round(amount * 100) > manualOutstanding) return toast.error("Le paiement dépasse le solde restant");
-    data.addInterventionPayment(current.id, Math.round(amount * 100), paymentMethod);
+    if (!paymentDate) return toast.error("Sélectionnez la date du paiement");
+    data.addInterventionPayment(current.id, Math.round(amount * 100), paymentMethod, paymentTimestamp(paymentDate));
     setPaymentEuros(0);
     toast.success("Paiement manuel enregistré — aucune facture n’est requise");
+  };
+
+  const editManualPayment = (paymentId: string) => {
+    const payment = directPayments.find((item) => item.id === paymentId);
+    if (!payment) return;
+    setEditingPaymentId(payment.id);
+    setEditingPaymentEuros(payment.amount / 100);
+    setEditingPaymentMethod(payment.method);
+    setEditingPaymentDate(localDateParts(payment.paidAt).date);
+  };
+
+  const saveManualPayment = () => {
+    if (!editingPaymentId || !editingPaymentDate || editingPaymentEuros <= 0) return toast.error("Vérifiez le paiement");
+    const otherPayments = directPayments.filter((payment) => payment.id !== editingPaymentId).reduce((sum, payment) => sum + payment.amount, 0);
+    if (otherPayments + Math.round(editingPaymentEuros * 100) > interventionTotal) return toast.error("Le paiement dépasse le montant total de la prestation");
+    data.updateInterventionPayment(editingPaymentId, { amount: Math.round(editingPaymentEuros * 100), method: editingPaymentMethod, paidAt: paymentTimestamp(editingPaymentDate) });
+    setEditingPaymentId(null);
+    toast.success("Paiement mis à jour");
   };
 
   return (
@@ -249,9 +282,9 @@ export function InterventionDetail({ interventionId, startEditing = false }: { i
           <div className="mt-5 grid gap-4">
             {directPayments.length > 0 && <div className="grid gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 sm:grid-cols-3"><div><p className="text-[10px] font-bold text-emerald-700 uppercase">Mode</p><p className="mt-1 text-sm font-bold">Paiement manuel</p></div><div><p className="text-[10px] font-bold text-emerald-700 uppercase">Encaissé</p><p className="mt-1 text-sm font-bold text-emerald-800">{formatMoney(workflow.paidAmount)}</p></div><div><p className="text-[10px] font-bold text-emerald-700 uppercase">Reste</p><p className="mt-1 text-sm font-bold">{formatMoney(workflow.outstanding)}</p></div></div>}
 
-            {(directPayments.length === 0 || workflow.outstanding > 0) && <div className="rounded-2xl border border-emerald-200 bg-ink-900 p-4"><div className="mb-4"><p className="flex items-center gap-2 text-sm font-bold text-emerald-800"><CircleDollarSign className="size-4" /> Valider un paiement sans facture</p><p className="mt-1 text-xs text-zinc-500">Le montant sera comptabilisé dans le chiffre d’affaires encaissé et la trésorerie.</p></div><div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]"><Field label="Montant reçu (€)"><Input min="0.01" max={(directPayments.length > 0 ? workflow.outstanding : interventionTotal) / 100} step="0.01" type="number" value={paymentEuros || (directPayments.length > 0 ? workflow.outstanding : interventionTotal) / 100} onChange={(event) => setPaymentEuros(Number(event.target.value))} /></Field><Field label="Moyen de paiement"><Select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option>Carte</option><option>Virement</option><option>Espèces</option><option>Chèque</option></Select></Field><Button className="self-end" disabled={interventionTotal <= 0} onClick={addManualPayment}><CheckCircle2 className="size-4" /> Valider le paiement</Button></div>{interventionTotal <= 0 && <p className="mt-3 text-xs font-semibold text-red-600">Renseignez d’abord un montant prévu dans la prestation.</p>}</div>}
+            {(directPayments.length === 0 || workflow.outstanding > 0) && <div className="rounded-2xl border border-emerald-200 bg-ink-900 p-4"><div className="mb-4"><p className="flex items-center gap-2 text-sm font-bold text-emerald-800"><CircleDollarSign className="size-4" /> Valider un paiement sans facture</p><p className="mt-1 text-xs text-zinc-500">Le montant sera comptabilisé dans le chiffre d’affaires encaissé et la trésorerie.</p></div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto]"><Field label="Montant reçu (€)"><Input min="0.01" max={(directPayments.length > 0 ? workflow.outstanding : interventionTotal) / 100} step="0.01" type="number" value={paymentEuros || (directPayments.length > 0 ? workflow.outstanding : interventionTotal) / 100} onChange={(event) => setPaymentEuros(Number(event.target.value))} /></Field><Field label="Moyen de paiement"><Select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option>Carte</option><option>Virement</option><option>Espèces</option><option>Chèque</option></Select></Field><Field label="Date du paiement"><Input type="date" max={todayDateValue()} value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} /></Field><Button className="self-end" disabled={interventionTotal <= 0} onClick={addManualPayment}><CheckCircle2 className="size-4" /> Valider le paiement</Button></div>{interventionTotal <= 0 && <p className="mt-3 text-xs font-semibold text-red-600">Renseignez d’abord un montant prévu dans la prestation.</p>}</div>}
 
-            {directPayments.length > 0 && <div><p className="mb-2 text-xs font-bold">Historique des paiements manuels</p><div className="grid gap-2">{directPayments.map((payment) => <div key={payment.id} className="flex items-center justify-between rounded-xl bg-ink-900 px-4 py-3 text-xs"><span>{formatDate(payment.paidAt)} · {payment.method}</span><strong>{formatMoney(payment.amount)}</strong></div>)}</div></div>}
+            {directPayments.length > 0 && <div><p className="mb-2 text-xs font-bold">Historique des paiements manuels</p><div className="grid gap-2">{directPayments.map((payment) => <div key={payment.id} className="rounded-xl border border-black/[0.06] bg-ink-900 p-3 text-xs"><div className="flex items-center justify-between gap-3"><div className="min-w-0"><p className="truncate font-semibold">{formatDate(payment.paidAt)} · {payment.method}</p><p className="mt-1 text-[10px] text-zinc-500">Paiement manuel</p></div><div className="flex shrink-0 items-center gap-2"><strong className="text-sm">{formatMoney(payment.amount)}</strong><Button size="icon" variant="ghost" className="size-8 min-h-8" aria-label={`Modifier le paiement du ${formatDate(payment.paidAt)}`} onClick={() => editManualPayment(payment.id)}><Pencil className="size-3.5" /></Button></div></div>{editingPaymentId === payment.id && <div className="mt-3 grid gap-3 border-t border-black/[0.06] pt-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto_auto]"><Field label="Montant (€)"><Input min="0.01" step="0.01" type="number" value={editingPaymentEuros} onChange={(event) => setEditingPaymentEuros(Number(event.target.value))} /></Field><Field label="Moyen de paiement"><Select value={editingPaymentMethod} onChange={(event) => setEditingPaymentMethod(event.target.value)}><option>Carte</option><option>Virement</option><option>Espèces</option><option>Chèque</option></Select></Field><Field label="Date du paiement"><Input type="date" max={todayDateValue()} value={editingPaymentDate} onChange={(event) => setEditingPaymentDate(event.target.value)} /></Field><Button className="self-end" onClick={saveManualPayment}><Save className="size-4" /> Enregistrer</Button><Button className="self-end" variant="ghost" onClick={() => setEditingPaymentId(null)}>Annuler</Button></div>}</div>)}</div></div>}
 
             {directPayments.length === 0 && <div className="rounded-2xl border border-dashed border-violet-200 p-4"><p className="mb-3 text-xs font-bold text-violet-700">Ou associer une facture Henrri</p><div className="grid gap-3 sm:grid-cols-[1fr_auto]"><Field label="Facture du client"><Select value={invoiceChoice} onChange={(event) => setInvoiceChoice(event.target.value)}><option value="">Sélectionner une facture importée…</option>{eligibleInvoices.map((item) => <option key={item.id} value={item.id}>{item.number} · {formatMoney(item.totalIncludingTax)} · {formatDate(item.issuedAt)}</option>)}</Select></Field><Button className="self-end" disabled={!invoiceChoice} onClick={linkInvoice}><ReceiptText className="size-4" /> Associer</Button></div><div className="mt-3 flex justify-end"><Link href="/documents?tab=imports"><Button size="sm" variant="ghost"><FileUp className="size-3.5" /> Importer une facture</Button></Link></div></div>}
           </div>
