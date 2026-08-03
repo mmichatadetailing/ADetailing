@@ -167,7 +167,7 @@ function AppointmentForm({ close }: { close: () => void }) {
   const [durationHours, setDurationHours] = useState(2);
   const [priceEuros, setPriceEuros] = useState(0);
   const [address, setAddress] = useState(initialClient ? [initialClient.address, initialClient.postalCode, initialClient.city].filter(Boolean).join(" ") : "");
-  const [workerIds, setWorkerIds] = useState<string[]>(activeTeam[0]?.id ? [activeTeam[0].id] : []);
+  const [workerId, setWorkerId] = useState(activeTeam[0]?.id ?? "");
   const [submitting, setSubmitting] = useState(false);
   const rangeFor = (nextServiceId: string, nextVehicleFormat: string) => {
     const service = activeServices.find((item) => item.id === nextServiceId);
@@ -206,16 +206,16 @@ function AppointmentForm({ close }: { close: () => void }) {
     const title = serviceLabel.trim();
     if (!clientId) return toast.error("Sélectionnez un client");
     if (title.length < 2) return toast.error("Indiquez la formule ou la prestation réalisée");
-    if (workerIds.length === 0) return toast.error("Affectez au moins un collaborateur");
+    if (!workerId) return toast.error("Affectez un collaborateur");
     if (!date || !time || !Number.isFinite(durationHours) || durationHours <= 0) return toast.error("Le créneau est incomplet");
     const startAt = new Date(`${date}T${time}`).toISOString();
-    const input = { clientId, vehicleFormat: vehicleFormat || undefined, serviceId: serviceId || undefined, title, startAt, plannedDurationMinutes: Math.round(durationHours * 60), workerIds, address, revenueAllocated: Math.round(priceEuros * 100), completed };
+    const input = { clientId, vehicleFormat: vehicleFormat || undefined, serviceId: serviceId || undefined, title, startAt, plannedDurationMinutes: Math.round(durationHours * 60), workerIds: [workerId], address, revenueAllocated: Math.round(priceEuros * 100), completed };
     setSubmitting(true);
     try {
       const id = mode === "supabase" ? await createRecord({ kind: "appointment", ...input }) : addAppointment(input);
-      toast.success(completed ? "Prestation effectuée enregistrée" : "Rendez-vous créé et ajouté au planning");
+      toast.success("Prestation créée — complétez les informations puis validez");
       close();
-      router.push(`/prestations?intervention=${id}`);
+      router.push(`/prestations?intervention=${id}&edit=1`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Création du rendez-vous impossible");
     } finally {
@@ -253,8 +253,11 @@ function AppointmentForm({ close }: { close: () => void }) {
         <Field label="Durée prévue (h)"><Input min="0.25" step="0.25" type="number" value={durationHours} onChange={(event) => setDurationHours(Number(event.target.value))} /></Field>
       </div>
       <Field label="Adresse de la prestation"><Input value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Adresse, code postal, ville" /></Field>
-      <Field label="Collaborateurs" hint="Sélectionnez toutes les personnes prévues sur la prestation.">
-        <div className="flex flex-wrap gap-2">{activeTeam.map((member) => { const selected = workerIds.includes(member.id); return <button key={member.id} type="button" aria-pressed={selected} onClick={() => setWorkerIds((ids) => selected ? ids.filter((id) => id !== member.id) : [...ids, member.id])} className={`focus-ring rounded-xl border px-3 py-2 text-xs font-semibold transition ${selected ? "border-brand-300 bg-brand-50 text-brand-700" : "border-zinc-200 bg-white text-zinc-500 hover:border-brand-200"}`}>{member.firstName} {member.lastName}</button>; })}</div>
+      <Field label="Collaborateur" hint="Vous pourrez ajouter d’autres personnes dans l’étape suivante.">
+        <Select value={workerId} onChange={(event) => setWorkerId(event.target.value)}>
+          <option value="">Sélectionner un collaborateur…</option>
+          {activeTeam.map((member) => <option key={member.id} value={member.id}>{member.firstName} {member.lastName}{!member.profileId ? " · compte à activer" : ""}</option>)}
+        </Select>
       </Field>
       <Button onClick={() => void submit()} disabled={submitting}>{completed ? <CheckCircle2 className="size-4" /> : <CalendarPlus2 className="size-4" />} {submitting ? "Création…" : completed ? "Enregistrer la prestation effectuée" : "Créer et ouvrir la prestation"}</Button>
     </div>

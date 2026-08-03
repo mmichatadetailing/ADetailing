@@ -2,7 +2,7 @@
 
 import { CalendarPlus2, CircleDollarSign, Clock3, Pencil, ReceiptText, Search, Sparkles } from "lucide-react";
 import { Suspense, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { InterventionDetail } from "@/components/intervention-detail";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
@@ -30,11 +30,17 @@ const filterLabels: Record<WorkflowFilter, string> = {
 function PrestationsPageContent() {
   const data = useDemoStore();
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const queryInterventionId = searchParams.get("intervention");
+  const queryEdit = searchParams.get("edit") === "1";
   const [filter, setFilter] = useState<WorkflowFilter>("all");
   const [query, setQuery] = useState("");
-  const [selectedOverride, setSelectedOverride] = useState<string | null | undefined>(undefined);
-  const [editOnOpen, setEditOnOpen] = useState(false);
-  const selectedId = selectedOverride === undefined ? searchParams.get("intervention") : selectedOverride;
+  const [selectedOverride, setSelectedOverride] = useState<string | null>(null);
+  const [editOverride, setEditOverride] = useState(false);
+  const [dismissedQueryId, setDismissedQueryId] = useState<string | null>(null);
+  const selectedQueryId = queryInterventionId === dismissedQueryId ? null : queryInterventionId;
+  const selectedId = selectedOverride ?? selectedQueryId;
+  const editOnOpen = selectedOverride ? editOverride : queryEdit;
 
   const rows = useMemo(() => data.interventions.map((intervention) => {
     const invoice = data.invoices.find((item) => item.id === intervention.invoiceId);
@@ -95,7 +101,7 @@ function PrestationsPageContent() {
           const currentStep = workflow.steps.find((step) => step.state === "current");
           return (
             <div key={intervention.id} className="surface-interactive grid grid-cols-[minmax(0,1fr)_auto] overflow-hidden rounded-2xl border border-black/[0.08] bg-ink-900 text-[#172033] shadow-[0_6px_22px_rgba(47,40,72,.06)]">
-              <button onClick={() => { setEditOnOpen(false); setSelectedOverride(intervention.id); }} className="focus-ring grid min-w-0 gap-4 p-4 text-left transition-colors hover:bg-brand-50/40 sm:grid-cols-[minmax(230px,1.3fr)_170px_150px_minmax(180px,.8fr)_auto] sm:items-center sm:p-5">
+              <button onClick={() => { setEditOverride(false); setSelectedOverride(intervention.id); }} className="focus-ring grid min-w-0 gap-4 p-4 text-left transition-colors hover:bg-brand-50/40 sm:grid-cols-[minmax(230px,1.3fr)_170px_150px_minmax(180px,.8fr)_auto] sm:items-center sm:p-5">
                 <div className="min-w-0"><div className="flex items-center gap-2"><p className="truncate text-sm font-bold">{intervention.title}</p>{workflow.isComplete && <CheckMark />}</div><p className="mt-1 truncate text-xs text-zinc-500">{client?.company || `${client?.firstName} ${client?.lastName}`} · {vehicleSummary}</p><div className="mt-3 flex items-center gap-1.5">{workflow.steps.map((step) => <span key={step.id} title={`${step.label} : ${step.detail}`} className={`h-1.5 flex-1 rounded-full ${step.state === "done" ? "bg-emerald-500" : step.state === "current" ? "bg-brand-500" : "bg-slate-200"}`} />)}</div></div>
                 <div><p className="text-[10px] font-bold tracking-wider text-zinc-500 uppercase">Rendez-vous</p><p className="mt-1 text-xs font-semibold">{intervention.startAt ? formatDate(intervention.startAt, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "À planifier"}</p><p className="mt-1 text-[10px] text-zinc-500"><Clock3 className="mr-1 inline size-3" /> {intervention.plannedDurationMinutes / 60} h</p></div>
                 <div><p className="text-[10px] font-bold tracking-wider text-zinc-500 uppercase">Montant prévu</p><p className="mt-1 text-sm font-bold">{formatMoney(intervention.items.reduce((sum, item) => sum + item.revenueAllocated, 0))}</p></div>
@@ -104,7 +110,7 @@ function PrestationsPageContent() {
               </button>
               <button
                 type="button"
-                onClick={() => { setEditOnOpen(true); setSelectedOverride(intervention.id); }}
+                onClick={() => { setEditOverride(true); setSelectedOverride(intervention.id); }}
                 aria-label={`Modifier ${intervention.title}`}
                 title="Modifier"
                 className="focus-ring m-3 grid size-9 place-items-center self-center rounded-xl border border-black/[0.08] bg-zinc-50 text-zinc-500 shadow-sm transition hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700"
@@ -116,7 +122,7 @@ function PrestationsPageContent() {
         })}
       </div>
 
-      <Modal open={Boolean(selectedId)} onClose={() => { setSelectedOverride(null); setEditOnOpen(false); }} title={selected?.title ?? "Dossier prestation"} description="Rendez-vous · réalisation · facture · paiement" className="sm:max-w-5xl">
+      <Modal open={Boolean(selectedId)} onClose={() => { setSelectedOverride(null); setEditOverride(false); setDismissedQueryId(queryInterventionId); router.replace("/prestations", { scroll: false }); }} title={selected?.title ?? "Dossier prestation"} description="Rendez-vous · réalisation · facture · paiement" className="sm:max-w-5xl">
         {selectedId && <InterventionDetail key={`${selectedId}-${editOnOpen ? "edit" : "view"}`} interventionId={selectedId} startEditing={editOnOpen} />}
       </Modal>
     </div>
