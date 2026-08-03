@@ -1,4 +1,5 @@
 import type { Expense, Invoice, MonthlyObjective, Payment } from "./types";
+import { paidExpenseAmountForMonth } from "./calculations";
 
 export interface RevenueChartPoint {
   key: string;
@@ -26,12 +27,14 @@ export function buildDashboardChartData({
   invoices,
   payments,
   expenses,
+  reference = new Date(),
 }: {
   year: number;
   objectives: Array<Pick<MonthlyObjective, "month" | "revenueTarget">>;
   invoices: Array<Pick<Invoice, "issuedAt" | "status" | "totalIncludingTax">>;
   payments: Array<Pick<Payment, "paidAt" | "amount">>;
-  expenses: Array<Pick<Expense, "date" | "paidAt" | "paid" | "amountIncludingTax">>;
+  expenses: Array<Pick<Expense, "date" | "paidAt" | "paid" | "recurrence" | "amountIncludingTax">>;
+  reference?: Date;
 }) {
   const revenue: RevenueChartPoint[] = [];
   const cashFlow: CashFlowChartPoint[] = [];
@@ -46,9 +49,7 @@ export function buildDashboardChartData({
     const receipts = payments
       .filter((payment) => payment.paidAt.slice(0, 7) === key)
       .reduce((sum, payment) => sum + payment.amount, 0);
-    const paidExpenses = expenses
-      .filter((expense) => expense.paid && (expense.paidAt ?? expense.date).slice(0, 7) === key)
-      .reduce((sum, expense) => sum + expense.amountIncludingTax, 0);
+    const paidExpenses = paidExpenseAmountForMonth(expenses, key, reference);
 
     revenue.push({ key, month: label, objective, realized });
     cashFlow.push({ key, month: label, receipts, expenses: paidExpenses, cashFlow: receipts - paidExpenses });

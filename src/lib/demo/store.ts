@@ -68,6 +68,7 @@ export interface NewLeadInput {
 
 export interface NewExpenseInput {
   date: string;
+  recurrence: Expense["recurrence"];
   family: Expense["family"];
   category: string;
   supplier: string;
@@ -125,6 +126,7 @@ interface DemoActions {
   addPayment: (invoiceId: string, amount: number, method: string) => string;
   addInterventionPayment: (interventionId: string, amount: number, method: string, paidAt: string) => string;
   updateInterventionPayment: (paymentId: string, input: { amount: number; method: string; paidAt: string }) => void;
+  removePayment: (paymentId: string) => void;
   importHenrriDocument: (document: ParsedHenrriDocument, fileName: string) => string;
   linkInvoiceToQuote: (invoiceId: string, quoteId: string) => void;
   linkInvoiceToIntervention: (interventionId: string, invoiceId?: string) => void;
@@ -305,7 +307,7 @@ export const useDemoStore = create<DemoStore>()(
           amountExcludingTax,
           vatAmount: input.amountIncludingTax - amountExcludingTax,
           vatRecoverable: input.family !== "personal",
-          recurrence: "one_off",
+          recurrence: input.recurrence,
           allocatedMonth: input.date.slice(0, 7),
           paid: input.paid,
           paidAt: input.paid ? input.date : undefined,
@@ -417,6 +419,26 @@ export const useDemoStore = create<DemoStore>()(
           ],
         }));
         persistMutation({ action: "updateInterventionPayment", paymentId, amount: input.amount, method: input.method, paidAt: input.paidAt });
+      },
+      removePayment: (paymentId) => {
+        const currentPayment = get().payments.find((payment) => payment.id === paymentId);
+        if (!currentPayment) return;
+        const nextPayments = get().payments.filter((payment) => payment.id !== paymentId);
+        const entityType = currentPayment.invoiceId ? "invoice" : "intervention";
+        const entityId = currentPayment.invoiceId ?? currentPayment.interventionId;
+        set((state) => ({
+          payments: nextPayments,
+          invoices: currentPayment.invoiceId
+            ? state.invoices.map((invoice) => invoice.id === currentPayment.invoiceId
+              ? { ...invoice, paymentStatus: paymentStatusForInvoice(invoice, nextPayments), updatedAt: nowIso() }
+              : invoice)
+            : state.invoices,
+          activities: [
+            activity("comment_added", "Paiement annulé", `${currentPayment.amount / 100} € retirés des encaissements`, entityType, entityId),
+            ...state.activities,
+          ],
+        }));
+        persistMutation({ action: "removePayment", paymentId });
       },
       importHenrriDocument: (document, fileName) => {
         const displayName = document.company || document.clientName || "Client à vérifier";

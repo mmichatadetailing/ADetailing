@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { CalendarPlus2, CheckCircle2, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { useDemoStore } from "@/lib/demo/store";
@@ -49,6 +49,7 @@ const clientSchema = z.object({
 
 const expenseSchema = z.object({
   date: z.string().min(1),
+  recurrence: z.enum(["one_off", "monthly", "annual"]),
   family: z.enum(["fixed", "variable", "investment", "personal"]),
   category: z.string().min(2, "Catégorie requise"),
   supplier: z.string().min(2, "Fournisseur requis"),
@@ -267,33 +268,40 @@ function AppointmentForm({ close }: { close: () => void }) {
 function ExpenseForm({ close }: { close: () => void }) {
   const addExpense = useDemoStore((state) => state.addExpense);
   const { mode, createRecord } = useWorkspace();
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<z.infer<typeof expenseSchema>>({
+  const { register, handleSubmit, control, formState: { errors, isSubmitting } } = useForm<z.infer<typeof expenseSchema>>({
     resolver: zodResolver(expenseSchema),
-    defaultValues: { date: new Date().toISOString().slice(0, 10), family: "variable", vatRate: 20, paid: true },
+    defaultValues: { date: new Date().toISOString().slice(0, 10), recurrence: "one_off", family: "variable", vatRate: 20, paid: true },
   });
+  const recurrence = useWatch({ control, name: "recurrence" });
   return (
     <form className="grid gap-4" onSubmit={handleSubmit(async (values) => {
       try {
-        const input = { date: new Date(`${values.date}T12:00:00`).toISOString(), family: values.family, category: values.category, supplier: values.supplier, description: values.description, amountIncludingTax: Math.round(values.amountEuros * 100), vatRateBasisPoints: Math.round(values.vatRate * 100), paid: values.paid };
+        const input = { date: new Date(`${values.date}T12:00:00`).toISOString(), recurrence: values.recurrence, family: values.family, category: values.category, supplier: values.supplier, description: values.description, amountIncludingTax: Math.round(values.amountEuros * 100), vatRateBasisPoints: Math.round(values.vatRate * 100), paid: values.paid };
         if (mode === "supabase") await createRecord({ ...input, kind: "expense", date: values.date }); else addExpense(input);
         toast.success("Dépense enregistrée");
         close();
       } catch (error) { toast.error(error instanceof Error ? error.message : "Enregistrement impossible"); }
     })}>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Date"><Input type="date" {...register("date")} /></Field>
-        <Field label="Famille"><Select {...register("family")}><option value="fixed">Fixe</option><option value="variable">Variable</option><option value="investment">Investissement</option><option value="personal">Personnel</option></Select></Field>
+        <Field label="Fréquence"><Select autoFocus {...register("recurrence")}><option value="one_off">Ponctuelle</option><option value="monthly">Tous les mois</option><option value="annual">Tous les ans</option></Select></Field>
+        <Field label={recurrence === "one_off" ? "Date de la dépense" : "Première échéance"}><Input type="date" {...register("date")} /></Field>
+      </div>
+      <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-xs text-violet-800">
+        {recurrence === "monthly" ? "Le montant sera compté chaque mois à partir de cette date." : recurrence === "annual" ? "Le montant sera compté chaque année, au mois de la première échéance." : "Le montant sera compté une seule fois, à la date indiquée."}
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Famille"><Select {...register("family")}><option value="fixed">Fixe</option><option value="variable">Variable</option><option value="investment">Investissement</option><option value="personal">Personnel</option></Select></Field>
         <Field label="Catégorie" error={errors.category?.message}><Input {...register("category")} /></Field>
-        <Field label="Fournisseur" error={errors.supplier?.message}><Input {...register("supplier")} /></Field>
       </div>
-      <Field label="Description" error={errors.description?.message}><Input {...register("description")} /></Field>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Fournisseur" error={errors.supplier?.message}><Input {...register("supplier")} /></Field>
+        <Field label="Description" error={errors.description?.message}><Input {...register("description")} /></Field>
+      </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Montant TTC (€)" error={errors.amountEuros?.message}><Input type="number" step="0.01" {...register("amountEuros", { valueAsNumber: true })} /></Field>
         <Field label="TVA (%)"><Input type="number" step="0.1" {...register("vatRate", { valueAsNumber: true })} /></Field>
       </div>
-      <label className="flex items-center gap-3 rounded-xl border border-white/[0.07] p-3 text-sm text-zinc-300"><input type="checkbox" className="accent-brand-500" {...register("paid")} /> Dépense déjà payée</label>
+      <label className="flex items-center gap-3 rounded-xl border border-white/[0.07] p-3 text-sm text-zinc-300"><input type="checkbox" className="accent-brand-500" {...register("paid")} /> {recurrence === "one_off" ? "Dépense déjà payée" : "Prélèvement automatique à chaque échéance"}</label>
       <Button type="submit" className="mt-2" disabled={isSubmitting}>{isSubmitting ? "Enregistrement…" : "Enregistrer la dépense"}</Button>
     </form>
   );

@@ -9,6 +9,10 @@ import {
   objectiveProgress,
   occupancyRate,
   paymentStatusForInvoice,
+  expenseOccursInMonth,
+  paidExpenseAmountForMonth,
+  projectedExpenseAmountForMonth,
+  recurringExpenseMetrics,
   paymentsForIntervention,
   paymentsForInvoice,
 } from "./calculations";
@@ -49,6 +53,29 @@ describe("calculs financiers", () => {
   });
   it("ne considère jamais une facture émise comme payée", () => expect(paymentStatusForInvoice(invoice, [], new Date("2026-07-10"))).toBe("unpaid"));
   it("marque en retard uniquement après échéance", () => expect(paymentStatusForInvoice(invoice, [], new Date("2026-07-20"))).toBe("overdue"));
+});
+
+describe("charges récurrentes", () => {
+  const monthly = { date: "2026-02-28T12:00:00.000Z", recurrence: "monthly" as const, amountIncludingTax: 12_000, paid: true };
+  const annual = { date: "2026-03-10T12:00:00.000Z", recurrence: "annual" as const, amountIncludingTax: 24_000, paid: true };
+  const oneOff = { date: "2026-04-15T12:00:00.000Z", recurrence: "one_off" as const, amountIncludingTax: 5_000, paid: false };
+
+  it("projette chaque fréquence uniquement dans les mois concernés", () => {
+    expect(expenseOccursInMonth(monthly, "2026-01")).toBe(false);
+    expect(expenseOccursInMonth(monthly, "2026-04")).toBe(true);
+    expect(expenseOccursInMonth(annual, "2027-03")).toBe(true);
+    expect(expenseOccursInMonth(annual, "2027-04")).toBe(false);
+    expect(projectedExpenseAmountForMonth([monthly, annual, oneOff], "2026-04")).toBe(17_000);
+  });
+
+  it("ne compte un prélèvement automatique qu’une fois son échéance passée", () => {
+    expect(paidExpenseAmountForMonth([monthly], "2026-03", new Date("2026-03-15T12:00:00"))).toBe(0);
+    expect(paidExpenseAmountForMonth([monthly], "2026-03", new Date("2026-03-31T12:00:00"))).toBe(12_000);
+  });
+
+  it("calcule l’équivalent mensuel et l’engagement annuel", () => {
+    expect(recurringExpenseMetrics([monthly, annual, oneOff], "2026-04")).toEqual({ monthly: 12_000, annual: 24_000, monthlyEquivalent: 14_000, annualCommitment: 168_000 });
+  });
 });
 
 describe("indicateurs", () => {

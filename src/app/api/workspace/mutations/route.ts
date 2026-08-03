@@ -38,6 +38,7 @@ const mutationSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("addPayment"), invoiceId: z.uuid(), amount: z.number().int().positive(), method: z.string().trim().min(2).max(80) }),
   z.object({ action: z.literal("addInterventionPayment"), interventionId: z.uuid(), amount: z.number().int().positive(), method: z.string().trim().min(2).max(80), paidAt: z.iso.datetime() }),
   z.object({ action: z.literal("updateInterventionPayment"), paymentId: z.uuid(), amount: z.number().int().positive(), method: z.string().trim().min(2).max(80), paidAt: z.iso.datetime() }),
+  z.object({ action: z.literal("removePayment"), paymentId: z.uuid() }),
   z.object({ action: z.literal("linkInvoiceToIntervention"), interventionId: z.uuid(), invoiceId: z.uuid().nullable() }),
   z.object({ action: z.literal("linkInvoiceToQuote"), invoiceId: z.uuid(), quoteId: z.uuid() }),
   z.object({ action: z.literal("importHenrriDocument"), fileName: z.string().trim().min(1).max(255), document: z.object({
@@ -306,6 +307,15 @@ export async function POST(request: Request) {
       const paidExcludingCurrent = otherPayments?.reduce((sum, item) => sum + Number(item.amount_cents), 0) ?? 0;
       if (paidExcludingCurrent + input.amount > total) throw new Error("Le paiement dépasse le montant total de la prestation.");
       const { error } = await supabase.from("payments").update({ amount_cents: input.amount, method: input.method, paid_at: input.paidAt }).eq("organization_id", organizationId).eq("id", input.paymentId);
+      ensureNoError(error);
+      return NextResponse.json({ ok: true, id: input.paymentId });
+    }
+
+    if (input.action === "removePayment") {
+      const { data: payment, error: paymentError } = await supabase.from("payments").select("id").eq("organization_id", organizationId).eq("id", input.paymentId).single();
+      ensureNoError(paymentError);
+      if (!payment) throw new Error("Paiement introuvable.");
+      const { error } = await supabase.from("payments").delete().eq("organization_id", organizationId).eq("id", input.paymentId);
       ensureNoError(error);
       return NextResponse.json({ ok: true, id: input.paymentId });
     }

@@ -12,7 +12,7 @@ const clientSchema = z.object({
   vehicle: z.object({ make: z.string(), model: z.string(), registration: z.string(), format: z.string() }).optional(),
 });
 const expenseSchema = z.object({
-  kind: z.literal("expense"), date: z.iso.date(), family: z.enum(["fixed", "variable", "investment", "personal"]), category: z.string().min(2), supplier: z.string().min(2), description: z.string().min(2), amountIncludingTax: z.number().positive(), vatRateBasisPoints: z.number().min(0).max(10000), paid: z.boolean(),
+  kind: z.literal("expense"), date: z.iso.date(), recurrence: z.enum(["one_off", "monthly", "annual"]), family: z.enum(["fixed", "variable", "investment", "personal"]), category: z.string().min(2), supplier: z.string().min(2), description: z.string().min(2), amountIncludingTax: z.number().positive(), vatRateBasisPoints: z.number().min(0).max(10000), paid: z.boolean(),
 });
 const appointmentSchema = z.object({
   kind: z.literal("appointment"), clientId: z.uuid(), vehicleFormat: z.enum(["Citadine", "Berline", "SUV", "Monospace", "4x4", "Fourgon", "Autre"]).optional(), serviceId: z.uuid().optional(), title: z.string().trim().min(2).max(160), startAt: z.iso.datetime(), plannedDurationMinutes: z.number().int().min(15).max(1440), workerIds: z.array(z.uuid()).min(1).max(12).refine((ids) => new Set(ids).size === ids.length), address: z.string().trim().max(300), revenueAllocated: z.number().int().min(0), completed: z.boolean(),
@@ -99,7 +99,7 @@ export async function POST(request: Request) {
 
     const excludingTax = Math.round(input.amountIncludingTax / (1 + input.vatRateBasisPoints / 10000));
     const vatAmount = input.amountIncludingTax - excludingTax;
-    const { data, error } = await supabase.from("expenses").insert({ organization_id: organizationId, location_id: locationId, expense_date: input.date, family: input.family, category: input.category.trim(), supplier: input.supplier.trim(), description: input.description.trim(), amount_including_tax_cents: input.amountIncludingTax, amount_excluding_tax_cents: excludingTax, vat_rate_basis_points: input.vatRateBasisPoints, vat_amount_cents: vatAmount, vat_recoverable: input.family !== "personal", recurrence: "one_off", allocated_month: `${input.date.slice(0, 7)}-01`, paid: input.paid, paid_at: input.paid ? new Date().toISOString() : null, created_by: user.id }).select("id").single();
+    const { data, error } = await supabase.from("expenses").insert({ organization_id: organizationId, location_id: locationId, expense_date: input.date, family: input.family, category: input.category.trim(), supplier: input.supplier.trim(), description: input.description.trim(), amount_including_tax_cents: input.amountIncludingTax, amount_excluding_tax_cents: excludingTax, vat_rate_basis_points: input.vatRateBasisPoints, vat_amount_cents: vatAmount, vat_recoverable: input.family !== "personal", recurrence: input.recurrence, allocated_month: `${input.date.slice(0, 7)}-01`, paid: input.paid, paid_at: input.paid ? `${input.date}T12:00:00.000Z` : null, created_by: user.id }).select("id").single();
     if (error) throw error;
     return NextResponse.json({ id: data.id }, { status: 201 });
   } catch (error) {

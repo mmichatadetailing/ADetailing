@@ -12,6 +12,77 @@ import type {
 
 const cents = (value: Decimal.Value): Money => new Decimal(value).toDecimalPlaces(0).toNumber();
 
+type ExpenseSchedule = Pick<Expense, "date" | "recurrence" | "amountIncludingTax" | "paid" | "paidAt">;
+
+function expenseStartParts(expense: ExpenseSchedule) {
+  const date = expense.date.slice(0, 10);
+  return { year: Number(date.slice(0, 4)), month: Number(date.slice(5, 7)), day: Number(date.slice(8, 10)) || 1 };
+}
+
+function monthParts(month: string) {
+  return { year: Number(month.slice(0, 4)), month: Number(month.slice(5, 7)) };
+}
+
+export function expenseOccursInMonth(expense: ExpenseSchedule, month: string): boolean {
+  const startMonth = expense.date.slice(0, 7);
+  if (month < startMonth) return false;
+  if (expense.recurrence === "one_off") return month === startMonth;
+  if (expense.recurrence === "monthly") return true;
+  return month.slice(5, 7) === startMonth.slice(5, 7);
+}
+
+export function expenseOccurrenceDate(expense: ExpenseSchedule, month: string): Date | null {
+  if (!expenseOccursInMonth(expense, month)) return null;
+  const target = monthParts(month);
+  const start = expenseStartParts(expense);
+  const lastDay = new Date(target.year, target.month, 0).getDate();
+  return new Date(target.year, target.month - 1, Math.min(start.day, lastDay), 12, 0, 0, 0);
+}
+
+export function projectedExpensesForMonth<T extends ExpenseSchedule>(expenses: T[], month: string): T[] {
+  return expenses.filter((expense) => expenseOccursInMonth(expense, month));
+}
+
+export function projectedExpenseAmountForMonth(expenses: ExpenseSchedule[], month: string): Money {
+  return projectedExpensesForMonth(expenses, month).reduce((sum, expense) => sum + expense.amountIncludingTax, 0);
+}
+
+export function paidExpenseAmountForMonth(expenses: ExpenseSchedule[], month: string, reference = new Date()): Money {
+  return expenses.reduce((sum, expense) => {
+    if (!expense.paid) return sum;
+    if (expense.recurrence === "one_off") {
+      const paidOn = expense.paidAt ?? expense.date;
+      return paidOn.slice(0, 7) === month && new Date(paidOn).getTime() <= reference.getTime()
+        ? sum + expense.amountIncludingTax
+        : sum;
+    }
+    const occurrence = expenseOccurrenceDate(expense, month);
+    return occurrence && occurrence.getTime() <= reference.getTime() ? sum + expense.amountIncludingTax : sum;
+  }, 0);
+}
+
+export function recurringExpenseMetrics(expenses: ExpenseSchedule[], month: string) {
+  const active = expenses.filter((expense) => expense.recurrence !== "one_off" && expense.date.slice(0, 7) <= month);
+  const monthly = active.filter((expense) => expense.recurrence === "monthly").reduce((sum, expense) => sum + expense.amountIncludingTax, 0);
+  const annual = active.filter((expense) => expense.recurrence === "annual").reduce((sum, expense) => sum + expense.amountIncludingTax, 0);
+  return { monthly, annual, monthlyEquivalent: monthly + Math.round(annual / 12), annualCommitment: monthly * 12 + annual };
+}
+
+function paidRecurringExpenseAmountThrough(expense: ExpenseSchedule, reference: Date): Money {
+  if (!expense.paid || expense.recurrence === "one_off") return 0;
+  const startMonth = expense.date.slice(0, 7);
+  const endMonth = `${reference.getFullYear()}-${String(reference.getMonth() + 1).padStart(2, "0")}`;
+  const cursor = new Date(Number(startMonth.slice(0, 4)), Number(startMonth.slice(5, 7)) - 1, 1, 12);
+  let total = 0;
+  while (`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}` <= endMonth) {
+    const month = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`;
+    const occurrence = expenseOccurrenceDate(expense, month);
+    if (occurrence && occurrence.getTime() <= reference.getTime()) total += expense.amountIncludingTax;
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+  return total;
+}
+
 export function grossMargin(intervention: Intervention): Money {
   const revenue = intervention.items.reduce((sum, item) => sum.plus(item.revenueAllocated), new Decimal(0));
   return cents(
@@ -126,9 +197,12 @@ export function unpaidAmount(invoices: Invoice[], payments: Payment[]): Money {
     );
 }
 
-export function cashBalance(initialCash: Money, payments: Payment[], expenses: Expense[]): Money {
-  const paidExpenses = expenses
-    .filter((expense) => expense.paid)
-    .reduce((sum, expense) => sum + expense.amountIncludingTax, 0);
+export function cashBalance(initialCash: Money, payments: Payment[], expenses: Expense[], reference = new Date()): Money {
+  const paidExpenses = expenses.reduce((sum, expense) => {
+    if (!expense.paid) return sum;
+    if (expense.recurrence !== "one_off") return sum + paidRecurringExpenseAmountThrough(expense, reference);
+    const paidOn = expense.paidAt ?? expense.date;
+    return new Date(paidOn).getTime() <= reference.getTime() ? sum + expense.amountIncludingTax : sum;
+  }, 0);
   return initialCash + collectedRevenue(payments) - paidExpenses;
 }

@@ -103,6 +103,7 @@ export function InterventionDetail({ interventionId, startEditing = false }: { i
   const [editingPaymentEuros, setEditingPaymentEuros] = useState(0);
   const [editingPaymentMethod, setEditingPaymentMethod] = useState("Carte");
   const [editingPaymentDate, setEditingPaymentDate] = useState(todayDateValue);
+  const [confirmingPaymentId, setConfirmingPaymentId] = useState<string | null>(null);
 
   if (!current) return <p className="rounded-2xl border border-dashed border-zinc-200 p-8 text-center text-sm text-zinc-500">Cette prestation n’existe plus ou n’est pas accessible.</p>;
 
@@ -222,6 +223,13 @@ export function InterventionDetail({ interventionId, startEditing = false }: { i
     toast.success("Paiement mis à jour");
   };
 
+  const cancelPayment = (paymentId: string) => {
+    data.removePayment(paymentId);
+    if (editingPaymentId === paymentId) setEditingPaymentId(null);
+    setConfirmingPaymentId(null);
+    toast.success("Paiement annulé — la prestation est de nouveau à encaisser");
+  };
+
   return (
     <div className="space-y-5 text-[#172033]">
       <div className="overflow-x-auto pb-1">
@@ -293,7 +301,35 @@ export function InterventionDetail({ interventionId, startEditing = false }: { i
               <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-100 pt-3 sm:col-span-4"><StatusBadge status={paymentStatusForInvoice(invoice, data.payments)}>{paymentStatusLabels[paymentStatusForInvoice(invoice, data.payments)]}</StatusBadge><button className="text-[10px] font-semibold text-zinc-500 hover:text-red-600" onClick={() => { data.linkInvoiceToIntervention(current.id, undefined); setInvoiceChoice(""); toast.info("Facture dissociée"); }}>Changer de facture</button></div>
             </div>
             {workflow.outstanding > 0 && <div className="grid gap-3 rounded-2xl border border-emerald-200 bg-ink-900 p-4 sm:grid-cols-[1fr_1fr_auto]"><Field label="Montant reçu (€)"><Input min="0.01" max={workflow.outstanding / 100} step="0.01" type="number" value={paymentEuros || workflow.outstanding / 100} onChange={(event) => setPaymentEuros(Number(event.target.value))} /></Field><Field label="Moyen de paiement"><Select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option>Carte</option><option>Virement</option><option>Espèces</option><option>Chèque</option></Select></Field><Button className="self-end" onClick={addPayment}><CircleDollarSign className="size-4" /> Encaisser</Button></div>}
-            {data.payments.some((payment) => payment.invoiceId === invoice.id) && <div><p className="mb-2 text-xs font-bold">Historique des paiements</p><div className="grid gap-2">{data.payments.filter((payment) => payment.invoiceId === invoice.id).map((payment) => <div key={payment.id} className="flex items-center justify-between rounded-xl bg-ink-900 px-4 py-3 text-xs"><span>{formatDate(payment.paidAt)} · {payment.method}</span><strong>{formatMoney(payment.amount)}</strong></div>)}</div></div>}
+            {data.payments.some((payment) => payment.invoiceId === invoice.id) && (
+              <div>
+                <p className="mb-2 text-xs font-bold">Historique des paiements</p>
+                <div className="grid gap-2">
+                  {data.payments.filter((payment) => payment.invoiceId === invoice.id).map((payment) => (
+                    <div key={payment.id} className="rounded-xl border border-black/[0.06] bg-ink-900 px-4 py-3 text-xs">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <span>{formatDate(payment.paidAt)} · {payment.method}</span>
+                        <div className="flex items-center gap-2">
+                          <strong>{formatMoney(payment.amount)}</strong>
+                          <Button size="sm" variant="ghost" onClick={() => setConfirmingPaymentId(payment.id)}>
+                            Marquer non payée
+                          </Button>
+                        </div>
+                      </div>
+                      {confirmingPaymentId === payment.id && (
+                        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-red-200 pt-3">
+                          <p className="text-red-700">Ce paiement sera retiré des encaissements et la facture redeviendra impayée.</p>
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="ghost" onClick={() => setConfirmingPaymentId(null)}>Garder le paiement</Button>
+                            <Button size="sm" variant="danger" onClick={() => cancelPayment(payment.id)}><Trash2 className="size-3.5" /> Confirmer</Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="mt-5 grid gap-4">
@@ -301,7 +337,32 @@ export function InterventionDetail({ interventionId, startEditing = false }: { i
 
             {(directPayments.length === 0 || workflow.outstanding > 0) && <div className="rounded-2xl border border-emerald-200 bg-ink-900 p-4"><div className="mb-4"><p className="flex items-center gap-2 text-sm font-bold text-emerald-800"><CircleDollarSign className="size-4" /> Valider un paiement sans facture</p><p className="mt-1 text-xs text-zinc-500">Le montant sera comptabilisé dans le chiffre d’affaires encaissé et la trésorerie.</p></div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto]"><Field label="Montant reçu (€)"><Input min="0.01" max={(directPayments.length > 0 ? workflow.outstanding : interventionTotal) / 100} step="0.01" type="number" value={paymentEuros || (directPayments.length > 0 ? workflow.outstanding : interventionTotal) / 100} onChange={(event) => setPaymentEuros(Number(event.target.value))} /></Field><Field label="Moyen de paiement"><Select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option>Carte</option><option>Virement</option><option>Espèces</option><option>Chèque</option></Select></Field><Field label="Date du paiement"><Input type="date" max={todayDateValue()} value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} /></Field><Button className="self-end" disabled={interventionTotal <= 0} onClick={addManualPayment}><CheckCircle2 className="size-4" /> Valider le paiement</Button></div>{interventionTotal <= 0 && <p className="mt-3 text-xs font-semibold text-red-600">Renseignez d’abord un montant prévu dans la prestation.</p>}</div>}
 
-            {directPayments.length > 0 && <div><p className="mb-2 text-xs font-bold">Historique des paiements manuels</p><div className="grid gap-2">{directPayments.map((payment) => <div key={payment.id} className="rounded-xl border border-black/[0.06] bg-ink-900 p-3 text-xs"><div className="flex items-center justify-between gap-3"><div className="min-w-0"><p className="truncate font-semibold">{formatDate(payment.paidAt)} · {payment.method}</p><p className="mt-1 text-[10px] text-zinc-500">Paiement manuel</p></div><div className="flex shrink-0 items-center gap-2"><strong className="text-sm">{formatMoney(payment.amount)}</strong><Button size="icon" variant="ghost" className="size-8 min-h-8" aria-label={`Modifier le paiement du ${formatDate(payment.paidAt)}`} onClick={() => editManualPayment(payment.id)}><Pencil className="size-3.5" /></Button></div></div>{editingPaymentId === payment.id && <div className="mt-3 grid gap-3 border-t border-black/[0.06] pt-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto_auto]"><Field label="Montant (€)"><Input min="0.01" step="0.01" type="number" value={editingPaymentEuros} onChange={(event) => setEditingPaymentEuros(Number(event.target.value))} /></Field><Field label="Moyen de paiement"><Select value={editingPaymentMethod} onChange={(event) => setEditingPaymentMethod(event.target.value)}><option>Carte</option><option>Virement</option><option>Espèces</option><option>Chèque</option></Select></Field><Field label="Date du paiement"><Input type="date" max={todayDateValue()} value={editingPaymentDate} onChange={(event) => setEditingPaymentDate(event.target.value)} /></Field><Button className="self-end" onClick={saveManualPayment}><Save className="size-4" /> Enregistrer</Button><Button className="self-end" variant="ghost" onClick={() => setEditingPaymentId(null)}>Annuler</Button></div>}</div>)}</div></div>}
+            {directPayments.length > 0 && (
+              <div>
+                <p className="mb-2 text-xs font-bold">Historique des paiements manuels</p>
+                <div className="grid gap-2">
+                  {directPayments.map((payment) => (
+                    <div key={payment.id} className="rounded-xl border border-black/[0.06] bg-ink-900 p-3 text-xs">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0"><p className="truncate font-semibold">{formatDate(payment.paidAt)} · {payment.method}</p><p className="mt-1 text-[10px] text-zinc-500">Paiement manuel</p></div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <strong className="text-sm">{formatMoney(payment.amount)}</strong>
+                          <Button size="sm" variant="ghost" aria-label={`Modifier le paiement du ${formatDate(payment.paidAt)}`} onClick={() => editManualPayment(payment.id)}><Pencil className="size-3.5" /> Modifier</Button>
+                          <Button size="sm" variant="ghost" className="text-red-600" aria-label={`Marquer non payé le paiement du ${formatDate(payment.paidAt)}`} onClick={() => setConfirmingPaymentId(payment.id)}><Trash2 className="size-3.5" /> Marquer non payée</Button>
+                        </div>
+                      </div>
+                      {editingPaymentId === payment.id && <div className="mt-3 grid gap-3 border-t border-black/[0.06] pt-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto_auto]"><Field label="Montant (€)"><Input min="0.01" step="0.01" type="number" value={editingPaymentEuros} onChange={(event) => setEditingPaymentEuros(Number(event.target.value))} /></Field><Field label="Moyen de paiement"><Select value={editingPaymentMethod} onChange={(event) => setEditingPaymentMethod(event.target.value)}><option>Carte</option><option>Virement</option><option>Espèces</option><option>Chèque</option></Select></Field><Field label="Date du paiement"><Input type="date" max={todayDateValue()} value={editingPaymentDate} onChange={(event) => setEditingPaymentDate(event.target.value)} /></Field><Button className="self-end" onClick={saveManualPayment}><Save className="size-4" /> Enregistrer</Button><Button className="self-end" variant="ghost" onClick={() => setEditingPaymentId(null)}>Annuler</Button></div>}
+                      {confirmingPaymentId === payment.id && (
+                        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-red-200 pt-3">
+                          <p className="text-red-700">Retirer ce paiement et repasser la prestation en « à encaisser » ?</p>
+                          <div className="flex gap-2"><Button size="sm" variant="ghost" onClick={() => setConfirmingPaymentId(null)}>Garder</Button><Button size="sm" variant="danger" onClick={() => cancelPayment(payment.id)}>Confirmer</Button></div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {directPayments.length === 0 && <div className="rounded-2xl border border-dashed border-violet-200 p-4"><p className="mb-3 text-xs font-bold text-violet-700">Ou associer une facture Henrri</p><div className="grid gap-3 sm:grid-cols-[1fr_auto]"><Field label="Facture du client"><Select value={invoiceChoice} onChange={(event) => setInvoiceChoice(event.target.value)}><option value="">Sélectionner une facture importée…</option>{eligibleInvoices.map((item) => <option key={item.id} value={item.id}>{item.number} · {formatMoney(item.totalIncludingTax)} · {formatDate(item.issuedAt)}</option>)}</Select></Field><Button className="self-end" disabled={!invoiceChoice} onClick={linkInvoice}><ReceiptText className="size-4" /> Associer</Button></div><div className="mt-3 flex justify-end"><Link href="/documents?tab=imports"><Button size="sm" variant="ghost"><FileUp className="size-3.5" /> Importer une facture</Button></Link></div></div>}
           </div>
