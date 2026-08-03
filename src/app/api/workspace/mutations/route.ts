@@ -246,15 +246,7 @@ export async function POST(request: Request) {
         throw new Error("Chaque type de véhicule ne peut apparaître qu’une seule fois.");
       }
       if (input.pricingMode === "vehicle_count") {
-        const tiers = [...input.prices].sort((left, right) => (left.minimumVehicleCount ?? 0) - (right.minimumVehicleCount ?? 0));
-        if (tiers.some((tier) => tier.minimumVehicleCount === undefined)) throw new Error("Chaque palier doit indiquer un nombre minimum de véhicules.");
-        if (tiers[0]?.minimumVehicleCount !== 1) throw new Error("Le premier palier doit commencer à 1 véhicule.");
-        for (let index = 0; index < tiers.length; index += 1) {
-          const tier = tiers[index]!;
-          const next = tiers[index + 1];
-          if (tier.maximumVehicleCount === undefined && next) throw new Error("Seul le dernier palier peut être sans limite maximale.");
-          if (next && next.minimumVehicleCount !== (tier.maximumVehicleCount ?? 0) + 1) throw new Error("Les paliers doivent se suivre sans trou ni chevauchement.");
-        }
+        if (input.prices.some((tier) => tier.minimumVehicleCount === undefined)) throw new Error("Chaque palier doit indiquer un nombre minimum de véhicules.");
       }
       const categoryResult = await supabase.from("service_categories").select("id").eq("organization_id", organizationId).eq("name", input.category).limit(1).maybeSingle();
       ensureNoError(categoryResult.error);

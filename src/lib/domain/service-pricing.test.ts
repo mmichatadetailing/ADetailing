@@ -36,4 +36,17 @@ describe("tarification des abonnements", () => {
     const custom = { pricingMode: "custom", prices: [{ label: "Partenaire", amount: 8_000 }, { label: "Premium", amount: 12_000 }] } as Service;
     expect(resolveServicePrice(custom, { priceLabel: "Premium" })?.amount).toBe(12_000);
   });
+
+  it("accepte des paliers libres, non contigus et ne commençant pas à 1", () => {
+    const freeTiers = {
+      pricingMode: "vehicle_count",
+      prices: [
+        { label: "5 à 8", minimumVehicleCount: 5, maximumVehicleCount: 8, amount: 10_000 },
+        { label: "20 à 30", minimumVehicleCount: 20, maximumVehicleCount: 30, amount: 8_000 },
+      ],
+    } as Service;
+    expect(resolveServicePrice(freeTiers, { vehicleCount: 6 })?.amount).toBe(10_000);
+    expect(resolveServicePrice(freeTiers, { vehicleCount: 15 })).toBeUndefined();
+    expect(resolveServicePrice(freeTiers, { vehicleCount: 24 })?.amount).toBe(8_000);
+  });
 });

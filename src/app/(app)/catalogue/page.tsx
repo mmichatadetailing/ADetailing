@@ -91,7 +91,7 @@ export default function CataloguePage() {
   const addVehicleCountTier = () => {
     setForm((state) => {
       const previous = state.vehicleCountTiers.at(-1);
-      const minimumVehicles = previous?.maximumVehicles === undefined ? (previous?.minimumVehicles ?? 0) + 1 : previous.maximumVehicles + 1;
+      const minimumVehicles = previous?.maximumVehicles === undefined ? 1 : previous.maximumVehicles + 1;
       return { ...state, vehicleCountTiers: [...state.vehicleCountTiers, { id: draftId("tier"), minimumVehicles, maximumVehicles: minimumVehicles + 2, price: 0 }] };
     });
   };
@@ -106,11 +106,7 @@ export default function CataloguePage() {
     if (pricingMode === "vehicle_count") {
       const tiers = [...form.vehicleCountTiers].sort((left, right) => left.minimumVehicles - right.minimumVehicles);
       const invalidTier = tiers.some((tier) => !Number.isInteger(tier.minimumVehicles) || tier.minimumVehicles < 1 || (tier.maximumVehicles !== undefined && (!Number.isInteger(tier.maximumVehicles) || tier.maximumVehicles < tier.minimumVehicles)) || !Number.isFinite(tier.price) || tier.price < 0);
-      const invalidSequence = tiers[0]?.minimumVehicles !== 1 || tiers.some((tier, index) => {
-        const next = tiers[index + 1];
-        return Boolean(next && (tier.maximumVehicles === undefined || next.minimumVehicles !== tier.maximumVehicles + 1));
-      });
-      if (invalidTier || invalidSequence) return toast.error("Les paliers doivent commencer à 1 et se suivre sans trou ni chevauchement");
+      if (invalidTier) return toast.error("Vérifiez les bornes et le prix de chaque palier");
       prices = tiers.map((tier) => ({
         label: vehicleCountTierLabel(tier.minimumVehicles, tier.maximumVehicles),
         minimumVehicleCount: tier.minimumVehicles,
@@ -229,7 +225,7 @@ export default function CataloguePage() {
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div><p className="text-sm font-bold text-emerald-950">Paliers par nombre de véhicules</p><p className="mt-1 text-xs text-emerald-800">Le prix indiqué est le tarif TTC par véhicule et par période d’abonnement.</p></div>
-                <Button size="sm" variant="secondary" disabled={form.vehicleCountTiers.at(-1)?.maximumVehicles === undefined} onClick={addVehicleCountTier}><Plus className="size-3.5" /> Ajouter un palier</Button>
+                <Button size="sm" variant="secondary" onClick={addVehicleCountTier}><Plus className="size-3.5" /> Ajouter un palier</Button>
               </div>
               <div className="mt-4 grid gap-3">
                 {form.vehicleCountTiers.map((tier) => (
@@ -241,7 +237,7 @@ export default function CataloguePage() {
                   </div>
                 ))}
               </div>
-              <p className="mt-3 text-[11px] text-emerald-800">Laissez la borne « À » vide sur le dernier palier pour couvrir tous les volumes supérieurs.</p>
+              <p className="mt-3 text-[11px] text-emerald-800">Chaque palier est indépendant. Vous choisissez librement ses bornes ; laissez « À » vide pour créer un palier sans limite supérieure.</p>
             </div>
           ) : (
             <div className="rounded-2xl border border-amber-200 bg-amber-50/60 p-4">

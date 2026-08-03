@@ -31,11 +31,13 @@ export function resolveServicePrice(
   const mode = getServicePricingMode(service);
   if (mode === "vehicle_count") {
     const count = Math.max(1, Math.floor(context.vehicleCount ?? 1));
-    return service.prices.find((price) =>
-      price.minimumVehicleCount !== undefined
-      && count >= price.minimumVehicleCount
-      && (price.maximumVehicleCount === undefined || count <= price.maximumVehicleCount),
-    );
+    return [...service.prices]
+      .filter((price) =>
+        price.minimumVehicleCount !== undefined
+        && count >= price.minimumVehicleCount
+        && (price.maximumVehicleCount === undefined || count <= price.maximumVehicleCount),
+      )
+      .sort((left, right) => (right.minimumVehicleCount ?? 0) - (left.minimumVehicleCount ?? 0))[0];
   }
   if (mode === "vehicle_format") {
     return service.prices.find((price) => price.vehicleFormat === context.vehicleFormat)
