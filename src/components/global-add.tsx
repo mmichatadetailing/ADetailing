@@ -15,9 +15,14 @@ import { Modal } from "./ui/modal";
 
 type AddKind = "appointment" | "lead" | "client" | "expense";
 
+const optionalPhoneSchema = z.string().trim().refine(
+  (value) => value === "" || value.replace(/\D/g, "").length >= 6,
+  "Téléphone invalide",
+);
+
 const leadSchema = z.object({
   prospectName: z.string().min(2, "Nom requis"),
-  phone: z.string().min(6, "Téléphone requis"),
+  phone: optionalPhoneSchema,
   email: z.email("E-mail invalide").or(z.literal("")),
   vehicleLabel: z.string().min(2, "Véhicule requis"),
   serviceLabel: z.string().min(2, "Prestation requise"),
@@ -32,7 +37,7 @@ const clientSchema = z.object({
   firstName: z.string().min(2, "Prénom requis"),
   lastName: z.string().min(2, "Nom requis"),
   email: z.email("E-mail invalide").or(z.literal("")),
-  phone: z.string().min(6, "Téléphone requis"),
+  phone: optionalPhoneSchema,
   city: z.string().min(2, "Ville requise"),
   source: z.string().min(1),
   vehicleMake: z.string().optional(),
@@ -74,7 +79,7 @@ function LeadForm({ close }: { close: () => void }) {
     })}>
       <Field label="Nom du prospect" error={errors.prospectName?.message}><Input autoFocus {...register("prospectName")} /></Field>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Téléphone" error={errors.phone?.message}><Input inputMode="tel" {...register("phone")} /></Field>
+        <Field label="Téléphone (facultatif)" error={errors.phone?.message}><Input inputMode="tel" {...register("phone")} /></Field>
         <Field label="E-mail" error={errors.email?.message}><Input type="email" {...register("email")} /></Field>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
@@ -118,7 +123,7 @@ function ClientForm({ close }: { close: () => void }) {
         <Field label="Nom" error={errors.lastName?.message}><Input {...register("lastName")} /></Field>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Téléphone" error={errors.phone?.message}><Input {...register("phone")} /></Field>
+        <Field label="Téléphone (facultatif)" error={errors.phone?.message}><Input inputMode="tel" {...register("phone")} /></Field>
         <Field label="E-mail" error={errors.email?.message}><Input type="email" {...register("email")} /></Field>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">

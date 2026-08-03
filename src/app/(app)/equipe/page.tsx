@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarClock, Clock3, Copy, Link2, Plus, Save, ShieldCheck, Trash2, UserRoundPlus, UsersRound } from "lucide-react";
+import { CalendarClock, Clock3, Copy, Link2, MailPlus, Plus, Save, ShieldCheck, Trash2, UserRoundPlus, UsersRound } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Avatar } from "@/components/avatar";
@@ -25,7 +25,9 @@ function formatHours(minutes: number) {
 export default function TeamPage() {
   const data = useDemoStore();
   const { mode, workspace, invitations, refresh } = useWorkspace();
-  const [open, setOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [invitingMemberId, setInvitingMemberId] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [lastInvitationUrl, setLastInvitationUrl] = useState("");
   const [capacityDrafts, setCapacityDrafts] = useState<Record<string, string>>({});
@@ -36,39 +38,81 @@ export default function TeamPage() {
     [invitations],
   );
 
+  const openAddMember = () => {
+    setForm({ firstName: "", lastName: "", email: "", role: "employee", weeklyHours: 35 });
+    setAddOpen(true);
+  };
+
+  const openInvitation = (memberId: string) => {
+    const member = data.team.find((item) => item.id === memberId);
+    if (!member) return;
+    setInvitingMemberId(member.id);
+    setLastInvitationUrl("");
+    setForm({ firstName: member.firstName, lastName: member.lastName, email: member.email, role: member.role === "partner" ? "partner" : "employee", weeklyHours: member.weeklyCapacityMinutes / 60 });
+    setInviteOpen(true);
+  };
+
   const copy = async (value: string) => {
     await navigator.clipboard.writeText(value);
     toast.success("Lien d’invitation copié");
+  };
+
+  const addMember = async () => {
+    const firstName = form.firstName.trim();
+    const lastName = form.lastName.trim();
+    const email = form.email.trim().toLowerCase();
+    if (firstName.length < 2 || lastName.length < 2) return toast.error("Le prénom et le nom sont requis");
+    if (email && !/^\S+@\S+\.\S+$/.test(email)) return toast.error("Adresse e-mail invalide");
+    if (!Number.isFinite(form.weeklyHours) || form.weeklyHours < 1 || form.weeklyHours > 80) return toast.error("La capacité doit être comprise entre 1 et 80 heures");
+
+    if (mode === "demo") {
+      data.addTeamMember({ firstName, lastName, email, role: form.role, weeklyCapacityMinutes: Math.round(form.weeklyHours * 60) });
+      toast.success("Membre ajouté : vous pouvez déjà l’affecter aux prestations");
+      setAddOpen(false);
+      return;
+    }
+
+    setBusy("add");
+    try {
+      const response = await fetch("/api/team/members", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ firstName, lastName, email, role: form.role, weeklyCapacityMinutes: Math.round(form.weeklyHours * 60) }),
+      });
+      const payload = await response.json() as { id?: string; error?: string };
+      if (!response.ok || !payload.id) throw new Error(payload.error || "Ajout impossible.");
+      await refresh();
+      setAddOpen(false);
+      toast.success(`${firstName} ${lastName} peut maintenant être affecté aux prestations`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Ajout impossible.");
+    } finally {
+      setBusy(null);
+    }
   };
 
   const invite = async () => {
     const firstName = form.firstName.trim();
     const lastName = form.lastName.trim();
     const email = form.email.trim().toLowerCase();
+    if (!invitingMemberId) return toast.error("Sélectionnez un membre à inviter");
     if (firstName.length < 2 || lastName.length < 2) return toast.error("Le prénom et le nom sont requis");
     if (!/^\S+@\S+\.\S+$/.test(email)) return toast.error("Adresse e-mail invalide");
     if (!Number.isFinite(form.weeklyHours) || form.weeklyHours < 1 || form.weeklyHours > 80) return toast.error("La capacité doit être comprise entre 1 et 80 heures");
-
-    if (mode === "demo") {
-      data.addTeamMember({ firstName, lastName, email, role: form.role, weeklyCapacityMinutes: Math.round(form.weeklyHours * 60) });
-      toast.success("Membre ajouté à la démonstration");
-      setOpen(false);
-      return;
-    }
 
     setBusy("invite");
     try {
       const response = await fetch("/api/team/invitations", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ firstName, lastName, email, role: form.role, weeklyCapacityMinutes: Math.round(form.weeklyHours * 60) }),
+        body: JSON.stringify({ memberId: invitingMemberId, firstName, lastName, email, role: form.role, weeklyCapacityMinutes: Math.round(form.weeklyHours * 60) }),
       });
       const payload = await response.json() as { invitationUrl?: string; error?: string };
       if (!response.ok || !payload.invitationUrl) throw new Error(payload.error || "Invitation impossible.");
       setLastInvitationUrl(payload.invitationUrl);
       await refresh();
       await copy(payload.invitationUrl);
-      toast.success(`Invitation créée pour ${firstName} ${lastName}`);
+      toast.success(`Invitation créée pour ${firstName} ${lastName} sans perdre ses affectations`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Invitation impossible.");
     } finally {
@@ -126,8 +170,8 @@ export default function TeamPage() {
       <PageHeader
         eyebrow="Accès & collaboration"
         title="Équipe"
-        description="Invitez chaque collaborateur avec son identité et sa capacité disponible. Ces informations alimentent ensuite le planning commun."
-        actions={canManage ? <Button onClick={() => { setLastInvitationUrl(""); setOpen(true); }}><Plus className="size-4" /> Inviter un membre</Button> : undefined}
+        description="Ajoutez d’abord les personnes à votre équipe pour les planifier immédiatement. Leur accès à l’application peut être envoyé plus tard."
+        actions={canManage ? <Button onClick={openAddMember}><Plus className="size-4" /> Ajouter un membre</Button> : undefined}
       />
 
       <section className="grid gap-3 sm:grid-cols-3">
@@ -168,6 +212,7 @@ export default function TeamPage() {
 
       <section className="grid gap-4 lg:grid-cols-2">
         {data.team.map((member) => {
+          const pendingAccount = mode === "supabase" && !member.profileId;
           const planned = data.interventions
             .filter((item) => item.workers.some((worker) => worker.memberId === member.id) && ["scheduled", "confirmed", "in_progress"].includes(item.status))
             .reduce((sum, item) => sum + (item.workers.find((worker) => worker.memberId === member.id)?.plannedMinutes ?? 0), 0);
@@ -182,11 +227,12 @@ export default function TeamPage() {
                       <p className="text-sm font-bold">{member.firstName} {member.lastName}</p>
                       <Badge variant={member.role === "admin" ? "orange" : member.role === "partner" ? "blue" : "neutral"}>{roleLabels[member.role]}</Badge>
                       {member.id === workspace?.userId && <Badge variant="green">Vous</Badge>}
+                      {pendingAccount && <Badge variant="blue">Compte à activer</Badge>}
                       {!member.active && <Badge variant="red">Inactif</Badge>}
                     </div>
-                    <p className="mt-1 text-xs text-zinc-600">{member.email}</p>
+                    <p className="mt-1 text-xs text-zinc-600">{member.email || (pendingAccount ? "Adresse e-mail à renseigner lors de l’invitation" : "Aucune adresse e-mail")}</p>
                   </div>
-                  {canManage && member.id !== workspace?.userId && <button disabled={busy === member.id} onClick={() => void updateMember(member.id, { active: !member.active })} className="text-[10px] font-semibold text-zinc-500 hover:text-brand-600 disabled:opacity-50">{member.active ? "Désactiver" : "Réactiver"}</button>}
+                  {canManage && member.id !== workspace?.userId && <div className="flex shrink-0 flex-col items-end gap-2">{pendingAccount && member.active && <Button size="sm" variant="secondary" onClick={() => openInvitation(member.id)}><MailPlus className="size-3.5" /> Inviter</Button>}<button disabled={busy === member.id} onClick={() => void updateMember(member.id, { active: !member.active })} className="text-[10px] font-semibold text-zinc-500 hover:text-brand-600 disabled:opacity-50">{member.active ? "Désactiver" : "Réactiver"}</button></div>}
                 </div>
 
                 {canManage && (
@@ -196,7 +242,7 @@ export default function TeamPage() {
                         <Select aria-label="Rôle du membre" value={member.role} disabled={busy === member.id} onChange={(event) => void updateMember(member.id, { role: event.target.value as MemberRole })}>
                           <option value="employee">Collaborateur</option>
                           <option value="partner">Associé</option>
-                          {workspace?.role === "admin" && <option value="admin">Administrateur</option>}
+                          {workspace?.role === "admin" && !pendingAccount && <option value="admin">Administrateur</option>}
                         </Select>
                       </Field>
                     ) : <div />}
@@ -229,19 +275,35 @@ export default function TeamPage() {
         })}
       </section>
 
-      <Modal open={open} onClose={() => setOpen(false)} title={mode === "supabase" ? "Inviter un collaborateur" : "Ajouter un membre"} description={mode === "supabase" ? "Son identité et sa disponibilité seront enregistrées dès qu’il rejoindra l’entreprise." : "Le membre est ajouté uniquement à la démonstration locale."}>
+      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Ajouter un membre à l’équipe" description="Cette personne sera immédiatement disponible dans les prestations et le planning, même sans compte de connexion.">
         <div className="grid gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Prénom"><Input autoFocus autoComplete="given-name" value={form.firstName} onChange={(event) => setForm((state) => ({ ...state, firstName: event.target.value }))} /></Field>
             <Field label="Nom"><Input autoComplete="family-name" value={form.lastName} onChange={(event) => setForm((state) => ({ ...state, lastName: event.target.value }))} /></Field>
           </div>
-          <Field label="E-mail"><Input type="email" value={form.email} onChange={(event) => setForm((state) => ({ ...state, email: event.target.value }))} /></Field>
+          <Field label="E-mail (facultatif)" hint="Vous pourrez le renseigner ou le corriger au moment de l’invitation."><Input type="email" value={form.email} onChange={(event) => setForm((state) => ({ ...state, email: event.target.value }))} /></Field>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Rôle"><Select value={form.role} onChange={(event) => setForm((state) => ({ ...state, role: event.target.value as "employee" | "partner" }))}><option value="employee">Collaborateur</option><option value="partner">Associé</option></Select></Field>
             <Field label="Capacité hebdo. (h)"><Input min="1" max="80" step="0.5" type="number" value={form.weeklyHours} onChange={(event) => setForm((state) => ({ ...state, weeklyHours: Number(event.target.value) }))} /></Field>
           </div>
-          {lastInvitationUrl && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4"><p className="text-xs font-bold text-emerald-800">Invitation prête</p><p className="mt-2 break-all text-[11px] leading-5 text-emerald-700">{lastInvitationUrl}</p><Button className="mt-3" size="sm" variant="secondary" onClick={() => void copy(lastInvitationUrl)}><Copy className="size-3.5" /> Copier le lien</Button></div>}
-          <Button onClick={() => void invite()} disabled={busy === "invite"}><UserRoundPlus className="size-4" /> {busy === "invite" ? "Création…" : mode === "supabase" ? "Créer l’invitation" : "Ajouter à l’équipe"}</Button>
+          <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-xs leading-5 text-sky-800"><strong>Aucun accès n’est envoyé maintenant.</strong> Vous pourrez déjà affecter cette personne, puis l’inviter depuis sa fiche quand vous serez prêt.</div>
+          <Button onClick={() => void addMember()} disabled={busy === "add"}><UserRoundPlus className="size-4" /> {busy === "add" ? "Ajout…" : "Ajouter et rendre disponible"}</Button>
+        </div>
+      </Modal>
+
+      <Modal open={inviteOpen} onClose={() => setInviteOpen(false)} title="Donner accès à l’application" description="Le compte sera rattaché au membre existant : ses prestations, ses heures et son planning seront conservés.">
+        <div className="grid gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Prénom"><Input autoFocus autoComplete="given-name" value={form.firstName} onChange={(event) => setForm((state) => ({ ...state, firstName: event.target.value }))} /></Field>
+            <Field label="Nom"><Input autoComplete="family-name" value={form.lastName} onChange={(event) => setForm((state) => ({ ...state, lastName: event.target.value }))} /></Field>
+          </div>
+          <Field label="Adresse e-mail d’invitation"><Input type="email" value={form.email} onChange={(event) => setForm((state) => ({ ...state, email: event.target.value }))} /></Field>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Rôle"><Select value={form.role} onChange={(event) => setForm((state) => ({ ...state, role: event.target.value as "employee" | "partner" }))}><option value="employee">Collaborateur</option><option value="partner">Associé</option></Select></Field>
+            <Field label="Capacité hebdo. (h)"><Input min="1" max="80" step="0.5" type="number" value={form.weeklyHours} onChange={(event) => setForm((state) => ({ ...state, weeklyHours: Number(event.target.value) }))} /></Field>
+          </div>
+          {lastInvitationUrl && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4"><p className="text-xs font-bold text-emerald-800">Invitation prête et copiée</p><p className="mt-2 break-all text-[11px] leading-5 text-emerald-700">{lastInvitationUrl}</p><Button className="mt-3" size="sm" variant="secondary" onClick={() => void copy(lastInvitationUrl)}><Copy className="size-3.5" /> Copier à nouveau</Button></div>}
+          <Button onClick={() => void invite()} disabled={busy === "invite" || Boolean(lastInvitationUrl)}><MailPlus className="size-4" /> {busy === "invite" ? "Création…" : lastInvitationUrl ? "Invitation créée" : "Créer et copier le lien"}</Button>
         </div>
       </Modal>
     </div>

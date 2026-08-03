@@ -2,11 +2,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
+const optionalPhoneSchema = z.string().trim().refine((value) => value === "" || value.replace(/\D/g, "").length >= 6);
+
 const leadSchema = z.object({
-  kind: z.literal("lead"), prospectName: z.string().min(2), phone: z.string().min(6), email: z.email().or(z.literal("")), vehicleLabel: z.string().min(2), serviceLabel: z.string().min(2), estimatedAmount: z.number().min(0), source: z.string().min(1), ownerId: z.uuid().optional(),
+  kind: z.literal("lead"), prospectName: z.string().min(2), phone: optionalPhoneSchema, email: z.email().or(z.literal("")), vehicleLabel: z.string().min(2), serviceLabel: z.string().min(2), estimatedAmount: z.number().min(0), source: z.string().min(1), ownerId: z.uuid().optional(),
 });
 const clientSchema = z.object({
-  kind: z.literal("client"), clientKind: z.enum(["individual", "business"]), company: z.string().optional(), firstName: z.string().min(2), lastName: z.string().min(2), email: z.email().or(z.literal("")), phone: z.string().min(6), city: z.string().min(2), source: z.string().min(1),
+  kind: z.literal("client"), clientKind: z.enum(["individual", "business"]), company: z.string().optional(), firstName: z.string().min(2), lastName: z.string().min(2), email: z.email().or(z.literal("")), phone: optionalPhoneSchema, city: z.string().min(2), source: z.string().min(1),
   vehicle: z.object({ make: z.string(), model: z.string(), registration: z.string(), format: z.string() }).optional(),
 });
 const expenseSchema = z.object({
@@ -16,6 +18,20 @@ const appointmentSchema = z.object({
   kind: z.literal("appointment"), clientId: z.uuid(), vehicleFormat: z.enum(["Citadine", "Berline", "SUV", "Monospace", "4x4", "Fourgon", "Autre"]).optional(), serviceId: z.uuid().optional(), title: z.string().trim().min(2).max(160), startAt: z.iso.datetime(), plannedDurationMinutes: z.number().int().min(15).max(1440), workerIds: z.array(z.uuid()).min(1).max(12).refine((ids) => new Set(ids).size === ids.length), address: z.string().trim().max(300), revenueAllocated: z.number().int().min(0), completed: z.boolean(),
 });
 const quickCreateSchema = z.discriminatedUnion("kind", [leadSchema, clientSchema, appointmentSchema, expenseSchema]);
+
+async function resolveAppointmentMembers(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  organizationId: string,
+  memberIds: string[],
+) {
+  const { data, error } = await supabase.from("organization_members").select("id,profile_id").eq("organization_id", organizationId).eq("active", true);
+  if (error) throw error;
+  const members = new Map((data ?? []).map((member) => [member.profile_id ?? member.id, member]));
+  if (new Set(memberIds).size !== memberIds.length || memberIds.some((memberId) => !members.has(memberId))) {
+    throw new Error("Un collaborateur sélectionné n’est pas disponible dans cette équipe.");
+  }
+  return members;
+}
 
 export async function POST(request: Request) {
   try {
@@ -54,9 +70,7 @@ export async function POST(request: Request) {
     }
 
     if (input.kind === "appointment") {
-      const { data: members, error: membersError } = await supabase.from("organization_members").select("profile_id").eq("organization_id", organizationId).eq("active", true).in("profile_id", input.workerIds);
-      if (membersError) throw membersError;
-      if ((members?.length ?? 0) !== input.workerIds.length) throw new Error("Un collaborateur sélectionné n’est pas disponible dans cette équipe.");
+      const members = await resolveAppointmentMembers(supabase, organizationId, input.workerIds);
 
       let service: { id: string; target_product_cost_cents: number; target_travel_cost_cents: number } | null = null;
       if (input.serviceId) {
@@ -74,7 +88,10 @@ export async function POST(request: Request) {
 
       const { error: itemError } = await supabase.from("intervention_items").insert({ organization_id: organizationId, intervention_id: intervention.id, service_id: service?.id ?? null, label: input.title, quantity: 1, revenue_allocated_cents: input.revenueAllocated });
       if (itemError) throw itemError;
-      const { error: workersError } = await supabase.from("intervention_workers").insert(input.workerIds.map((profileId) => ({ organization_id: organizationId, intervention_id: intervention.id, profile_id: profileId, planned_minutes: input.plannedDurationMinutes, actual_minutes: input.completed ? input.plannedDurationMinutes : null })));
+      const { error: workersError } = await supabase.from("intervention_workers").insert(input.workerIds.map((memberId) => {
+        const member = members.get(memberId)!;
+        return { organization_id: organizationId, intervention_id: intervention.id, profile_id: member.profile_id, pending_member_id: member.profile_id ? null : member.id, planned_minutes: input.plannedDurationMinutes, actual_minutes: input.completed ? input.plannedDurationMinutes : null };
+      }));
       if (workersError) throw workersError;
       await supabase.from("activity_logs").insert({ organization_id: organizationId, actor_id: user.id, kind: "comment_added", title: input.completed ? "Prestation effectuée enregistrée" : "Rendez-vous créé", description: input.title, entity_type: "intervention", entity_id: intervention.id });
       return NextResponse.json({ id: intervention.id }, { status: 201 });

@@ -41,6 +41,7 @@ export interface BaseEntity {
 }
 
 export interface TeamMember extends BaseEntity {
+  profileId?: UUID;
   firstName: string;
   lastName: string;
   initials: string;

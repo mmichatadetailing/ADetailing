@@ -41,6 +41,7 @@ export interface WorkspaceIdentity {
 
 export interface TeamInvitation {
   id: string;
+  memberId?: string;
   firstName: string;
   lastName: string;
   email: string;
@@ -125,7 +126,7 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User):
   const locationId = text(membership, "location_id");
 
   const results = await Promise.all([
-    supabase.from("organization_members").select("id,organization_id,profile_id,role,location_id,active,weekly_capacity_minutes,color,created_at,updated_at,profiles(id,first_name,last_name,email,phone,created_at,updated_at)").eq("organization_id", organizationId),
+    supabase.from("organization_members").select("id,organization_id,profile_id,provisional_first_name,provisional_last_name,provisional_email,role,location_id,active,weekly_capacity_minutes,color,created_at,updated_at,profiles(id,first_name,last_name,email,phone,created_at,updated_at)").eq("organization_id", organizationId),
     supabase.from("lead_sources").select("id,name,display_order").eq("organization_id", organizationId).eq("active", true).order("display_order"),
     supabase.from("vehicle_formats").select("id,name,display_order").eq("organization_id", organizationId).eq("active", true).order("display_order"),
     supabase.from("clients").select("*,lead_sources(name)").eq("organization_id", organizationId).is("archived_at", null).order("created_at", { ascending: false }),
@@ -143,7 +144,7 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User):
     supabase.from("activity_logs").select("*").eq("organization_id", organizationId).order("occurred_at", { ascending: false }).limit(100),
     supabase.from("messages").select("*,conversations(kind,entity_type,entity_id,conversation_members(profile_id,last_read_at))").eq("organization_id", organizationId).is("deleted_at", null).order("created_at"),
     supabase.from("app_settings").select("key,value").eq("organization_id", organizationId),
-    supabase.from("organization_invitations").select("id,invited_first_name,invited_last_name,email,role,weekly_capacity_minutes,expires_at,accepted_at,revoked_at,created_at").eq("organization_id", organizationId).order("created_at", { ascending: false }),
+    supabase.from("organization_invitations").select("id,pending_member_id,invited_first_name,invited_last_name,email,role,weekly_capacity_minutes,expires_at,accepted_at,revoked_at,created_at").eq("organization_id", organizationId).order("created_at", { ascending: false }),
   ]);
   const firstError = results.find((result) => result.error)?.error;
   if (firstError) throw firstError;
@@ -161,14 +162,16 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User):
 
   const team: TeamMember[] = memberRows.map((row) => {
     const profile = one(row.profiles);
-    const firstName = text(profile, "first_name", "Membre");
-    const lastName = text(profile, "last_name");
+    const profileId = optionalText(row, "profile_id");
+    const firstName = profileId ? text(profile, "first_name", text(row, "provisional_first_name", "Membre")) : text(row, "provisional_first_name", "Membre");
+    const lastName = profileId ? text(profile, "last_name", text(row, "provisional_last_name")) : text(row, "provisional_last_name");
     return {
-      ...base({ ...row, id: text(row, "profile_id"), created_at: profile.created_at ?? row.created_at, updated_at: profile.updated_at ?? row.updated_at }),
+      ...base({ ...row, id: profileId || text(row, "id"), created_at: profile.created_at ?? row.created_at, updated_at: profile.updated_at ?? row.updated_at }),
+      profileId,
       firstName,
       lastName,
       initials: `${firstName[0] ?? ""}${lastName[0] ?? ""}`.toUpperCase(),
-      email: text(profile, "email"),
+      email: profileId ? text(profile, "email", text(row, "provisional_email")) : text(row, "provisional_email"),
       phone: text(profile, "phone"),
       role: text(row, "role", "employee") as MemberRole,
       color: text(row, "color", "#f9734f"),
@@ -208,7 +211,7 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User):
   const payments: Payment[] = paymentRows.map((row) => ({ ...base(row), invoiceId: optionalText(row, "invoice_id"), interventionId: optionalText(row, "intervention_id"), amount: number(row, "amount_cents"), paidAt: iso(text(row, "paid_at")), method: text(row, "method"), reference: optionalText(row, "reference"), notes: optionalText(row, "notes") }));
   const interventions: Intervention[] = interventionRows.map((row) => ({
     ...base(row), clientId: text(row, "client_id"), vehicleId: optionalText(row, "vehicle_id"), vehicleFormat: optionalText(row, "vehicle_format"), quoteId: optionalText(row, "quote_id"), invoiceId: optionalText(row, "invoice_id"), status: text(row, "status", "to_schedule") as Intervention["status"], title: text(row, "title"), startAt: optionalText(row, "start_at"), endAt: optionalText(row, "end_at"), plannedDurationMinutes: number(row, "planned_duration_minutes"), actualDurationMinutes: nullableNumber(row, "actual_duration_minutes"), preparationMinutes: number(row, "preparation_minutes"), cleanupMinutes: number(row, "cleanup_minutes"),
-    workers: rows(row.intervention_workers).map((worker) => ({ memberId: text(worker, "profile_id"), plannedMinutes: number(worker, "planned_minutes"), actualMinutes: nullableNumber(worker, "actual_minutes") })),
+    workers: rows(row.intervention_workers).map((worker) => ({ memberId: text(worker, "profile_id", text(worker, "pending_member_id")), plannedMinutes: number(worker, "planned_minutes"), actualMinutes: nullableNumber(worker, "actual_minutes") })),
     items: rows(row.intervention_items).map((item) => ({ id: text(item, "id"), serviceId: optionalText(item, "service_id"), label: text(item, "label"), revenueAllocated: number(item, "revenue_allocated_cents"), quantity: number(item, "quantity", 1) })),
     productCost: number(row, "product_cost_cents"), travelCost: number(row, "travel_cost_cents"), otherDirectCosts: number(row, "other_direct_costs_cents"), address: text(row, "address"), checklistDone: rows(row.intervention_checklist_items).filter((item) => bool(item, "completed")).length, checklistTotal: rows(row.intervention_checklist_items).length, depositAmount: number(row, "deposit_amount_cents"), notes: optionalText(row, "notes"),
   }));
@@ -247,6 +250,7 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User):
   };
   const invitations: TeamInvitation[] = invitationRows.map((row) => ({
     id: text(row, "id"),
+    memberId: optionalText(row, "pending_member_id"),
     firstName: text(row, "invited_first_name"),
     lastName: text(row, "invited_last_name"),
     email: text(row, "email"),

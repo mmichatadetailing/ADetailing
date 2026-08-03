@@ -61,6 +61,23 @@ function ensureNoError(error: { message?: string } | null) {
   if (error) throw new Error(error.message || "Écriture Supabase impossible.");
 }
 
+type ResolvedTeamMember = { id: string; profile_id: string | null; appId: string };
+
+async function resolveTeamMembers(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  organizationId: string,
+  memberIds: string[],
+) {
+  const { data, error } = await supabase.from("organization_members").select("id,profile_id").eq("organization_id", organizationId).eq("active", true);
+  ensureNoError(error);
+  const members = (data ?? []).map((member) => ({ ...member, appId: member.profile_id ?? member.id })) as ResolvedTeamMember[];
+  const byAppId = new Map(members.map((member) => [member.appId, member]));
+  if (new Set(memberIds).size !== memberIds.length || memberIds.some((memberId) => !byAppId.has(memberId))) {
+    throw new Error("Un collaborateur sélectionné n’est plus actif dans cette équipe.");
+  }
+  return byAppId;
+}
+
 export async function POST(request: Request) {
   try {
     const input = mutationSchema.parse(await request.json());
@@ -100,9 +117,7 @@ export async function POST(request: Request) {
         ensureNoError(vehicleError);
         if (!vehicle || vehicle.client_id !== input.clientId) throw new Error("Le véhicule ne correspond pas au client sélectionné.");
       }
-      const { data: members, error: membersError } = await supabase.from("organization_members").select("profile_id").eq("organization_id", organizationId).eq("active", true).in("profile_id", input.workers.map((worker) => worker.memberId));
-      ensureNoError(membersError);
-      if ((members?.length ?? 0) !== input.workers.length) throw new Error("Un collaborateur sélectionné n’est plus actif dans cette équipe.");
+      const members = await resolveTeamMembers(supabase, organizationId, input.workers.map((worker) => worker.memberId));
 
       const startAt = input.startAt ?? null;
       const endAt = startAt ? new Date(new Date(startAt).getTime() + input.plannedDurationMinutes * 60_000).toISOString() : null;
@@ -111,11 +126,21 @@ export async function POST(request: Request) {
       const { error } = await supabase.from("interventions").update({ client_id: input.clientId, vehicle_id: input.vehicleId ?? null, vehicle_format: input.vehicleFormat ?? null, quote_id: clientChanged ? null : existingIntervention.quote_id, invoice_id: clientChanged ? null : existingIntervention.invoice_id, title: input.title, status, start_at: startAt, end_at: endAt, planned_duration_minutes: input.plannedDurationMinutes, address: input.address, notes: input.notes || null }).eq("organization_id", organizationId).eq("id", input.interventionId);
       ensureNoError(error);
 
-      const { data: existingWorkers, error: existingWorkersError } = await supabase.from("intervention_workers").select("profile_id,actual_minutes").eq("organization_id", organizationId).eq("intervention_id", input.interventionId);
+      const { data: existingWorkers, error: existingWorkersError } = await supabase.from("intervention_workers").select("profile_id,pending_member_id,actual_minutes").eq("organization_id", organizationId).eq("intervention_id", input.interventionId);
       ensureNoError(existingWorkersError);
       const workersDelete = await supabase.from("intervention_workers").delete().eq("organization_id", organizationId).eq("intervention_id", input.interventionId);
       ensureNoError(workersDelete.error);
-      const workersInsert = await supabase.from("intervention_workers").insert(input.workers.map((worker) => ({ organization_id: organizationId, intervention_id: input.interventionId, profile_id: worker.memberId, planned_minutes: worker.plannedMinutes, actual_minutes: existingWorkers?.find((existing) => existing.profile_id === worker.memberId)?.actual_minutes ?? null })));
+      const workersInsert = await supabase.from("intervention_workers").insert(input.workers.map((worker) => {
+        const member = members.get(worker.memberId)!;
+        return {
+          organization_id: organizationId,
+          intervention_id: input.interventionId,
+          profile_id: member.profile_id,
+          pending_member_id: member.profile_id ? null : member.id,
+          planned_minutes: worker.plannedMinutes,
+          actual_minutes: existingWorkers?.find((existing) => (existing.profile_id ?? existing.pending_member_id) === worker.memberId)?.actual_minutes ?? null,
+        };
+      }));
       ensureNoError(workersInsert.error);
 
       const itemsDelete = await supabase.from("intervention_items").delete().eq("organization_id", organizationId).eq("intervention_id", input.interventionId);
@@ -127,8 +152,11 @@ export async function POST(request: Request) {
     if (input.action === "completeIntervention") {
       const { error } = await supabase.from("interventions").update({ status: "completed", actual_duration_minutes: input.actualDurationMinutes, product_cost_cents: input.productCost, travel_cost_cents: input.travelCost, other_direct_costs_cents: input.otherDirectCosts }).eq("organization_id", organizationId).eq("id", input.interventionId);
       ensureNoError(error);
-      for (const [profileId, actualMinutes] of Object.entries(input.workerMinutes)) {
-        const { error: workerError } = await supabase.from("intervention_workers").update({ actual_minutes: actualMinutes }).eq("organization_id", organizationId).eq("intervention_id", input.interventionId).eq("profile_id", profileId);
+      const members = await resolveTeamMembers(supabase, organizationId, Object.keys(input.workerMinutes));
+      for (const [memberId, actualMinutes] of Object.entries(input.workerMinutes)) {
+        const member = members.get(memberId)!;
+        const workerQuery = supabase.from("intervention_workers").update({ actual_minutes: actualMinutes }).eq("organization_id", organizationId).eq("intervention_id", input.interventionId);
+        const { error: workerError } = member.profile_id ? await workerQuery.eq("profile_id", member.profile_id) : await workerQuery.eq("pending_member_id", member.id);
         ensureNoError(workerError);
       }
       const { error: checklistError } = await supabase.from("intervention_checklist_items").update({ completed: true, completed_at: new Date().toISOString(), completed_by: userId }).eq("organization_id", organizationId).eq("intervention_id", input.interventionId).eq("completed", false);

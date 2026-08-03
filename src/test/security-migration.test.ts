@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 const migration = readFileSync(resolve(process.cwd(), "supabase/migrations/202607300001_initial_schema.sql"), "utf8");
 const accountMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/202607300002_account_onboarding.sql"), "utf8");
 const teamMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/202607310003_team_accounts_and_private_messaging.sql"), "utf8");
+const preinviteMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/202608030008_preinvite_team_members.sql"), "utf8");
 
 describe("migration de sécurité", () => {
   it("active la RLS et isole les données par organisation", () => {
@@ -45,5 +46,19 @@ describe("comptes d’équipe et messagerie", () => {
     expect(teamMigration).toContain("can_access_conversation");
     expect(teamMigration).toContain("messages_participant_select");
     expect(teamMigration).toContain("conversation_members cm");
+  });
+});
+
+describe("membres préparés avant invitation", () => {
+  it("autorise une identité d’équipe sans faux compte utilisateur", () => {
+    expect(preinviteMigration).toContain("alter column profile_id drop not null");
+    expect(preinviteMigration).toContain("organization_members_identity_check");
+    expect(preinviteMigration).toContain("provisional_first_name");
+  });
+
+  it("conserve les affectations quand le compte rejoint l’équipe", () => {
+    expect(preinviteMigration).toContain("pending_member_id uuid references public.organization_members");
+    expect(preinviteMigration).toContain("set profile_id = target_user_id, pending_member_id = null");
+    expect(preinviteMigration).toContain("invitation_record.pending_member_id");
   });
 });

@@ -7,6 +7,7 @@ import { canManageTeam, requireAuthenticatedWorkspace } from "@/lib/supabase/wor
 export const runtime = "nodejs";
 
 const invitationSchema = z.object({
+  memberId: z.uuid().optional(),
   firstName: z.string().trim().min(2).max(80),
   lastName: z.string().trim().min(2).max(80),
   email: z.email(),
@@ -33,6 +34,52 @@ export async function POST(request: Request) {
     if (memberError) throw memberError;
     if (existingMember) return NextResponse.json({ error: "Cette personne fait déjà partie de l’équipe." }, { status: 409 });
 
+    let pendingMemberId: string | null = null;
+    if (input.memberId) {
+      const { data: pendingMember, error: pendingMemberError } = await supabase
+        .from("organization_members")
+        .select("id,profile_id")
+        .eq("id", input.memberId)
+        .eq("organization_id", workspace.organizationId)
+        .eq("active", true)
+        .single();
+      if (pendingMemberError) throw pendingMemberError;
+      if (pendingMember.profile_id) return NextResponse.json({ error: "Ce membre possède déjà un compte." }, { status: 409 });
+
+      const { data: duplicatePending, error: duplicatePendingError } = await supabase
+        .from("organization_members")
+        .select("id")
+        .eq("organization_id", workspace.organizationId)
+        .is("profile_id", null)
+        .eq("provisional_email", email)
+        .neq("id", pendingMember.id)
+        .limit(1)
+        .maybeSingle();
+      if (duplicatePendingError) throw duplicatePendingError;
+      if (duplicatePending) return NextResponse.json({ error: "Cette adresse est déjà utilisée par un autre membre préparé." }, { status: 409 });
+
+      const { error: pendingUpdateError } = await supabase.from("organization_members").update({
+        provisional_first_name: input.firstName,
+        provisional_last_name: input.lastName,
+        provisional_email: email,
+        role: input.role,
+        weekly_capacity_minutes: input.weeklyCapacityMinutes,
+      }).eq("id", pendingMember.id).eq("organization_id", workspace.organizationId);
+      if (pendingUpdateError) throw pendingUpdateError;
+      pendingMemberId = pendingMember.id;
+    }
+
+    if (pendingMemberId) {
+      const { error: memberRevokeError } = await supabase
+        .from("organization_invitations")
+        .update({ revoked_at: new Date().toISOString() })
+        .eq("organization_id", workspace.organizationId)
+        .eq("pending_member_id", pendingMemberId)
+        .is("accepted_at", null)
+        .is("revoked_at", null);
+      if (memberRevokeError) throw memberRevokeError;
+    }
+
     const { error: revokeError } = await supabase
       .from("organization_invitations")
       .update({ revoked_at: new Date().toISOString() })
@@ -48,6 +95,7 @@ export async function POST(request: Request) {
       .from("organization_invitations")
       .insert({
         organization_id: workspace.organizationId,
+        pending_member_id: pendingMemberId,
         invited_first_name: input.firstName,
         invited_last_name: input.lastName,
         email,
@@ -57,7 +105,7 @@ export async function POST(request: Request) {
         token_hash: tokenHash,
         invited_by: workspace.user.id,
       })
-      .select("id,invited_first_name,invited_last_name,email,role,weekly_capacity_minutes,expires_at,created_at")
+      .select("id,pending_member_id,invited_first_name,invited_last_name,email,role,weekly_capacity_minutes,expires_at,created_at")
       .single();
     if (error) throw error;
 
@@ -66,6 +114,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       invitation: {
         id: data.id,
+        memberId: data.pending_member_id ?? undefined,
         firstName: data.invited_first_name,
         lastName: data.invited_last_name,
         email: data.email,

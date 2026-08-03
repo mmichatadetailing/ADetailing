@@ -22,10 +22,11 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       .from("organization_members")
       .select("id,profile_id,role,active")
       .eq("organization_id", workspace.organizationId)
-      .eq("profile_id", id)
+      .or(`id.eq.${id},profile_id.eq.${id}`)
       .single();
     if (targetError) throw targetError;
     if (input.role === "admin" && workspace.role !== "admin") return NextResponse.json({ error: "Seul un administrateur peut nommer un autre administrateur." }, { status: 403 });
+    if (!target.profile_id && input.role === "admin") return NextResponse.json({ error: "Un compte doit être activé avant de pouvoir devenir administrateur." }, { status: 409 });
     if (target.profile_id === workspace.user.id && input.active === false) return NextResponse.json({ error: "Vous ne pouvez pas désactiver votre propre compte." }, { status: 409 });
 
     const removesAdmin = target.active && target.role === "admin" && (input.active === false || (input.role && input.role !== "admin"));
