@@ -2,7 +2,7 @@ import type { HTMLAttributes } from "react";
 import { cn } from "@/lib/utils";
 
 const variants = {
-  neutral: "border-white/8 bg-white/[0.045] text-zinc-300",
+  neutral: "border-black/[0.08] bg-zinc-50 text-zinc-500",
   orange: "border-orange-400/20 bg-orange-100/75 text-orange-300",
   green: "border-emerald-400/20 bg-emerald-50 text-emerald-300",
   blue: "border-sky-400/20 bg-sky-50 text-sky-300",
