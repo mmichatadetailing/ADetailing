@@ -13,7 +13,7 @@ const expenseSchema = z.object({
   kind: z.literal("expense"), date: z.iso.date(), family: z.enum(["fixed", "variable", "investment", "personal"]), category: z.string().min(2), supplier: z.string().min(2), description: z.string().min(2), amountIncludingTax: z.number().positive(), vatRateBasisPoints: z.number().min(0).max(10000), paid: z.boolean(),
 });
 const appointmentSchema = z.object({
-  kind: z.literal("appointment"), clientId: z.uuid(), vehicleId: z.uuid(), serviceId: z.uuid().optional(), title: z.string().trim().min(2).max(160), startAt: z.iso.datetime(), plannedDurationMinutes: z.number().int().min(15).max(1440), workerIds: z.array(z.uuid()).min(1).max(12).refine((ids) => new Set(ids).size === ids.length), address: z.string().trim().max(300), revenueAllocated: z.number().int().min(0),
+  kind: z.literal("appointment"), clientId: z.uuid(), vehicleId: z.uuid(), serviceId: z.uuid().optional(), title: z.string().trim().min(2).max(160), startAt: z.iso.datetime(), plannedDurationMinutes: z.number().int().min(15).max(1440), workerIds: z.array(z.uuid()).min(1).max(12).refine((ids) => new Set(ids).size === ids.length), address: z.string().trim().max(300), revenueAllocated: z.number().int().min(0), completed: z.boolean(),
 });
 const quickCreateSchema = z.discriminatedUnion("kind", [leadSchema, clientSchema, appointmentSchema, expenseSchema]);
 
@@ -71,16 +71,16 @@ export async function POST(request: Request) {
 
       const endAt = new Date(new Date(input.startAt).getTime() + input.plannedDurationMinutes * 60_000).toISOString();
       const { data: intervention, error } = await supabase.from("interventions").insert({
-        organization_id: organizationId, location_id: locationId, client_id: input.clientId, vehicle_id: input.vehicleId, status: "scheduled", title: input.title, start_at: input.startAt, end_at: endAt, planned_duration_minutes: input.plannedDurationMinutes, product_cost_cents: Number(service?.target_product_cost_cents ?? 0), travel_cost_cents: Number(service?.target_travel_cost_cents ?? 0), address: input.address, created_by: user.id,
+        organization_id: organizationId, location_id: locationId, client_id: input.clientId, vehicle_id: input.vehicleId, status: input.completed ? "completed" : "scheduled", title: input.title, start_at: input.startAt, end_at: endAt, planned_duration_minutes: input.plannedDurationMinutes, actual_duration_minutes: input.completed ? input.plannedDurationMinutes : null, product_cost_cents: Number(service?.target_product_cost_cents ?? 0), travel_cost_cents: Number(service?.target_travel_cost_cents ?? 0), address: input.address, created_by: user.id,
       }).select("id").single();
       if (error) throw error;
       if (!intervention) throw new Error("Rendez-vous introuvable après création.");
 
       const { error: itemError } = await supabase.from("intervention_items").insert({ organization_id: organizationId, intervention_id: intervention.id, service_id: service?.id ?? null, label: input.title, quantity: 1, revenue_allocated_cents: input.revenueAllocated });
       if (itemError) throw itemError;
-      const { error: workersError } = await supabase.from("intervention_workers").insert(input.workerIds.map((profileId) => ({ organization_id: organizationId, intervention_id: intervention.id, profile_id: profileId, planned_minutes: input.plannedDurationMinutes })));
+      const { error: workersError } = await supabase.from("intervention_workers").insert(input.workerIds.map((profileId) => ({ organization_id: organizationId, intervention_id: intervention.id, profile_id: profileId, planned_minutes: input.plannedDurationMinutes, actual_minutes: input.completed ? input.plannedDurationMinutes : null })));
       if (workersError) throw workersError;
-      await supabase.from("activity_logs").insert({ organization_id: organizationId, actor_id: user.id, kind: "comment_added", title: "Rendez-vous créé", description: input.title, entity_type: "intervention", entity_id: intervention.id });
+      await supabase.from("activity_logs").insert({ organization_id: organizationId, actor_id: user.id, kind: "comment_added", title: input.completed ? "Prestation effectuée enregistrée" : "Rendez-vous créé", description: input.title, entity_type: "intervention", entity_id: intervention.id });
       return NextResponse.json({ id: intervention.id }, { status: 201 });
     }
 

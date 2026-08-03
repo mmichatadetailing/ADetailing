@@ -43,7 +43,6 @@ const groups = [
   {
     label: "Opérations",
     items: [
-      { href: "/commercial", label: "Commercial", icon: BriefcaseBusiness },
       { href: "/prestations", label: "Prestations", icon: Sparkles },
       { href: "/clients", label: "Clients", icon: ContactRound },
       { href: "/documents", label: "Documents", icon: FileStack },
@@ -142,7 +141,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {[
           { href: "/dashboard", label: "Accueil", icon: Gauge },
           { href: "/planning", label: "Planning", icon: CalendarDays },
-          { href: "/commercial", label: "Commercial", icon: BriefcaseBusiness },
+          { href: "/clients", label: "Clients", icon: ContactRound },
           { href: "/prestations", label: "Prestations", icon: Sparkles },
           { href: "/finances", label: "Finances", icon: CircleDollarSign },
         ].map((item) => { const active = pathname === item.href || pathname.startsWith(`${item.href}/`); return <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} className={cn("focus-ring row-interactive group my-1 flex min-h-[54px] flex-col items-center justify-center gap-1 rounded-xl text-[9px] font-bold", active ? "bg-brand-50 text-brand-600" : "text-zinc-500")}><item.icon className="size-[18px] transition-transform duration-200 group-hover:-translate-y-0.5" />{item.label}</Link>; })}

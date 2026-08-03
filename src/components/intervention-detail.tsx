@@ -51,11 +51,11 @@ function hours(minutes: number) {
 
 type EditableLine = { id?: string; serviceId: string; label: string; quantity: number; revenueAllocated: number; revenueEuros: number };
 
-export function InterventionDetail({ interventionId }: { interventionId: string }) {
+export function InterventionDetail({ interventionId, startEditing = false }: { interventionId: string; startEditing?: boolean }) {
   const data = useDemoStore();
   const current = data.interventions.find((item) => item.id === interventionId);
   const photoInputRef = useRef<HTMLInputElement>(null);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(startEditing);
   const [photos, setPhotos] = useState<Array<{ name: string; size: number }>>([]);
   const initialDate = localDateParts(current?.startAt);
   const [title, setTitle] = useState(current?.title ?? "");

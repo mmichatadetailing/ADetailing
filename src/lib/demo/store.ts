@@ -96,6 +96,7 @@ export interface NewAppointmentInput {
   workerIds: string[];
   address: string;
   revenueAllocated: number;
+  completed: boolean;
 }
 
 export interface InterventionEditInput {
@@ -332,14 +333,15 @@ export const useDemoStore = create<DemoStore>()(
           ...entityBase(),
           clientId: input.clientId,
           vehicleId: input.vehicleId,
-          status: "scheduled",
+          status: input.completed ? "completed" : "scheduled",
           title: input.title.trim(),
           startAt: input.startAt,
           endAt: new Date(new Date(input.startAt).getTime() + input.plannedDurationMinutes * 60_000).toISOString(),
           plannedDurationMinutes: input.plannedDurationMinutes,
+          actualDurationMinutes: input.completed ? input.plannedDurationMinutes : undefined,
           preparationMinutes: 0,
           cleanupMinutes: 0,
-          workers: [...new Set(input.workerIds)].map((memberId) => ({ memberId, plannedMinutes: input.plannedDurationMinutes })),
+          workers: [...new Set(input.workerIds)].map((memberId) => ({ memberId, plannedMinutes: input.plannedDurationMinutes, actualMinutes: input.completed ? input.plannedDurationMinutes : undefined })),
           items: [{ id: createId(), serviceId: service?.id, label: input.title.trim(), quantity: 1, revenueAllocated: input.revenueAllocated }],
           productCost: service?.targetProductCost ?? 0,
           travelCost: service?.targetTravelCost ?? 0,
@@ -351,7 +353,7 @@ export const useDemoStore = create<DemoStore>()(
         };
         set((state) => ({
           interventions: [intervention, ...state.interventions],
-          activities: [activity("comment_added", "Rendez-vous créé", intervention.title, "intervention", intervention.id), ...state.activities],
+          activities: [activity("comment_added", input.completed ? "Prestation effectuée enregistrée" : "Rendez-vous créé", intervention.title, "intervention", intervention.id), ...state.activities],
         }));
         return intervention.id;
       },

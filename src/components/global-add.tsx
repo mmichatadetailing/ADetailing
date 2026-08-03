@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CalendarPlus2, Plus } from "lucide-react";
+import { CalendarPlus2, CheckCircle2, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -156,6 +156,7 @@ function AppointmentForm({ close }: { close: () => void }) {
     return tomorrow.toISOString().slice(0, 10);
   });
   const [time, setTime] = useState("09:00");
+  const [completed, setCompleted] = useState(false);
   const [durationHours, setDurationHours] = useState((initialService?.targetDurationMinutes ?? 120) / 60);
   const [priceEuros, setPriceEuros] = useState((initialService?.prices[0]?.amount ?? 0) / 100);
   const [address, setAddress] = useState(initialClient ? [initialClient.address, initialClient.postalCode, initialClient.city].filter(Boolean).join(" ") : "");
@@ -198,11 +199,11 @@ function AppointmentForm({ close }: { close: () => void }) {
     if (workerIds.length === 0) return toast.error("Affectez au moins un collaborateur");
     if (!date || !time || !Number.isFinite(durationHours) || durationHours <= 0) return toast.error("Le créneau est incomplet");
     const startAt = new Date(`${date}T${time}`).toISOString();
-    const input = { clientId, vehicleId, serviceId, title: service.name, startAt, plannedDurationMinutes: Math.round(durationHours * 60), workerIds, address, revenueAllocated: Math.round(priceEuros * 100) };
+    const input = { clientId, vehicleId, serviceId, title: service.name, startAt, plannedDurationMinutes: Math.round(durationHours * 60), workerIds, address, revenueAllocated: Math.round(priceEuros * 100), completed };
     setSubmitting(true);
     try {
       const id = mode === "supabase" ? await createRecord({ kind: "appointment", ...input }) : addAppointment(input);
-      toast.success("Rendez-vous créé et ajouté au planning");
+      toast.success(completed ? "Prestation effectuée enregistrée" : "Rendez-vous créé et ajouté au planning");
       close();
       router.push(`/prestations?intervention=${id}`);
     } catch (error) {
@@ -216,7 +217,11 @@ function AppointmentForm({ close }: { close: () => void }) {
 
   return (
     <div className="grid gap-4">
-      <div className="rounded-2xl border border-brand-200 bg-brand-50/70 p-4"><p className="flex items-center gap-2 text-sm font-bold text-brand-700"><CalendarPlus2 className="size-4" /> Nouveau rendez-vous</p><p className="mt-1 text-xs text-brand-600">Les informations pourront être modifiées ensuite depuis la fiche prestation.</p></div>
+      <div className="grid grid-cols-2 gap-2 rounded-2xl bg-zinc-100 p-1">
+        <button type="button" aria-pressed={!completed} onClick={() => { setCompleted(false); const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1); setDate(tomorrow.toISOString().slice(0, 10)); }} className={`focus-ring rounded-xl px-3 py-2.5 text-xs font-bold transition ${!completed ? "bg-white text-brand-700 shadow-sm" : "text-zinc-500"}`}><CalendarPlus2 className="mr-1.5 inline size-3.5" /> Rendez-vous à venir</button>
+        <button type="button" aria-pressed={completed} onClick={() => { setCompleted(true); setDate(new Date().toISOString().slice(0, 10)); }} className={`focus-ring rounded-xl px-3 py-2.5 text-xs font-bold transition ${completed ? "bg-white text-emerald-700 shadow-sm" : "text-zinc-500"}`}><CheckCircle2 className="mr-1.5 inline size-3.5" /> Déjà effectuée</button>
+      </div>
+      <div className={`rounded-2xl border p-4 ${completed ? "border-emerald-200 bg-emerald-50/70" : "border-brand-200 bg-brand-50/70"}`}><p className={`flex items-center gap-2 text-sm font-bold ${completed ? "text-emerald-800" : "text-brand-700"}`}>{completed ? <CheckCircle2 className="size-4" /> : <CalendarPlus2 className="size-4" />} {completed ? "Ajouter une prestation terminée" : "Nouveau rendez-vous"}</p><p className={`mt-1 text-xs ${completed ? "text-emerald-700" : "text-brand-600"}`}>{completed ? "Le dossier commencera directement à l’étape Facture, avec les temps prévus repris comme temps réalisés." : "Les informations pourront être modifiées ensuite depuis la fiche prestation."}</p></div>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Client"><Select autoFocus value={clientId} onChange={(event) => chooseClient(event.target.value)}>{data.clients.map((client) => <option key={client.id} value={client.id}>{client.company || `${client.firstName} ${client.lastName}`}</option>)}</Select></Field>
         <Field label="Véhicule"><Select value={vehicleId} onChange={(event) => chooseVehicle(event.target.value)}><option value="">Sélectionner…</option>{clientVehicles.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.make} {vehicle.model} · {vehicle.registration || "sans immatriculation"}</option>)}</Select></Field>
@@ -226,7 +231,7 @@ function AppointmentForm({ close }: { close: () => void }) {
         <Field label="Montant prévu (€)"><Input min="0" step="0.01" type="number" value={priceEuros} onChange={(event) => setPriceEuros(Number(event.target.value))} /></Field>
       </div>
       <div className="grid gap-4 sm:grid-cols-3">
-        <Field label="Date"><Input min={new Date().toISOString().slice(0, 10)} type="date" value={date} onChange={(event) => setDate(event.target.value)} /></Field>
+        <Field label={completed ? "Date de réalisation" : "Date"}><Input min={completed ? undefined : new Date().toISOString().slice(0, 10)} type="date" value={date} onChange={(event) => setDate(event.target.value)} /></Field>
         <Field label="Heure"><Input type="time" value={time} onChange={(event) => setTime(event.target.value)} /></Field>
         <Field label="Durée prévue (h)"><Input min="0.25" step="0.25" type="number" value={durationHours} onChange={(event) => setDurationHours(Number(event.target.value))} /></Field>
       </div>
@@ -234,7 +239,7 @@ function AppointmentForm({ close }: { close: () => void }) {
       <Field label="Collaborateurs" hint="Sélectionnez toutes les personnes prévues sur la prestation.">
         <div className="flex flex-wrap gap-2">{activeTeam.map((member) => { const selected = workerIds.includes(member.id); return <button key={member.id} type="button" aria-pressed={selected} onClick={() => setWorkerIds((ids) => selected ? ids.filter((id) => id !== member.id) : [...ids, member.id])} className={`focus-ring rounded-xl border px-3 py-2 text-xs font-semibold transition ${selected ? "border-brand-300 bg-brand-50 text-brand-700" : "border-zinc-200 bg-white text-zinc-500 hover:border-brand-200"}`}>{member.firstName} {member.lastName}</button>; })}</div>
       </Field>
-      <Button onClick={() => void submit()} disabled={submitting}><CalendarPlus2 className="size-4" /> {submitting ? "Création…" : "Créer et ouvrir la prestation"}</Button>
+      <Button onClick={() => void submit()} disabled={submitting}>{completed ? <CheckCircle2 className="size-4" /> : <CalendarPlus2 className="size-4" />} {submitting ? "Création…" : completed ? "Enregistrer la prestation effectuée" : "Créer et ouvrir la prestation"}</Button>
     </div>
   );
 }
@@ -292,7 +297,7 @@ export function GlobalAdd() {
       <Button onClick={() => setOpen(true)} aria-label="Ajouter"><Plus className="size-4" /> <span className="hidden sm:inline">Ajouter</span></Button>
       <Modal open={open} onClose={close} title="Ajouter" description="Une saisie courte, le reste pourra être complété plus tard.">
         <div className="mb-5 grid grid-cols-2 gap-2 rounded-xl bg-white/[0.035] p-1 sm:grid-cols-4">
-          {([['appointment', 'Rendez-vous'], ['lead', 'Demande'], ['client', 'Client'], ['expense', 'Dépense']] as const).map(([value, label]) => (
+          {([['appointment', 'Prestation'], ['lead', 'Demande'], ['client', 'Client'], ['expense', 'Dépense']] as const).map(([value, label]) => (
             <button key={value} data-active={kind === value} className={`focus-ring tab-interactive rounded-lg px-3 py-2 text-xs font-semibold ${kind === value ? 'bg-white/10 text-white' : 'text-zinc-500'}`} onClick={() => setKind(value)}>{label}</button>
           ))}
         </div>
