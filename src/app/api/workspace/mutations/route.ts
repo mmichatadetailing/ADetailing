@@ -8,6 +8,25 @@ const leadStages = ["received", "qualify", "quote_to_prepare", "quote_sent", "fo
 const interventionStatuses = ["to_schedule", "scheduled", "confirmed", "in_progress", "completed", "cancelled"] as const;
 const serviceKinds = ["formula", "option", "subscription", "pack"] as const;
 const servicePricingModes = ["vehicle_format", "vehicle_count", "custom"] as const;
+const serviceMutationFields = {
+  name: z.string().trim().min(2),
+  kind: z.enum(serviceKinds),
+  category: z.string().trim().min(2),
+  pricingMode: z.enum(servicePricingModes),
+  prices: z.array(z.object({
+    label: z.string().trim().min(1).max(100),
+    vehicleFormat: z.string().trim().min(1).max(80).optional(),
+    minimumVehicleCount: z.number().int().min(1).optional(),
+    maximumVehicleCount: z.number().int().min(1).optional(),
+    amount: z.number().int().min(0),
+    maximumAmount: z.number().int().min(0),
+  }).refine((price) => price.maximumAmount >= price.amount, "La borne haute doit être supérieure ou égale à la borne basse.")
+    .refine((price) => price.maximumVehicleCount === undefined || (price.minimumVehicleCount !== undefined && price.maximumVehicleCount >= price.minimumVehicleCount), "La tranche de véhicules est invalide."))
+    .min(1).max(30)
+    .refine((prices) => new Set(prices.map((price) => normalizeText(price.label))).size === prices.length, "Chaque règle tarifaire doit avoir un libellé unique."),
+  targetDurationMinutes: z.number().int().positive(),
+  targetProductCost: z.number().int().min(0),
+};
 const expenseMutationFields = {
   expenseId: z.uuid(),
   date: z.iso.date(),
@@ -44,26 +63,8 @@ const mutationSchema = z.discriminatedUnion("action", [
   }),
   z.object({ action: z.literal("completeIntervention"), interventionId: z.uuid(), actualDurationMinutes: z.number().int().min(0), productCost: z.number().int().min(0), travelCost: z.number().int().min(0), otherDirectCosts: z.number().int().min(0), workerMinutes: z.record(z.string(), z.number().int().min(0)) }),
   z.object({ action: z.literal("incrementChecklist"), interventionId: z.uuid() }),
-  z.object({
-    action: z.literal("addService"),
-    name: z.string().trim().min(2),
-    kind: z.enum(serviceKinds),
-    category: z.string().trim().min(2),
-    pricingMode: z.enum(servicePricingModes),
-    prices: z.array(z.object({
-      label: z.string().trim().min(1).max(100),
-      vehicleFormat: z.string().trim().min(1).max(80).optional(),
-      minimumVehicleCount: z.number().int().min(1).optional(),
-      maximumVehicleCount: z.number().int().min(1).optional(),
-      amount: z.number().int().min(0),
-      maximumAmount: z.number().int().min(0),
-    }).refine((price) => price.maximumAmount >= price.amount, "La borne haute doit être supérieure ou égale à la borne basse.")
-      .refine((price) => price.maximumVehicleCount === undefined || (price.minimumVehicleCount !== undefined && price.maximumVehicleCount >= price.minimumVehicleCount), "La tranche de véhicules est invalide."))
-      .min(1).max(30)
-      .refine((prices) => new Set(prices.map((price) => normalizeText(price.label))).size === prices.length, "Chaque règle tarifaire doit avoir un libellé unique."),
-    targetDurationMinutes: z.number().int().positive(),
-    targetProductCost: z.number().int().min(0),
-  }),
+  z.object({ action: z.literal("addService"), ...serviceMutationFields }),
+  z.object({ action: z.literal("updateService"), serviceId: z.uuid(), ...serviceMutationFields }),
   z.object({ action: z.literal("duplicateService"), serviceId: z.uuid() }),
   z.object({ action: z.literal("archiveService"), serviceId: z.uuid() }),
   z.object({ action: z.literal("reorderService"), serviceId: z.uuid(), direction: z.union([z.literal(-1), z.literal(1)]) }),
@@ -233,6 +234,56 @@ export async function POST(request: Request) {
         const { error } = await supabase.from("intervention_checklist_items").update({ completed: true, completed_at: new Date().toISOString(), completed_by: userId }).eq("id", item.id);
         ensureNoError(error);
       }
+    }
+
+    if (input.action === "updateService") {
+      if (input.kind !== "subscription" && input.pricingMode !== "vehicle_format") {
+        throw new Error("Les paliers et règles libres sont réservés aux abonnements.");
+      }
+      if (input.pricingMode === "vehicle_format" && input.prices.some((price) => !price.vehicleFormat)) {
+        throw new Error("Chaque tarif doit être associé à un type de véhicule.");
+      }
+      if (input.pricingMode === "vehicle_format" && new Set(input.prices.map((price) => price.vehicleFormat)).size !== input.prices.length) {
+        throw new Error("Chaque type de véhicule ne peut apparaître qu’une seule fois.");
+      }
+      if (input.pricingMode === "vehicle_count" && input.prices.some((tier) => tier.minimumVehicleCount === undefined)) {
+        throw new Error("Chaque palier doit indiquer un nombre minimum de véhicules.");
+      }
+
+      const categoryResult = await supabase.from("service_categories").select("id").eq("organization_id", organizationId).eq("name", input.category).limit(1).maybeSingle();
+      ensureNoError(categoryResult.error);
+      let category = categoryResult.data;
+      if (!category) {
+        const result = await supabase.from("service_categories").insert({ organization_id: organizationId, name: input.category }).select("id").single();
+        ensureNoError(result.error);
+        category = result.data;
+      }
+      if (!category) throw new Error("Catégorie introuvable.");
+
+      const formatNames = input.prices.map((price) => price.vehicleFormat).filter((format): format is string => Boolean(format && format !== "Tous formats"));
+      const { data: formats, error: formatsError } = formatNames.length
+        ? await supabase.from("vehicle_formats").select("id,name").eq("organization_id", organizationId).in("name", formatNames)
+        : { data: [], error: null };
+      ensureNoError(formatsError);
+      if ((formats?.length ?? 0) !== formatNames.length) throw new Error("Un format de véhicule n’existe plus dans le catalogue.");
+      const formatIds = new Map((formats ?? []).map((format) => [format.name, format.id]));
+
+      const { data: service, error } = await supabase.from("services").update({
+        kind: input.kind,
+        pricing_mode: input.pricingMode,
+        category_id: category.id,
+        name: input.name,
+        target_duration_minutes: input.targetDurationMinutes,
+        target_product_cost_cents: input.targetProductCost,
+      }).eq("organization_id", organizationId).eq("id", input.serviceId).is("archived_at", null).select("id").single();
+      ensureNoError(error);
+      if (!service) throw new Error("Offre introuvable.");
+
+      const deleteResult = await supabase.from("service_prices").delete().eq("organization_id", organizationId).eq("service_id", input.serviceId);
+      ensureNoError(deleteResult.error);
+      const { error: priceError } = await supabase.from("service_prices").insert(input.prices.map((price) => ({ organization_id: organizationId, service_id: input.serviceId, vehicle_format_id: price.vehicleFormat ? formatIds.get(price.vehicleFormat) ?? null : null, pricing_label: price.label, minimum_vehicle_count: price.minimumVehicleCount ?? null, maximum_vehicle_count: price.maximumVehicleCount ?? null, amount_cents: price.amount, maximum_amount_cents: price.maximumAmount, created_by: userId })));
+      ensureNoError(priceError);
+      return NextResponse.json({ ok: true, id: input.serviceId });
     }
 
     if (input.action === "addService") {

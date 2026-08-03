@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { parseHenrriText } from "@/lib/import/henrri-parser";
+import { reconstructVisualRows, type PositionedPdfText } from "@/lib/import/pdf-text-layout";
 
 export const runtime = "nodejs";
 
@@ -10,7 +11,13 @@ async function extractPdfText(buffer: ArrayBuffer) {
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
     const page = await pdf.getPage(pageNumber);
     const content = await page.getTextContent();
-    pages.push(content.items.map((item) => ("str" in item ? item.str : "")).join("\n"));
+    const logicalText = content.items.map((item) => ("str" in item ? item.str : "")).join("\n");
+    const positionedItems = content.items.flatMap((item): PositionedPdfText[] => {
+      if (!("str" in item) || !("transform" in item) || !item.str.trim()) return [];
+      return [{ str: item.str, x: item.transform[4] ?? 0, y: item.transform[5] ?? 0 }];
+    });
+    const visualRows = reconstructVisualRows(positionedItems);
+    pages.push(`${logicalText}\n\n${visualRows}`);
   }
   return pages.join("\n\n");
 }

@@ -26,6 +26,44 @@ Total TTC : 181,10 €
 Règlement par virement
 `;
 
+const columnInvoiceFixture = `
+Référence
+Désignation
+Quantité
+PU Vente
+TVA
+Montant HT
+PACK BRILLANCE FOURGON
+- Prélavage actif
+1,00
+80,0000 €
+0,00
+80,00 €
+PACK CONFORT + FOURGON
+1,00
+100,0000 €
+0,00
+100,00 €
+FACTURE N° 26-06-7
+ADETAILING
+84100 ORANGE
+FRANCE
+N° SIRET : 94766076700023
+MATIS PONS PAYSAGE
+83 Impasse DES DOMINICAINS
+84250 LE THOR
+SIRET : 98312255700017
+Le samedi 27 juin 2026
+100 % soit 180,00 € à payer (virement) le : 27/06/2026
+Règlement par virement.
+Total HT 180,00 €
+TVA ( 0 % ) 0,00 €
+Total TTC 180,00 €
+
+PACK BRILLANCE FOURGON 1,00 80,0000 € 0,00 80,00 €
+PACK CONFORT + FOURGON 1,00 100,0000 € 0,00 100,00 €
+`;
+
 describe("parseur Henrri déterministe", () => {
   it("extrait un devis multi-lignes sans inventer la prestation réelle", () => {
     const parsed = parseHenrriText(quoteFixture);
@@ -49,5 +87,22 @@ describe("parseur Henrri déterministe", () => {
     expect(parsed.paymentMethod).toBe("Virement");
     expect(parsed.warnings.some((warning) => warning.includes("paiement reste à confirmer"))).toBe(true);
   });
+  it("importe les factures Henrri dont les colonnes PDF sont extraites verticalement", () => {
+    const parsed = parseHenrriText(columnInvoiceFixture);
+    expect(parsed).toMatchObject({
+      documentType: "invoice",
+      number: "26-06-7",
+      company: "MATIS PONS PAYSAGE",
+      professional: true,
+      totalExcludingTax: 18_000,
+      totalTax: 0,
+      totalIncludingTax: 18_000,
+      paymentMethod: "Virement",
+    });
+    expect(parsed.date).toContain("2026-06-27");
+    expect(parsed.dueDate).toContain("2026-06-27");
+    expect(parsed.lines).toHaveLength(2);
+    expect(parsed.lines.map((line) => line.netAmount)).toEqual([8_000, 10_000]);
+    expect(parsed.missingFields).toEqual([]);
+  });
 });
-

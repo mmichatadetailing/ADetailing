@@ -1,6 +1,6 @@
 "use client";
 
-import { Archive, ArrowDown, ArrowUp, Copy, Plus, Search, Tag, Timer, Trash2, UsersRound } from "lucide-react";
+import { Archive, ArrowDown, ArrowUp, Copy, Pencil, Plus, Search, Tag, Timer, Trash2, UsersRound } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
@@ -10,7 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Field, Input, Select } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { getServicePricingMode, servicePriceRuleLabel, servicePricingModeLabels, vehicleCountTierLabel } from "@/lib/domain/service-pricing";
-import type { ServiceKind, ServicePricingMode } from "@/lib/domain/types";
+import type { Service, ServiceKind, ServicePricingMode } from "@/lib/domain/types";
 import { useDemoStore } from "@/lib/demo/store";
 import { formatMoney, normalizeText } from "@/lib/utils";
 
@@ -54,6 +54,37 @@ function initialForm(priceFormats: string[]) {
   };
 }
 
+function formForService(service: Service, priceFormats: string[]) {
+  const pricingMode = getServicePricingMode(service);
+  const priceRanges = Object.fromEntries(priceFormats.map((format) => {
+    const price = service.prices.find((entry) => entry.vehicleFormat === format);
+    return [format, { minimum: (price?.amount ?? 0) / 100, maximum: (price?.maximumAmount ?? price?.amount ?? 0) / 100 }];
+  }));
+  const vehicleCountTiers = pricingMode === "vehicle_count" ? service.prices.map((price, index) => ({
+    id: `edit-tier-${index}`,
+    minimumVehicles: price.minimumVehicleCount ?? 1,
+    maximumVehicles: price.maximumVehicleCount,
+    price: price.amount / 100,
+  })) : [{ id: "initial-tier", minimumVehicles: 1, maximumVehicles: 3, price: 0 }];
+  const customPrices = pricingMode === "custom" ? service.prices.map((price, index) => ({
+    id: `edit-custom-${index}`,
+    label: servicePriceRuleLabel(price, pricingMode),
+    minimum: price.amount / 100,
+    maximum: (price.maximumAmount ?? price.amount) / 100,
+  })) : [{ id: "initial-custom", label: "Tarif standard", minimum: 0, maximum: 0 }];
+  return {
+    name: service.name,
+    kind: service.kind,
+    category: service.category,
+    durationHours: service.targetDurationMinutes / 60,
+    productEuros: service.targetProductCost / 100,
+    pricingMode,
+    priceRanges,
+    vehicleCountTiers: vehicleCountTiers.length ? vehicleCountTiers : initialForm(priceFormats).vehicleCountTiers,
+    customPrices: customPrices.length ? customPrices : initialForm(priceFormats).customPrices,
+  };
+}
+
 export default function CataloguePage() {
   const data = useDemoStore();
   const priceFormats = data.settings.vehicleFormats.length > 0 ? data.settings.vehicleFormats : ["Tous formats"];
@@ -61,6 +92,7 @@ export default function CataloguePage() {
   const [query, setQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
   const [form, setForm] = useState(() => initialForm(priceFormats));
   const filtered = useMemo(() => data.services
     .filter((service) => (tab === "all" || tab === "formats" || tab === "aliases" || service.kind === tab) && (showArchived || service.active) && normalizeText(`${service.name} ${service.category} ${service.aliases.join(" ")}`).includes(normalizeText(query)))
@@ -100,7 +132,24 @@ export default function CataloguePage() {
     setForm((state) => ({ ...state, customPrices: state.customPrices.map((price) => price.id === id ? { ...price, ...patch } : price) }));
   };
 
-  const create = () => {
+  const openCreate = () => {
+    setEditingServiceId(null);
+    setForm(initialForm(priceFormats));
+    setAddOpen(true);
+  };
+
+  const openEdit = (service: Service) => {
+    setEditingServiceId(service.id);
+    setForm(formForService(service, priceFormats));
+    setAddOpen(true);
+  };
+
+  const closeForm = () => {
+    setAddOpen(false);
+    setEditingServiceId(null);
+  };
+
+  const save = () => {
     const pricingMode = form.kind === "subscription" ? form.pricingMode : "vehicle_format";
     let prices: Array<{ label: string; vehicleFormat?: string; minimumVehicleCount?: number; maximumVehicleCount?: number; amount: number; maximumAmount: number }>;
     if (pricingMode === "vehicle_count") {
@@ -126,7 +175,7 @@ export default function CataloguePage() {
       prices = ranges.map((range) => ({ label: range.format, vehicleFormat: range.format, amount: Math.round(range.minimum * 100), maximumAmount: Math.round(range.maximum * 100) }));
     }
     if (form.name.trim().length < 2 || form.category.trim().length < 2 || form.durationHours <= 0 || form.productEuros < 0) return toast.error("Vérifiez le nom, la catégorie, la durée et les coûts");
-    data.addService({
+    const input = {
       name: form.name.trim(),
       kind: form.kind,
       category: form.category.trim(),
@@ -134,9 +183,15 @@ export default function CataloguePage() {
       prices,
       targetDurationMinutes: Math.round(form.durationHours * 60),
       targetProductCost: Math.round(form.productEuros * 100),
-    });
-    toast.success(form.kind === "subscription" ? "Abonnement et règles tarifaires ajoutés" : "Offre et fourchettes ajoutées au catalogue");
-    setAddOpen(false);
+    };
+    if (editingServiceId) {
+      data.updateService(editingServiceId, input);
+      toast.success(form.kind === "subscription" ? "Abonnement et paliers mis à jour" : "Offre mise à jour");
+    } else {
+      data.addService(input);
+      toast.success(form.kind === "subscription" ? "Abonnement et règles tarifaires ajoutés" : "Offre et fourchettes ajoutées au catalogue");
+    }
+    closeForm();
     setForm(initialForm(priceFormats));
   };
 
@@ -146,7 +201,7 @@ export default function CataloguePage() {
         eyebrow="Offres & standards"
         title="Catalogue modifiable"
         description="Définissez une tarification par type de véhicule, par nombre de véhicules ou avec vos propres règles. Le prix final reste toujours modifiable."
-        actions={<Button onClick={() => setAddOpen(true)}><Plus className="size-4" /> Nouvelle offre</Button>}
+        actions={<Button onClick={openCreate}><Plus className="size-4" /> Nouvelle offre</Button>}
       />
 
       <div className="-mx-4 overflow-x-auto px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
@@ -188,7 +243,7 @@ export default function CataloguePage() {
                     </div>
                     {service.prices.length > 0 && <div className="mt-4 flex flex-wrap gap-1.5">{service.prices.map((price, index) => <Badge key={`${servicePriceRuleLabel(price, pricingMode)}-${index}`} variant="blue">{servicePriceRuleLabel(price, pricingMode)} · {formatRange(price.amount, price.maximumAmount ?? price.amount)}{pricingMode === "vehicle_count" ? "/véhicule" : ""}</Badge>)}</div>}
                     {service.aliases.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{service.aliases.map((alias) => <Badge key={alias}>{alias}</Badge>)}</div>}
-                    <div className="mt-5 flex flex-wrap items-center gap-1 border-t border-white/[0.06] pt-3"><Button size="sm" variant="ghost" onClick={() => data.reorderService(service.id, -1)} aria-label="Monter"><ArrowUp className="size-3.5" /></Button><Button size="sm" variant="ghost" onClick={() => data.reorderService(service.id, 1)} aria-label="Descendre"><ArrowDown className="size-3.5" /></Button><Button size="sm" variant="ghost" onClick={() => { data.duplicateService(service.id); toast.success("Offre dupliquée en brouillon"); }}><Copy className="size-3.5" /> Dupliquer</Button>{service.active && <Button size="sm" variant="ghost" className="ml-auto text-red-300" onClick={() => { data.archiveService(service.id); toast.success("Offre archivée, historique conservé"); }}><Archive className="size-3.5" /> Archiver</Button>}</div>
+                    <div className="mt-5 flex flex-wrap items-center gap-1 border-t border-white/[0.06] pt-3"><Button size="sm" variant="ghost" onClick={() => data.reorderService(service.id, -1)} aria-label="Monter"><ArrowUp className="size-3.5" /></Button><Button size="sm" variant="ghost" onClick={() => data.reorderService(service.id, 1)} aria-label="Descendre"><ArrowDown className="size-3.5" /></Button>{!service.archivedAt && <Button size="sm" variant="ghost" onClick={() => openEdit(service)}><Pencil className="size-3.5" /> Modifier</Button>}<Button size="sm" variant="ghost" onClick={() => { data.duplicateService(service.id); toast.success("Offre dupliquée en brouillon"); }}><Copy className="size-3.5" /> Dupliquer</Button>{service.active && <Button size="sm" variant="ghost" className="ml-auto text-red-300" onClick={() => { data.archiveService(service.id); toast.success("Offre archivée, historique conservé"); }}><Archive className="size-3.5" /> Archiver</Button>}</div>
                   </CardContent>
                 </Card>
               );
@@ -197,7 +252,7 @@ export default function CataloguePage() {
         </>
       )}
 
-      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Nouvelle offre" description="Choisissez une logique tarifaire claire. Le prix final restera modifiable sur chaque prestation." className="sm:max-w-3xl">
+      <Modal open={addOpen} onClose={closeForm} title={editingServiceId ? "Modifier l’offre" : "Nouvelle offre"} description={editingServiceId ? "Tous les changements s’appliqueront aux prochaines utilisations de cette offre, sans modifier l’historique." : "Choisissez une logique tarifaire claire. Le prix final restera modifiable sur chaque prestation."} className="sm:max-w-3xl">
         <div className="grid gap-4">
           <Field label="Nom"><Input autoFocus value={form.name} onChange={(event) => setForm((state) => ({ ...state, name: event.target.value }))} /></Field>
           <div className="grid gap-4 sm:grid-cols-2"><Field label="Type"><Select value={form.kind} onChange={(event) => chooseKind(event.target.value as ServiceKind)}><option value="formula">Formule</option><option value="option">Option</option><option value="subscription">Abonnement</option><option value="pack">Pack</option></Select></Field><Field label="Catégorie"><Input value={form.category} onChange={(event) => setForm((state) => ({ ...state, category: event.target.value }))} /></Field></div>
@@ -258,7 +313,7 @@ export default function CataloguePage() {
             </div>
           )}
           <div className="grid gap-4 sm:grid-cols-2"><Field label="Durée cible (h)"><Input min="0.25" type="number" step="0.25" value={form.durationHours} onChange={(event) => setForm((state) => ({ ...state, durationHours: Number(event.target.value) }))} /></Field><Field label="Coût produits (€)"><Input min="0" type="number" step="0.01" value={form.productEuros} onChange={(event) => setForm((state) => ({ ...state, productEuros: Number(event.target.value) }))} /></Field></div>
-          <Button onClick={create}>{form.kind === "subscription" ? "Créer l’abonnement et ses règles" : "Créer l’offre et ses fourchettes"}</Button>
+          <Button onClick={save}>{editingServiceId ? "Enregistrer toutes les modifications" : form.kind === "subscription" ? "Créer l’abonnement et ses règles" : "Créer l’offre et ses fourchettes"}</Button>
         </div>
       </Modal>
     </div>

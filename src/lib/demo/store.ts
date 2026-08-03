@@ -150,6 +150,7 @@ interface DemoActions {
   incrementChecklist: (interventionId: string) => void;
   rescheduleIntervention: (interventionId: string, startAt: string, endAt: string) => void;
   addService: (input: NewServiceInput) => string;
+  updateService: (serviceId: string, input: NewServiceInput) => void;
   duplicateService: (serviceId: string) => string | null;
   archiveService: (serviceId: string) => void;
   reorderService: (serviceId: string, direction: -1 | 1) => void;
@@ -683,6 +684,22 @@ export const useDemoStore = create<DemoStore>()(
         set((state) => ({ services: [...state.services, service] }));
         persistMutation({ action: "addService", ...input });
         return service.id;
+      },
+      updateService: (serviceId, input) => {
+        set((state) => ({
+          services: state.services.map((service) => service.id === serviceId ? {
+            ...service,
+            kind: input.kind,
+            pricingMode: input.pricingMode,
+            category: input.category,
+            name: input.name,
+            prices: input.prices,
+            targetDurationMinutes: input.targetDurationMinutes,
+            targetProductCost: input.targetProductCost,
+            updatedAt: nowIso(),
+          } : service),
+        }));
+        persistMutation({ action: "updateService", serviceId, ...input });
       },
       duplicateService: (serviceId) => {
         const source = get().services.find((service) => service.id === serviceId);
