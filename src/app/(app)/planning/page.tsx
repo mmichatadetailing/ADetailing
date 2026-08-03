@@ -166,7 +166,7 @@ export default function PlanningPage() {
                         <GripVertical className="mt-0.5 size-3.5 text-zinc-700" />
                         <div className="min-w-0">
                           <p className="truncate text-xs font-bold">{client?.company || `${client?.firstName} ${client?.lastName}`}</p>
-                          <p className="mt-1 truncate text-[11px] text-zinc-500">{vehicle?.make} {vehicle?.model}</p>
+                          <p className="mt-1 truncate text-[11px] text-zinc-500">{vehicle ? `${vehicle.make} ${vehicle.model}` : item.vehicleFormat || "Véhicule non renseigné"}</p>
                           <p className="mt-2 text-[10px] text-brand-400">{item.plannedDurationMinutes / 60} h · {item.workers.length} pers.</p>
                         </div>
                       </div>

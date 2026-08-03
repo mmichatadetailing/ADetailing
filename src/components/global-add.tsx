@@ -52,6 +52,8 @@ const expenseSchema = z.object({
   paid: z.boolean(),
 });
 
+const appointmentVehicleFormats = ["Citadine", "Berline", "SUV", "Monospace", "4x4", "Fourgon", "Autre"] as const;
+
 function LeadForm({ close }: { close: () => void }) {
   const addLead = useDemoStore((state) => state.addLead);
   const { mode, createRecord } = useWorkspace();
@@ -145,9 +147,8 @@ function AppointmentForm({ close }: { close: () => void }) {
   const activeTeam = data.team.filter((member) => member.active);
   const activeServices = data.services.filter((service) => service.active && !service.archivedAt);
   const initialClient = data.clients[0];
-  const initialVehicle = data.vehicles.find((vehicle) => vehicle.clientId === initialClient?.id);
   const [clientId, setClientId] = useState(initialClient?.id ?? "");
-  const [vehicleId, setVehicleId] = useState(initialVehicle?.id ?? "");
+  const [vehicleFormat, setVehicleFormat] = useState("");
   const [serviceId, setServiceId] = useState("");
   const [serviceLabel, setServiceLabel] = useState("");
   const [date, setDate] = useState(() => {
@@ -162,26 +163,20 @@ function AppointmentForm({ close }: { close: () => void }) {
   const [address, setAddress] = useState(initialClient ? [initialClient.address, initialClient.postalCode, initialClient.city].filter(Boolean).join(" ") : "");
   const [workerIds, setWorkerIds] = useState<string[]>(activeTeam[0]?.id ? [activeTeam[0].id] : []);
   const [submitting, setSubmitting] = useState(false);
-  const clientVehicles = data.vehicles.filter((vehicle) => vehicle.clientId === clientId);
-
-  const priceFor = (nextServiceId: string, nextVehicleId: string) => {
+  const priceFor = (nextServiceId: string, nextVehicleFormat: string) => {
     const service = activeServices.find((item) => item.id === nextServiceId);
-    const vehicle = data.vehicles.find((item) => item.id === nextVehicleId);
-    return (service?.prices.find((item) => item.vehicleFormat === vehicle?.format)?.amount ?? service?.prices[0]?.amount ?? 0) / 100;
+    return (service?.prices.find((item) => item.vehicleFormat === nextVehicleFormat)?.amount ?? service?.prices[0]?.amount ?? 0) / 100;
   };
 
   const chooseClient = (nextClientId: string) => {
     const client = data.clients.find((item) => item.id === nextClientId);
-    const vehicle = data.vehicles.find((item) => item.clientId === nextClientId);
     setClientId(nextClientId);
-    setVehicleId(vehicle?.id ?? "");
-    if (serviceId) setPriceEuros(priceFor(serviceId, vehicle?.id ?? ""));
     setAddress(client ? [client.address, client.postalCode, client.city].filter(Boolean).join(" ") : "");
   };
 
-  const chooseVehicle = (nextVehicleId: string) => {
-    setVehicleId(nextVehicleId);
-    if (serviceId) setPriceEuros(priceFor(serviceId, nextVehicleId));
+  const chooseVehicleFormat = (nextVehicleFormat: string) => {
+    setVehicleFormat(nextVehicleFormat);
+    if (serviceId) setPriceEuros(priceFor(serviceId, nextVehicleFormat));
   };
 
   const chooseServiceLabel = (nextLabel: string) => {
@@ -191,19 +186,18 @@ function AppointmentForm({ close }: { close: () => void }) {
     setServiceId(service?.id ?? "");
     if (service) {
       setDurationHours(service.targetDurationMinutes / 60);
-      setPriceEuros(priceFor(service.id, vehicleId));
+      setPriceEuros(priceFor(service.id, vehicleFormat));
     }
   };
 
   const submit = async () => {
     const title = serviceLabel.trim();
     if (!clientId) return toast.error("Sélectionnez un client");
-    if (!vehicleId) return toast.error("Ajoutez ou sélectionnez un véhicule pour ce client");
     if (title.length < 2) return toast.error("Indiquez la formule ou la prestation réalisée");
     if (workerIds.length === 0) return toast.error("Affectez au moins un collaborateur");
     if (!date || !time || !Number.isFinite(durationHours) || durationHours <= 0) return toast.error("Le créneau est incomplet");
     const startAt = new Date(`${date}T${time}`).toISOString();
-    const input = { clientId, vehicleId, serviceId: serviceId || undefined, title, startAt, plannedDurationMinutes: Math.round(durationHours * 60), workerIds, address, revenueAllocated: Math.round(priceEuros * 100), completed };
+    const input = { clientId, vehicleFormat: vehicleFormat || undefined, serviceId: serviceId || undefined, title, startAt, plannedDurationMinutes: Math.round(durationHours * 60), workerIds, address, revenueAllocated: Math.round(priceEuros * 100), completed };
     setSubmitting(true);
     try {
       const id = mode === "supabase" ? await createRecord({ kind: "appointment", ...input }) : addAppointment(input);
@@ -228,7 +222,7 @@ function AppointmentForm({ close }: { close: () => void }) {
       <div className={`rounded-2xl border p-4 ${completed ? "border-emerald-200 bg-emerald-50/70" : "border-brand-200 bg-brand-50/70"}`}><p className={`flex items-center gap-2 text-sm font-bold ${completed ? "text-emerald-800" : "text-brand-700"}`}>{completed ? <CheckCircle2 className="size-4" /> : <CalendarPlus2 className="size-4" />} {completed ? "Ajouter une prestation terminée" : "Nouveau rendez-vous"}</p><p className={`mt-1 text-xs ${completed ? "text-emerald-700" : "text-brand-600"}`}>{completed ? "Le dossier commencera directement à l’étape Facture, avec les temps prévus repris comme temps réalisés." : "Les informations pourront être modifiées ensuite depuis la fiche prestation."}</p></div>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Client"><Select autoFocus value={clientId} onChange={(event) => chooseClient(event.target.value)}>{data.clients.map((client) => <option key={client.id} value={client.id}>{client.company || `${client.firstName} ${client.lastName}`}</option>)}</Select></Field>
-        <Field label="Véhicule"><Select value={vehicleId} onChange={(event) => chooseVehicle(event.target.value)}><option value="">Sélectionner…</option>{clientVehicles.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.make} {vehicle.model} · {vehicle.registration || "sans immatriculation"}</option>)}</Select></Field>
+        <Field label="Catégorie du véhicule" hint="Facultatif"><Select value={vehicleFormat} onChange={(event) => chooseVehicleFormat(event.target.value)}><option value="">Non renseignée</option>{appointmentVehicleFormats.map((format) => <option key={format} value={format}>{format}</option>)}</Select></Field>
       </div>
       <div className="grid gap-4 sm:grid-cols-[1.35fr_.65fr]">
         <Field label="Formule ou prestation" hint={serviceId ? "Prestation du catalogue reconnue : durée et tarif préremplis." : "Saisie libre : écrivez n’importe quel intitulé."}>

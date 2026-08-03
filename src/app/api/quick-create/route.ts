@@ -13,7 +13,7 @@ const expenseSchema = z.object({
   kind: z.literal("expense"), date: z.iso.date(), family: z.enum(["fixed", "variable", "investment", "personal"]), category: z.string().min(2), supplier: z.string().min(2), description: z.string().min(2), amountIncludingTax: z.number().positive(), vatRateBasisPoints: z.number().min(0).max(10000), paid: z.boolean(),
 });
 const appointmentSchema = z.object({
-  kind: z.literal("appointment"), clientId: z.uuid(), vehicleId: z.uuid(), serviceId: z.uuid().optional(), title: z.string().trim().min(2).max(160), startAt: z.iso.datetime(), plannedDurationMinutes: z.number().int().min(15).max(1440), workerIds: z.array(z.uuid()).min(1).max(12).refine((ids) => new Set(ids).size === ids.length), address: z.string().trim().max(300), revenueAllocated: z.number().int().min(0), completed: z.boolean(),
+  kind: z.literal("appointment"), clientId: z.uuid(), vehicleFormat: z.enum(["Citadine", "Berline", "SUV", "Monospace", "4x4", "Fourgon", "Autre"]).optional(), serviceId: z.uuid().optional(), title: z.string().trim().min(2).max(160), startAt: z.iso.datetime(), plannedDurationMinutes: z.number().int().min(15).max(1440), workerIds: z.array(z.uuid()).min(1).max(12).refine((ids) => new Set(ids).size === ids.length), address: z.string().trim().max(300), revenueAllocated: z.number().int().min(0), completed: z.boolean(),
 });
 const quickCreateSchema = z.discriminatedUnion("kind", [leadSchema, clientSchema, appointmentSchema, expenseSchema]);
 
@@ -54,10 +54,6 @@ export async function POST(request: Request) {
     }
 
     if (input.kind === "appointment") {
-      const { data: vehicle, error: vehicleError } = await supabase.from("vehicles").select("id,client_id").eq("organization_id", organizationId).eq("id", input.vehicleId).single();
-      if (vehicleError) throw vehicleError;
-      if (!vehicle || vehicle.client_id !== input.clientId) throw new Error("Le véhicule ne correspond pas au client sélectionné.");
-
       const { data: members, error: membersError } = await supabase.from("organization_members").select("profile_id").eq("organization_id", organizationId).eq("active", true).in("profile_id", input.workerIds);
       if (membersError) throw membersError;
       if ((members?.length ?? 0) !== input.workerIds.length) throw new Error("Un collaborateur sélectionné n’est pas disponible dans cette équipe.");
@@ -71,7 +67,7 @@ export async function POST(request: Request) {
 
       const endAt = new Date(new Date(input.startAt).getTime() + input.plannedDurationMinutes * 60_000).toISOString();
       const { data: intervention, error } = await supabase.from("interventions").insert({
-        organization_id: organizationId, location_id: locationId, client_id: input.clientId, vehicle_id: input.vehicleId, status: input.completed ? "completed" : "scheduled", title: input.title, start_at: input.startAt, end_at: endAt, planned_duration_minutes: input.plannedDurationMinutes, actual_duration_minutes: input.completed ? input.plannedDurationMinutes : null, product_cost_cents: Number(service?.target_product_cost_cents ?? 0), travel_cost_cents: Number(service?.target_travel_cost_cents ?? 0), address: input.address, created_by: user.id,
+        organization_id: organizationId, location_id: locationId, client_id: input.clientId, vehicle_id: null, vehicle_format: input.vehicleFormat ?? null, status: input.completed ? "completed" : "scheduled", title: input.title, start_at: input.startAt, end_at: endAt, planned_duration_minutes: input.plannedDurationMinutes, actual_duration_minutes: input.completed ? input.plannedDurationMinutes : null, product_cost_cents: Number(service?.target_product_cost_cents ?? 0), travel_cost_cents: Number(service?.target_travel_cost_cents ?? 0), address: input.address, created_by: user.id,
       }).select("id").single();
       if (error) throw error;
       if (!intervention) throw new Error("Rendez-vous introuvable après création.");

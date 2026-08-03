@@ -44,7 +44,7 @@ function PrestationsPageContent() {
   const filtered = useMemo(() => rows.filter(({ intervention, invoice, workflow }) => {
     const client = data.clients.find((item) => item.id === intervention.clientId);
     const vehicle = data.vehicles.find((item) => item.id === intervention.vehicleId);
-    const matchesQuery = normalizeText(`${intervention.title} ${client?.firstName} ${client?.lastName} ${client?.company ?? ""} ${vehicle?.make} ${vehicle?.model} ${vehicle?.registration}`).includes(normalizeText(query));
+    const matchesQuery = normalizeText(`${intervention.title} ${client?.firstName} ${client?.lastName} ${client?.company ?? ""} ${vehicle?.make} ${vehicle?.model} ${vehicle?.registration} ${intervention.vehicleFormat ?? ""}`).includes(normalizeText(query));
     if (!matchesQuery) return false;
     if (filter === "upcoming") return ["to_schedule", "scheduled", "confirmed"].includes(intervention.status);
     if (filter === "in_progress") return intervention.status === "in_progress";
@@ -91,11 +91,12 @@ function PrestationsPageContent() {
         {filtered.map(({ intervention, workflow }) => {
           const client = data.clients.find((item) => item.id === intervention.clientId);
           const vehicle = data.vehicles.find((item) => item.id === intervention.vehicleId);
+          const vehicleSummary = vehicle ? `${vehicle.make} ${vehicle.model}${vehicle.registration ? ` · ${vehicle.registration}` : ""}` : intervention.vehicleFormat || "Véhicule non renseigné";
           const currentStep = workflow.steps.find((step) => step.state === "current");
           return (
             <div key={intervention.id} className="surface-interactive grid grid-cols-[minmax(0,1fr)_auto] overflow-hidden rounded-2xl border border-zinc-200 bg-white">
               <button onClick={() => { setEditOnOpen(false); setSelectedOverride(intervention.id); }} className="focus-ring grid min-w-0 gap-4 p-4 text-left sm:grid-cols-[minmax(230px,1.3fr)_170px_150px_minmax(180px,.8fr)_auto] sm:items-center sm:p-5">
-                <div className="min-w-0"><div className="flex items-center gap-2"><p className="truncate text-sm font-bold">{intervention.title}</p>{workflow.isComplete && <CheckMark />}</div><p className="mt-1 truncate text-xs text-zinc-500">{client?.company || `${client?.firstName} ${client?.lastName}`} · {vehicle?.make} {vehicle?.model} · {vehicle?.registration}</p><div className="mt-3 flex items-center gap-1.5">{workflow.steps.map((step) => <span key={step.id} title={`${step.label} : ${step.detail}`} className={`h-1.5 flex-1 rounded-full ${step.state === "done" ? "bg-emerald-500" : step.state === "current" ? "bg-brand-500" : "bg-zinc-200"}`} />)}</div></div>
+                <div className="min-w-0"><div className="flex items-center gap-2"><p className="truncate text-sm font-bold">{intervention.title}</p>{workflow.isComplete && <CheckMark />}</div><p className="mt-1 truncate text-xs text-zinc-500">{client?.company || `${client?.firstName} ${client?.lastName}`} · {vehicleSummary}</p><div className="mt-3 flex items-center gap-1.5">{workflow.steps.map((step) => <span key={step.id} title={`${step.label} : ${step.detail}`} className={`h-1.5 flex-1 rounded-full ${step.state === "done" ? "bg-emerald-500" : step.state === "current" ? "bg-brand-500" : "bg-zinc-200"}`} />)}</div></div>
                 <div><p className="text-[10px] font-bold tracking-wider text-zinc-500 uppercase">Rendez-vous</p><p className="mt-1 text-xs font-semibold">{intervention.startAt ? formatDate(intervention.startAt, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "À planifier"}</p><p className="mt-1 text-[10px] text-zinc-500"><Clock3 className="mr-1 inline size-3" /> {intervention.plannedDurationMinutes / 60} h</p></div>
                 <div><p className="text-[10px] font-bold tracking-wider text-zinc-500 uppercase">Montant prévu</p><p className="mt-1 text-sm font-bold">{formatMoney(intervention.items.reduce((sum, item) => sum + item.revenueAllocated, 0))}</p></div>
                 <div><p className="text-[10px] font-bold tracking-wider text-zinc-500 uppercase">Prochaine étape</p><p className={`mt-1 text-xs font-bold ${workflow.isComplete ? "text-emerald-700" : "text-brand-700"}`}>{workflow.isComplete ? "Parcours terminé" : intervention.status === "cancelled" ? "Prestation annulée" : currentStep?.detail}</p></div>

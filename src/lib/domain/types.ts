@@ -198,7 +198,8 @@ export interface InterventionWorker {
 
 export interface Intervention extends BaseEntity {
   clientId: UUID;
-  vehicleId: UUID;
+  vehicleId?: UUID;
+  vehicleFormat?: string;
   quoteId?: UUID;
   invoiceId?: UUID;
   status: InterventionStatus;

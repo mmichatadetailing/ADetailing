@@ -23,7 +23,7 @@ const mutationSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("rescheduleIntervention"), interventionId: z.uuid(), startAt: z.iso.datetime(), endAt: z.iso.datetime() }),
   z.object({ action: z.literal("setInterventionStatus"), interventionId: z.uuid(), status: z.enum(interventionStatuses) }),
   z.object({
-    action: z.literal("updateIntervention"), interventionId: z.uuid(), clientId: z.uuid(), vehicleId: z.uuid(), title: z.string().trim().min(2).max(160), status: z.enum(interventionStatuses), startAt: z.iso.datetime().nullable().optional(), plannedDurationMinutes: z.number().int().min(15).max(1440), address: z.string().trim().max(300), notes: z.string().trim().max(3000).nullable().optional(),
+    action: z.literal("updateIntervention"), interventionId: z.uuid(), clientId: z.uuid(), vehicleId: z.uuid().optional(), vehicleFormat: z.enum(["Citadine", "Berline", "SUV", "Monospace", "4x4", "Fourgon", "Autre"]).optional(), title: z.string().trim().min(2).max(160), status: z.enum(interventionStatuses), startAt: z.iso.datetime().nullable().optional(), plannedDurationMinutes: z.number().int().min(15).max(1440), address: z.string().trim().max(300), notes: z.string().trim().max(3000).nullable().optional(),
     workers: z.array(z.object({ memberId: z.uuid(), plannedMinutes: z.number().int().min(0).max(1440) })).min(1).max(12).refine((workers) => new Set(workers.map((worker) => worker.memberId)).size === workers.length),
     items: z.array(z.object({ id: z.uuid().optional(), serviceId: z.uuid().nullable().optional(), label: z.string().trim().min(2).max(200), quantity: z.number().positive().max(100), revenueAllocated: z.number().int().min(0) })).min(1).max(30),
   }),
@@ -93,9 +93,11 @@ export async function POST(request: Request) {
       const { data: existingIntervention, error: existingError } = await supabase.from("interventions").select("client_id,quote_id,invoice_id").eq("organization_id", organizationId).eq("id", input.interventionId).single();
       ensureNoError(existingError);
       if (!existingIntervention) throw new Error("Prestation introuvable.");
-      const { data: vehicle, error: vehicleError } = await supabase.from("vehicles").select("id,client_id").eq("organization_id", organizationId).eq("id", input.vehicleId).single();
-      ensureNoError(vehicleError);
-      if (!vehicle || vehicle.client_id !== input.clientId) throw new Error("Le véhicule ne correspond pas au client sélectionné.");
+      if (input.vehicleId) {
+        const { data: vehicle, error: vehicleError } = await supabase.from("vehicles").select("id,client_id").eq("organization_id", organizationId).eq("id", input.vehicleId).single();
+        ensureNoError(vehicleError);
+        if (!vehicle || vehicle.client_id !== input.clientId) throw new Error("Le véhicule ne correspond pas au client sélectionné.");
+      }
       const { data: members, error: membersError } = await supabase.from("organization_members").select("profile_id").eq("organization_id", organizationId).eq("active", true).in("profile_id", input.workers.map((worker) => worker.memberId));
       ensureNoError(membersError);
       if ((members?.length ?? 0) !== input.workers.length) throw new Error("Un collaborateur sélectionné n’est plus actif dans cette équipe.");
@@ -104,7 +106,7 @@ export async function POST(request: Request) {
       const endAt = startAt ? new Date(new Date(startAt).getTime() + input.plannedDurationMinutes * 60_000).toISOString() : null;
       const status = !startAt && ["scheduled", "confirmed"].includes(input.status) ? "to_schedule" : startAt && input.status === "to_schedule" ? "scheduled" : input.status;
       const clientChanged = existingIntervention.client_id !== input.clientId;
-      const { error } = await supabase.from("interventions").update({ client_id: input.clientId, vehicle_id: input.vehicleId, quote_id: clientChanged ? null : existingIntervention.quote_id, invoice_id: clientChanged ? null : existingIntervention.invoice_id, title: input.title, status, start_at: startAt, end_at: endAt, planned_duration_minutes: input.plannedDurationMinutes, address: input.address, notes: input.notes || null }).eq("organization_id", organizationId).eq("id", input.interventionId);
+      const { error } = await supabase.from("interventions").update({ client_id: input.clientId, vehicle_id: input.vehicleId ?? null, vehicle_format: input.vehicleFormat ?? null, quote_id: clientChanged ? null : existingIntervention.quote_id, invoice_id: clientChanged ? null : existingIntervention.invoice_id, title: input.title, status, start_at: startAt, end_at: endAt, planned_duration_minutes: input.plannedDurationMinutes, address: input.address, notes: input.notes || null }).eq("organization_id", organizationId).eq("id", input.interventionId);
       ensureNoError(error);
 
       const { data: existingWorkers, error: existingWorkersError } = await supabase.from("intervention_workers").select("profile_id,actual_minutes").eq("organization_id", organizationId).eq("intervention_id", input.interventionId);

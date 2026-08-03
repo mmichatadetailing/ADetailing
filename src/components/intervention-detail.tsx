@@ -37,6 +37,7 @@ import { useDemoStore } from "@/lib/demo/store";
 import { formatDate, formatMoney } from "@/lib/utils";
 
 const stepIcons = { appointment: CalendarCheck2, service: Sparkles, invoice: ReceiptText, payment: CircleDollarSign } satisfies Record<WorkflowStepId, typeof CalendarCheck2>;
+const interventionVehicleFormats = ["Citadine", "Berline", "SUV", "Monospace", "4x4", "Fourgon", "Autre"] as const;
 
 function localDateParts(value?: string) {
   if (!value) return { date: "", time: "" };
@@ -61,6 +62,7 @@ export function InterventionDetail({ interventionId, startEditing = false }: { i
   const [title, setTitle] = useState(current?.title ?? "");
   const [clientId, setClientId] = useState(current?.clientId ?? "");
   const [vehicleId, setVehicleId] = useState(current?.vehicleId ?? "");
+  const [vehicleFormat, setVehicleFormat] = useState(current?.vehicleFormat ?? data.vehicles.find((item) => item.id === current?.vehicleId)?.format ?? "");
   const [status, setStatusDraft] = useState<InterventionStatus>(current?.status ?? "to_schedule");
   const [startDate, setStartDate] = useState(initialDate.date);
   const [startTime, setStartTime] = useState(initialDate.time);
@@ -100,25 +102,32 @@ export function InterventionDetail({ interventionId, startEditing = false }: { i
   const chooseClient = (nextClientId: string) => {
     const nextClient = data.clients.find((item) => item.id === nextClientId);
     setClientId(nextClientId);
-    setVehicleId(data.vehicles.find((item) => item.clientId === nextClientId)?.id ?? "");
+    setVehicleId("");
     setAddress(nextClient ? [nextClient.address, nextClient.postalCode, nextClient.city].filter(Boolean).join(" ") : "");
+  };
+
+  const chooseVehicle = (nextVehicleId: string) => {
+    const nextVehicle = data.vehicles.find((item) => item.id === nextVehicleId);
+    setVehicleId(nextVehicleId);
+    if (nextVehicle) setVehicleFormat(nextVehicle.format);
   };
 
   const chooseService = (index: number, serviceId: string) => {
     const service = data.services.find((item) => item.id === serviceId);
-    setItems((lines) => lines.map((line, lineIndex) => lineIndex === index ? { ...line, serviceId, label: service?.name ?? line.label, revenueEuros: (service?.prices.find((price) => price.vehicleFormat === data.vehicles.find((item) => item.id === vehicleId)?.format)?.amount ?? service?.prices[0]?.amount ?? line.revenueAllocated) / 100 } : line));
+    setItems((lines) => lines.map((line, lineIndex) => lineIndex === index ? { ...line, serviceId, label: service?.name ?? line.label, revenueEuros: (service?.prices.find((price) => price.vehicleFormat === vehicleFormat)?.amount ?? service?.prices[0]?.amount ?? line.revenueAllocated) / 100 } : line));
   };
 
   const saveDetails = () => {
     if (title.trim().length < 2) return toast.error("Donnez un titre à la prestation");
-    if (!clientId || !vehicleId) return toast.error("Le client et son véhicule sont requis");
+    if (!clientId) return toast.error("Le client est requis");
     if (!Number.isFinite(plannedHours) || plannedHours < 0.25 || plannedHours > 24) return toast.error("La durée prévue doit être comprise entre 15 minutes et 24 heures");
     if (Object.keys(workerHours).length === 0) return toast.error("Affectez au moins un collaborateur");
     if (items.length === 0 || items.some((item) => item.label.trim().length < 2 || item.quantity <= 0 || item.revenueEuros < 0)) return toast.error("Vérifiez les lignes de prestation");
     const startAt = startDate && startTime ? new Date(`${startDate}T${startTime}`).toISOString() : undefined;
     data.updateIntervention(current.id, {
       clientId,
-      vehicleId,
+      vehicleId: vehicleId || undefined,
+      vehicleFormat: vehicleFormat || undefined,
       title: title.trim(),
       status,
       startAt,
@@ -176,14 +185,14 @@ export function InterventionDetail({ interventionId, startEditing = false }: { i
 
       <section className="rounded-2xl border border-zinc-200 bg-white p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div><div className="flex flex-wrap items-center gap-2"><StatusBadge status={current.status}>{interventionStatusLabels[current.status]}</StatusBadge><Badge>{vehicle?.make} {vehicle?.model}</Badge>{vehicle?.registration && <Badge>{vehicle.registration}</Badge>}</div><h3 className="mt-3 text-base font-bold">Informations du rendez-vous</h3><p className="mt-1 text-xs text-zinc-500">Client, créneau, équipe, contenu et montant prévu.</p></div>
+          <div><div className="flex flex-wrap items-center gap-2"><StatusBadge status={current.status}>{interventionStatusLabels[current.status]}</StatusBadge>{vehicle ? <Badge>{vehicle.make} {vehicle.model}</Badge> : current.vehicleFormat ? <Badge>{current.vehicleFormat}</Badge> : null}{vehicle?.registration && <Badge>{vehicle.registration}</Badge>}</div><h3 className="mt-3 text-base font-bold">Informations du rendez-vous</h3><p className="mt-1 text-xs text-zinc-500">Client, créneau, équipe, contenu et montant prévu.</p></div>
           <Button size="sm" variant="secondary" onClick={() => setEditing((value) => !value)}><Pencil className="size-3.5" /> {editing ? "Fermer l’édition" : "Tout modifier"}</Button>
         </div>
 
         {editing ? (
           <div className="mt-5 grid gap-5">
             <div className="grid gap-4 sm:grid-cols-2"><Field label="Titre de la prestation"><Input value={title} onChange={(event) => setTitle(event.target.value)} /></Field><Field label="Statut"><Select value={status} onChange={(event) => setStatusDraft(event.target.value as InterventionStatus)}>{Object.entries(interventionStatusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</Select></Field></div>
-            <div className="grid gap-4 sm:grid-cols-2"><Field label="Client"><Select value={clientId} onChange={(event) => chooseClient(event.target.value)}>{data.clients.map((item) => <option key={item.id} value={item.id}>{item.company || `${item.firstName} ${item.lastName}`}</option>)}</Select></Field><Field label="Véhicule"><Select value={vehicleId} onChange={(event) => setVehicleId(event.target.value)}><option value="">Sélectionner…</option>{clientVehicles.map((item) => <option key={item.id} value={item.id}>{item.make} {item.model} · {item.registration || "sans immatriculation"}</option>)}</Select></Field></div>
+            <div className="grid gap-4 sm:grid-cols-3"><Field label="Client"><Select value={clientId} onChange={(event) => chooseClient(event.target.value)}>{data.clients.map((item) => <option key={item.id} value={item.id}>{item.company || `${item.firstName} ${item.lastName}`}</option>)}</Select></Field><Field label="Véhicule précis" hint="Facultatif"><Select value={vehicleId} onChange={(event) => chooseVehicle(event.target.value)}><option value="">Aucun véhicule précis</option>{clientVehicles.map((item) => <option key={item.id} value={item.id}>{item.make} {item.model} · {item.registration || "sans immatriculation"}</option>)}</Select></Field><Field label="Catégorie" hint="Facultatif"><Select value={vehicleFormat} onChange={(event) => setVehicleFormat(event.target.value)}><option value="">Non renseignée</option>{interventionVehicleFormats.map((format) => <option key={format}>{format}</option>)}</Select></Field></div>
             <div className="grid gap-4 sm:grid-cols-3"><Field label="Date"><Input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></Field><Field label="Heure"><Input type="time" value={startTime} onChange={(event) => setStartTime(event.target.value)} /></Field><Field label="Durée prévue (h)"><Input min="0.25" max="24" step="0.25" type="number" value={plannedHours} onChange={(event) => setPlannedHours(Number(event.target.value))} /></Field></div>
             <Field label="Adresse"><Input value={address} onChange={(event) => setAddress(event.target.value)} /></Field>
             <Field label="Collaborateurs" hint="Cliquez pour affecter ou retirer une personne."><div className="grid gap-2 sm:grid-cols-2">{data.team.filter((member) => member.active || current.workers.some((worker) => worker.memberId === member.id)).map((member) => { const selected = workerHours[member.id] !== undefined; return <div key={member.id} className={`rounded-xl border p-3 ${selected ? "border-brand-200 bg-brand-50" : "border-zinc-200"}`}><button type="button" className="flex w-full items-center gap-2 text-left" onClick={() => toggleWorker(member.id)}><Avatar label={member.initials} color={member.color} size="sm" /><span className="text-xs font-semibold">{member.firstName} {member.lastName}</span><span className="ml-auto text-[10px] text-zinc-500">{selected ? "Affecté" : "Ajouter"}</span></button>{selected && <Input className="mt-2" aria-label={`Heures prévues pour ${member.firstName}`} min="0" max="24" step="0.25" type="number" value={workerHours[member.id]} onChange={(event) => setWorkerHours((state) => ({ ...state, [member.id]: Number(event.target.value) }))} />}</div>; })}</div></Field>

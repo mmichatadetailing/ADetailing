@@ -88,7 +88,7 @@ export interface NewServiceInput {
 
 export interface NewAppointmentInput {
   clientId: string;
-  vehicleId: string;
+  vehicleFormat?: string;
   serviceId?: string;
   title: string;
   startAt: string;
@@ -101,7 +101,8 @@ export interface NewAppointmentInput {
 
 export interface InterventionEditInput {
   clientId: string;
-  vehicleId: string;
+  vehicleId?: string;
+  vehicleFormat?: string;
   title: string;
   status: InterventionStatus;
   startAt?: string;
@@ -332,7 +333,7 @@ export const useDemoStore = create<DemoStore>()(
         const intervention: Intervention = {
           ...entityBase(),
           clientId: input.clientId,
-          vehicleId: input.vehicleId,
+          vehicleFormat: input.vehicleFormat,
           status: input.completed ? "completed" : "scheduled",
           title: input.title.trim(),
           startAt: input.startAt,
@@ -485,6 +486,7 @@ export const useDemoStore = create<DemoStore>()(
               ...item,
               clientId: input.clientId,
               vehicleId: input.vehicleId,
+              vehicleFormat: input.vehicleFormat,
               quoteId: input.clientId === item.clientId ? item.quoteId : undefined,
               invoiceId: input.clientId === item.clientId ? item.invoiceId : undefined,
               title: input.title.trim(),
