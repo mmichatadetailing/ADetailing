@@ -12,9 +12,13 @@ export function isGoogleCalendarConfigured() {
   return Boolean(
     process.env.GOOGLE_CLIENT_ID
       && process.env.GOOGLE_CLIENT_SECRET
-      && process.env.GOOGLE_REDIRECT_URI
       && process.env.OAUTH_TOKEN_ENCRYPTION_KEY,
   );
+}
+
+export function getGoogleRedirectUri(requestUrl: string) {
+  const origin = new URL(requestUrl).origin;
+  return new URL("/api/integrations/google/callback", origin).toString();
 }
 
 export function encodeGoogleOAuthContext(context: GoogleOAuthContext) {

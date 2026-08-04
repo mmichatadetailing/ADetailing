@@ -19,7 +19,7 @@
 
 `SUPABASE_SERVICE_ROLE_KEY` n’est pas utilisée par l’application actuelle et ne doit pas être ajoutée à Vercel sans besoin serveur explicite.
 
-Pour Google Calendar, ajouter aussi `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` et `OAUTH_TOKEN_ENCRYPTION_KEY`.
+Pour Google Calendar, ajouter aussi `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` et `OAUTH_TOKEN_ENCRYPTION_KEY`. L’URL de retour est construite automatiquement depuis le domaine qui lance la connexion.
 
 Ne copiez jamais `.env.local` dans GitHub. Les variables secrètes doivent être ajoutées uniquement dans les paramètres Vercel.
 

@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { listGoogleCalendars } from "@/lib/integrations/google-calendar";
-import { decodeGoogleOAuthContext, isGoogleCalendarConfigured } from "@/lib/integrations/google-oauth";
+import { decodeGoogleOAuthContext, getGoogleRedirectUri, isGoogleCalendarConfigured } from "@/lib/integrations/google-oauth";
 import { encryptToken } from "@/lib/integrations/token-crypto";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -40,7 +40,7 @@ export async function GET(request: Request) {
       code,
       client_id: process.env.GOOGLE_CLIENT_ID!,
       client_secret: process.env.GOOGLE_CLIENT_SECRET!,
-      redirect_uri: process.env.GOOGLE_REDIRECT_URI!,
+      redirect_uri: getGoogleRedirectUri(request.url),
       grant_type: "authorization_code",
     });
     const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {

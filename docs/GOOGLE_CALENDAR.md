@@ -21,7 +21,6 @@ Dans `.env.local` pour le développement et dans **Vercel > Project Settings > E
 ```dotenv
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
-GOOGLE_REDIRECT_URI=http://localhost:3000/api/integrations/google/callback
 OAUTH_TOKEN_ENCRYPTION_KEY=...
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
@@ -54,6 +53,8 @@ La migration `202608040012_google_calendar_user_connections.sql` ajoute les règ
 4. Autoriser l’accès chez Google.
 5. Choisir un calendrier modifiable puis enregistrer.
 6. Cliquer sur **Synchroniser maintenant** pour la première synchronisation.
+
+L’URL de retour OAuth est calculée depuis le domaine courant : `localhost` en développement et le domaine Vercel en production. Il ne faut donc pas définir `GOOGLE_REDIRECT_URI` dans Vercel. Pour une Preview Vercel, son URL exacte doit également être autorisée chez Google ; privilégier le domaine de production pour les tests courants.
 
 La création ou la modification d’une prestation déclenche ensuite une synchronisation en arrière-plan pour l’utilisateur connecté. Le bouton manuel permet de forcer une réconciliation.
 
