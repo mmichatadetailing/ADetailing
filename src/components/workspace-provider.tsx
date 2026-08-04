@@ -30,6 +30,15 @@ interface WorkspaceContextValue {
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
+const calendarMutationActions = new Set(["rescheduleIntervention", "setInterventionStatus", "updateIntervention", "completeIntervention"]);
+
+function requestGoogleCalendarSync() {
+  void fetch("/api/integrations/google/sync", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+  }).catch(() => undefined);
+}
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [workspace, setWorkspace] = useState<WorkspaceIdentity | null>(null);
@@ -81,6 +90,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const response = await fetch("/api/workspace/mutations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(mutation) });
         const payload = await response.json() as { error?: string };
         if (!response.ok) throw new Error(payload.error || "Enregistrement impossible.");
+        if (calendarMutationActions.has(mutation.action)) requestGoogleCalendarSync();
         await load(true);
       } catch (cause) {
         toast.error(cause instanceof Error ? cause.message : "La modification n’a pas été enregistrée.");
@@ -95,6 +105,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const response = await fetch("/api/quick-create", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) });
     const payload = await response.json() as { id?: string; error?: string };
     if (!response.ok || !payload.id) throw new Error(payload.error || "Enregistrement impossible.");
+    if (input.kind === "appointment") requestGoogleCalendarSync();
     await refresh();
     return payload.id;
   }, [refresh]);

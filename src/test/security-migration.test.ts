@@ -6,6 +6,7 @@ const migration = readFileSync(resolve(process.cwd(), "supabase/migrations/20260
 const accountMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/202607300002_account_onboarding.sql"), "utf8");
 const teamMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/202607310003_team_accounts_and_private_messaging.sql"), "utf8");
 const preinviteMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/202608030008_preinvite_team_members.sql"), "utf8");
+const googleCalendarMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/202608040012_google_calendar_user_connections.sql"), "utf8");
 
 describe("migration de sécurité", () => {
   it("active la RLS et isole les données par organisation", () => {
@@ -60,5 +61,17 @@ describe("membres préparés avant invitation", () => {
     expect(preinviteMigration).toContain("pending_member_id uuid references public.organization_members");
     expect(preinviteMigration).toContain("set profile_id = target_user_id, pending_member_id = null");
     expect(preinviteMigration).toContain("invitation_record.pending_member_id");
+  });
+});
+
+describe("connexions Google Calendar", () => {
+  it("réserve chaque connexion et ses événements à son propriétaire", () => {
+    expect(googleCalendarMigration).toContain("google_calendar_connections_self_select");
+    expect(googleCalendarMigration).toContain("connection.profile_id = auth.uid()");
+    expect(googleCalendarMigration).toContain("calendar_event_mappings_self_delete");
+  });
+
+  it("empêche plusieurs événements pour la même prestation et le même calendrier", () => {
+    expect(googleCalendarMigration).toContain("unique (connection_id, intervention_id, google_calendar_id)");
   });
 });
