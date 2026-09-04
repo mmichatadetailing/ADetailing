@@ -35,6 +35,8 @@ $bytes = New-Object byte[] 32
 
 Utiliser une valeur distincte et secrète en production. Ne jamais exposer `GOOGLE_CLIENT_SECRET` ou `OAUTH_TOKEN_ENCRYPTION_KEY` avec le préfixe `NEXT_PUBLIC_`.
 
+Dans Vercel, le champ **Value** de `OAUTH_TOKEN_ENCRYPTION_KEY` doit contenir uniquement le résultat base64 (généralement 44 caractères). Ne pas y coller `OAUTH_TOKEN_ENCRYPTION_KEY=`. La valeur doit être activée pour l’environnement **Production**, puis un nouveau déploiement doit être lancé.
+
 ## 3. Appliquer la migration Supabase
 
 Depuis le dossier du projet :

@@ -1,7 +1,27 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
+export type TokenEncryptionKeyStatus = "valid" | "missing" | "invalid";
+
+function encodedEncryptionKey() {
+  const rawValue = process.env.OAUTH_TOKEN_ENCRYPTION_KEY?.trim();
+  if (!rawValue) return "";
+  const hasMatchingQuotes = (rawValue.startsWith('"') && rawValue.endsWith('"'))
+    || (rawValue.startsWith("'") && rawValue.endsWith("'"));
+  return hasMatchingQuotes ? rawValue.slice(1, -1).trim() : rawValue;
+}
+
+export function tokenEncryptionKeyStatus(): TokenEncryptionKeyStatus {
+  const encoded = encodedEncryptionKey();
+  if (!encoded) return "missing";
+  try {
+    return Buffer.from(encoded, "base64").length === 32 ? "valid" : "invalid";
+  } catch {
+    return "invalid";
+  }
+}
+
 function encryptionKey() {
-  const encoded = process.env.OAUTH_TOKEN_ENCRYPTION_KEY;
+  const encoded = encodedEncryptionKey();
   if (!encoded) throw new Error("OAUTH_TOKEN_ENCRYPTION_KEY manquante.");
   const key = Buffer.from(encoded, "base64");
   if (key.length !== 32) throw new Error("OAUTH_TOKEN_ENCRYPTION_KEY doit contenir 32 octets encodés en base64.");
@@ -22,4 +42,3 @@ export function decryptToken(payload: string) {
   decipher.setAuthTag(Buffer.from(tagValue, "base64url"));
   return Buffer.concat([decipher.update(Buffer.from(encryptedValue, "base64url")), decipher.final()]).toString("utf8");
 }
-

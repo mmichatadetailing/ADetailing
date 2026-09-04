@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { listGoogleCalendars } from "@/lib/integrations/google-calendar";
-import { decodeGoogleOAuthContext, getGoogleRedirectUri, isGoogleCalendarConfigured } from "@/lib/integrations/google-oauth";
+import { decodeGoogleOAuthContext, getGoogleRedirectUri, googleCalendarConfigurationIssue, googleCallbackErrorStatus, googleConfigurationStatus } from "@/lib/integrations/google-oauth";
 import { encryptToken } from "@/lib/integrations/token-crypto";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -14,7 +14,8 @@ function redirectToSettings(request: Request, status: string) {
 export async function GET(request: Request) {
   const url = new URL(request.url);
   if (url.searchParams.get("error")) return redirectToSettings(request, "access-denied");
-  if (!isGoogleCalendarConfigured()) return redirectToSettings(request, "missing-config");
+  const configurationIssue = googleCalendarConfigurationIssue();
+  if (configurationIssue) return redirectToSettings(request, googleConfigurationStatus(configurationIssue));
 
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
@@ -62,13 +63,14 @@ export async function GET(request: Request) {
     const email = userInfo.email?.trim().toLowerCase();
     if (!email) return redirectToSettings(request, "account-error");
 
-    const { data: existing } = await supabase
+    const { data: existing, error: existingError } = await supabase
       .from("google_calendar_connections")
       .select("encrypted_refresh_token,selected_calendar_ids")
       .eq("organization_id", context.organizationId)
       .eq("profile_id", user.id)
       .eq("google_account_email", email)
       .maybeSingle();
+    if (existingError) throw existingError;
     const encryptedRefreshToken = tokens.refresh_token ? encryptToken(tokens.refresh_token) : existing?.encrypted_refresh_token;
     if (!encryptedRefreshToken) return redirectToSettings(request, "no-refresh-token");
 
@@ -95,7 +97,13 @@ export async function GET(request: Request) {
     }, { onConflict: "organization_id,profile_id,google_account_email" });
     if (upsertError) throw upsertError;
     return redirectToSettings(request, "connected");
-  } catch {
-    return redirectToSettings(request, "save-error");
+  } catch (cause) {
+    const status = googleCallbackErrorStatus(cause);
+    console.error("[google-calendar] OAuth callback failed", {
+      status,
+      code: typeof cause === "object" && cause && "code" in cause ? String(cause.code) : undefined,
+      message: cause instanceof Error ? cause.message : "Unknown Google Calendar callback error",
+    });
+    return redirectToSettings(request, status);
   }
 }

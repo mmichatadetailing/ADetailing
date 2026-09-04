@@ -28,6 +28,7 @@ interface GoogleConnection {
 
 interface ConnectionsResponse {
   configured?: boolean;
+  configurationIssue?: "missing-credentials" | "missing-encryption-key" | "invalid-encryption-key";
   connections?: GoogleConnection[];
   error?: string;
 }
@@ -36,6 +37,10 @@ const oauthMessages: Record<string, { kind: "success" | "error"; text: string }>
   connected: { kind: "success", text: "Google Calendar est connecté. Vérifiez le calendrier choisi ci-dessous." },
   "access-denied": { kind: "error", text: "L’autorisation Google a été annulée." },
   "missing-config": { kind: "error", text: "La configuration Google Calendar du serveur est incomplète." },
+  "missing-encryption-key": { kind: "error", text: "La clé de chiffrement Google manque dans Vercel." },
+  "invalid-encryption-key": { kind: "error", text: "La clé OAUTH_TOKEN_ENCRYPTION_KEY est invalide. Elle doit être une valeur base64 de 32 octets, sans le nom de la variable." },
+  "database-migration-error": { kind: "error", text: "La table Google Calendar n’est pas disponible dans Supabase. Appliquez les migrations puis réessayez." },
+  "database-permission-error": { kind: "error", text: "Supabase a refusé l’enregistrement du calendrier pour ce compte." },
   "invalid-state": { kind: "error", text: "La demande Google a expiré. Relancez la connexion." },
   "token-error": { kind: "error", text: "Google n’a pas pu finaliser la connexion." },
   "no-refresh-token": { kind: "error", text: "Google n’a pas fourni l’accès hors ligne. Reconnectez le compte." },
@@ -54,6 +59,7 @@ function formatLastSync(value: string | null) {
 
 export function GoogleCalendarSettings({ enabled }: { enabled: boolean }) {
   const [configured, setConfigured] = useState<boolean | null>(null);
+  const [configurationIssue, setConfigurationIssue] = useState<ConnectionsResponse["configurationIssue"]>();
   const [connections, setConnections] = useState<GoogleConnection[]>([]);
   const [loading, setLoading] = useState(enabled);
   const [loadError, setLoadError] = useState("");
@@ -75,6 +81,7 @@ export function GoogleCalendarSettings({ enabled }: { enabled: boolean }) {
       const payload = await response.json() as ConnectionsResponse;
       if (!response.ok) throw new Error(payload.error || "Chargement de Google Calendar impossible.");
       setConfigured(payload.configured ?? false);
+      setConfigurationIssue(payload.configurationIssue);
       setConnections(payload.connections ?? []);
     } catch (cause) {
       setLoadError(cause instanceof Error ? cause.message : "Chargement de Google Calendar impossible.");
@@ -202,7 +209,11 @@ export function GoogleCalendarSettings({ enabled }: { enabled: boolean }) {
 
       {!loading && !loadError && enabled && configured === false && (
         <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
-          Ajoutez les quatre variables Google dans Vercel et dans <code>.env.local</code>, puis relancez l’application.
+          {configurationIssue === "invalid-encryption-key"
+            ? <>La valeur Vercel de <code>OAUTH_TOKEN_ENCRYPTION_KEY</code> est invalide. Collez uniquement la clé base64 générée, sans guillemets ni <code>OAUTH_TOKEN_ENCRYPTION_KEY=</code>.</>
+            : configurationIssue === "missing-encryption-key"
+              ? <>Ajoutez <code>OAUTH_TOKEN_ENCRYPTION_KEY</code> dans les variables Production de Vercel, puis redéployez.</>
+              : <>Ajoutez <code>GOOGLE_CLIENT_ID</code>, <code>GOOGLE_CLIENT_SECRET</code> et <code>OAUTH_TOKEN_ENCRYPTION_KEY</code> dans Vercel, puis redéployez.</>}
         </div>
       )}
 

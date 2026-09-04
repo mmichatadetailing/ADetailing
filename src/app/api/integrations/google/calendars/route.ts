@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { listGoogleCalendars, refreshGoogleAccessToken, revokeGoogleRefreshToken } from "@/lib/integrations/google-calendar";
-import { isGoogleCalendarConfigured } from "@/lib/integrations/google-oauth";
+import { googleCalendarConfigurationIssue } from "@/lib/integrations/google-oauth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { requireAuthenticatedWorkspace } from "@/lib/supabase/workspace";
 
@@ -16,7 +16,8 @@ export async function GET() {
   try {
     const supabase = await createSupabaseServerClient();
     const workspace = await requireAuthenticatedWorkspace(supabase);
-    if (!isGoogleCalendarConfigured()) return NextResponse.json({ configured: false, connections: [] });
+    const configurationIssue = googleCalendarConfigurationIssue();
+    if (configurationIssue) return NextResponse.json({ configured: false, configurationIssue, connections: [] });
 
     const { data: connections, error } = await supabase
       .from("google_calendar_connections")

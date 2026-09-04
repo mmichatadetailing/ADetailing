@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { encodeGoogleOAuthContext, getGoogleRedirectUri, isGoogleCalendarConfigured } from "@/lib/integrations/google-oauth";
+import { encodeGoogleOAuthContext, getGoogleRedirectUri, googleCalendarConfigurationIssue, googleConfigurationStatus } from "@/lib/integrations/google-oauth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { requireAuthenticatedWorkspace } from "@/lib/supabase/workspace";
 
 export async function GET(request: Request) {
-  if (!isGoogleCalendarConfigured()) {
-    return NextResponse.redirect(new URL("/parametres?google=missing-config#integrations", request.url));
+  const configurationIssue = googleCalendarConfigurationIssue();
+  if (configurationIssue) {
+    return NextResponse.redirect(new URL(`/parametres?google=${googleConfigurationStatus(configurationIssue)}#integrations`, request.url));
   }
 
   try {
