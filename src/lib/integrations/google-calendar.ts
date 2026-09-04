@@ -11,6 +11,21 @@ export interface GoogleCalendarListItem {
   backgroundColor?: string;
 }
 
+export interface GoogleCalendarEventItem {
+  id: string;
+  etag?: string;
+  summary?: string;
+  status?: string;
+  eventType?: string;
+  htmlLink?: string;
+  location?: string;
+  transparency?: "opaque" | "transparent";
+  start?: { dateTime?: string; date?: string };
+  end?: { dateTime?: string; date?: string };
+  updated?: string;
+  extendedProperties?: { private?: Record<string, string> };
+}
+
 interface GoogleEventPayload {
   summary: string;
   description?: string;
@@ -58,11 +73,18 @@ export async function listGoogleCalendars(accessToken: string): Promise<GoogleCa
 }
 
 export async function listGoogleEvents(accessToken: string, calendarId: string, timeMin: string, timeMax: string) {
-  const params = new URLSearchParams({ timeMin, timeMax, singleEvents: "true", orderBy: "startTime", showDeleted: "false", maxResults: "2500" });
-  const response = await fetch(`${GOOGLE_CALENDAR_API}/calendars/${encodeURIComponent(calendarId)}/events?${params}`, { headers: { authorization: `Bearer ${accessToken}` }, cache: "no-store" });
-  if (!response.ok) throw new Error(await googleError(response, "Les événements Google sont inaccessibles"));
-  const payload = await response.json() as { items?: Array<{ id: string; etag?: string; summary?: string; start?: { dateTime?: string; date?: string }; end?: { dateTime?: string; date?: string }; updated?: string }> };
-  return payload.items ?? [];
+  const events: GoogleCalendarEventItem[] = [];
+  let pageToken: string | undefined;
+  do {
+    const params = new URLSearchParams({ timeMin, timeMax, singleEvents: "true", orderBy: "startTime", showDeleted: "false", maxResults: "2500" });
+    if (pageToken) params.set("pageToken", pageToken);
+    const response = await fetch(`${GOOGLE_CALENDAR_API}/calendars/${encodeURIComponent(calendarId)}/events?${params}`, { headers: { authorization: `Bearer ${accessToken}` }, cache: "no-store" });
+    if (!response.ok) throw new Error(await googleError(response, "Les événements Google sont inaccessibles"));
+    const payload = await response.json() as { items?: GoogleCalendarEventItem[]; nextPageToken?: string };
+    events.push(...(payload.items ?? []));
+    pageToken = payload.nextPageToken;
+  } while (pageToken);
+  return events;
 }
 
 export async function upsertGoogleEvent(accessToken: string, calendarId: string, eventId: string | undefined, payload: GoogleEventPayload) {

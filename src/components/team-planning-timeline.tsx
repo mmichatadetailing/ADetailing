@@ -13,6 +13,7 @@ import {
   planningTimelinePosition,
 } from "@/lib/domain/planning-timeline";
 import type { Client, Intervention, TeamMember } from "@/lib/domain/types";
+import type { GooglePlanningEvent } from "@/lib/integrations/google-calendar-types";
 import { cn, formatDate } from "@/lib/utils";
 
 const RESOURCE_WIDTH = 220;
@@ -27,17 +28,45 @@ function transparentColor(color: string, alpha: string) {
   return /^#[0-9a-f]{6}$/i.test(color) ? `${color}${alpha}` : "#f9734f18";
 }
 
-function dayEvents(memberId: string, day: Date, interventions: Intervention[]) {
-  const events = interventions
+function googlePosition(event: GooglePlanningEvent, day: Date) {
+  if (!event.allDay) return planningTimelinePosition(event.start, event.end, day);
+  const dayStart = new Date(day);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+  const eventStart = new Date(`${event.start.slice(0, 10)}T00:00:00`);
+  const eventEnd = new Date(`${event.end.slice(0, 10)}T00:00:00`);
+  return eventStart < dayEnd && dayStart < eventEnd ? { left: 0, width: 100 } : null;
+}
+
+function eventBoundaries(start: string, end: string, allDay = false) {
+  return {
+    start: new Date(allDay ? `${start.slice(0, 10)}T00:00:00` : start).getTime(),
+    end: new Date(allDay ? `${end.slice(0, 10)}T00:00:00` : end).getTime(),
+  };
+}
+
+function dayEvents(memberId: string, day: Date, interventions: Intervention[], googleEvents: GooglePlanningEvent[]) {
+  const interventionEvents = interventions
     .filter((intervention) => intervention.startAt && intervention.endAt && intervention.workers.some((worker) => worker.memberId === memberId))
-    .map((intervention) => ({ intervention, position: planningTimelinePosition(intervention.startAt!, intervention.endAt!, day) }))
-    .filter((entry): entry is { intervention: Intervention; position: { left: number; width: number } } => Boolean(entry.position))
-    .sort((left, right) => (left.intervention.startAt ?? "").localeCompare(right.intervention.startAt ?? ""));
+    .map((intervention) => ({ kind: "intervention" as const, intervention, position: planningTimelinePosition(intervention.startAt!, intervention.endAt!, day) }))
+    .filter((entry): entry is { kind: "intervention"; intervention: Intervention; position: { left: number; width: number } } => Boolean(entry.position));
+  const externalEvents = googleEvents
+    .filter((event) => event.memberId === memberId)
+    .map((googleEvent) => ({ kind: "google" as const, googleEvent, position: googlePosition(googleEvent, day) }))
+    .filter((entry): entry is { kind: "google"; googleEvent: GooglePlanningEvent; position: { left: number; width: number } } => Boolean(entry.position));
+  const events = [...interventionEvents, ...externalEvents].sort((left, right) => {
+    const leftStart = left.kind === "intervention" ? left.intervention.startAt! : left.googleEvent.start;
+    const rightStart = right.kind === "intervention" ? right.intervention.startAt! : right.googleEvent.start;
+    return leftStart.localeCompare(rightStart);
+  });
 
   const laneEnds: number[] = [];
   return events.map((entry) => {
-    const start = new Date(entry.intervention.startAt!).getTime();
-    const end = new Date(entry.intervention.endAt!).getTime();
+    const boundaries = entry.kind === "intervention"
+      ? eventBoundaries(entry.intervention.startAt!, entry.intervention.endAt!)
+      : eventBoundaries(entry.googleEvent.start, entry.googleEvent.end, entry.googleEvent.allDay);
+    const { start, end } = boundaries;
     let lane = laneEnds.findIndex((laneEnd) => laneEnd <= start);
     if (lane === -1) lane = laneEnds.length;
     laneEnds[lane] = end;
@@ -48,11 +77,14 @@ function dayEvents(memberId: string, day: Date, interventions: Intervention[]) {
 export function TeamPlanningTimeline({
   members,
   interventions,
+  googleEvents,
   clients,
   days,
   conflictIds,
+  googleConflictIds,
   currentUserId,
   onSelect,
+  onSelectGoogle,
   onMove,
   onEmptySlot,
   dayWidth = DEFAULT_DAY_WIDTH,
@@ -60,11 +92,14 @@ export function TeamPlanningTimeline({
 }: {
   members: TeamMember[];
   interventions: Intervention[];
+  googleEvents: GooglePlanningEvent[];
   clients: Client[];
   days: Date[];
   conflictIds: Set<string>;
+  googleConflictIds: Set<string>;
   currentUserId?: string;
   onSelect: (intervention: Intervention) => void;
+  onSelectGoogle: (event: GooglePlanningEvent) => void;
   onMove: (payload: DragPayload, targetMemberId: string, start: Date) => void;
   onEmptySlot: (memberId: string, start: Date) => void;
   dayWidth?: number;
@@ -126,7 +161,7 @@ export function TeamPlanningTimeline({
               </div>
               <div className="flex" style={{ width: timelineWidth }}>
                 {days.map((day) => {
-                  const events = dayEvents(member.id, day, interventions);
+                  const events = dayEvents(member.id, day, interventions, googleEvents);
                   const todayDay = isSamePlanningDay(day, today);
                   const nowRatio = (today.getHours() * 60 + today.getMinutes() - PLANNING_START_HOUR * 60) / ((PLANNING_END_HOUR - PLANNING_START_HOUR) * 60);
                   return (
@@ -141,8 +176,28 @@ export function TeamPlanningTimeline({
                     >
                       {HOURS.map((hour) => <span key={hour} className="pointer-events-none absolute inset-y-0 border-l border-zinc-100" style={{ left: `${(hour - PLANNING_START_HOUR) / (PLANNING_END_HOUR - PLANNING_START_HOUR) * 100}%` }} />)}
                       {todayDay && nowRatio >= 0 && nowRatio <= 1 && <span className="pointer-events-none absolute inset-y-0 z-10 w-px bg-red-400" style={{ left: `${nowRatio * 100}%` }}><span className="absolute -left-1 top-0 size-2 rounded-full bg-red-500" /></span>}
-                      {events.map(({ intervention, position, lane }) => {
-                        const client = clients.find((entry) => entry.id === intervention.clientId);
+                      {events.map((entry) => {
+                        const { position, lane } = entry;
+                        if (entry.kind === "google") {
+                          const { googleEvent } = entry;
+                          const conflicted = googleConflictIds.has(googleEvent.id);
+                          return (
+                            <button
+                              key={`${member.id}-${googleEvent.id}`}
+                              type="button"
+                              title={`${googleEvent.title} · ${googleEvent.calendarName}${googleEvent.location ? ` · ${googleEvent.location}` : ""}`}
+                              onClick={(event) => { event.stopPropagation(); onSelectGoogle(googleEvent); }}
+                              className={cn("focus-ring absolute z-20 flex h-10 cursor-pointer items-center gap-2 overflow-hidden rounded-xl border border-sky-400 bg-sky-50 px-2 text-left text-sky-950 shadow-[0_7px_18px_rgba(14,165,233,.13)] transition hover:z-30 hover:-translate-y-0.5 hover:bg-sky-100 hover:shadow-[0_12px_28px_rgba(14,165,233,.18)]", !googleEvent.busy && "border-dashed opacity-75", conflicted && "ring-2 ring-red-400")}
+                              style={{ left: `${position.left}%`, width: `max(44px, calc(${position.width}% - 5px))`, maxWidth: `calc(${100 - position.left}% - 4px)`, top: 8 + lane * 47 }}
+                            >
+                              <CalendarDays className="size-3 shrink-0 text-sky-600" />
+                              <span className="min-w-0 flex-1"><span className="block truncate text-[10px] font-extrabold">{googleEvent.title}</span><span className="mt-0.5 block truncate text-[9px] font-semibold text-sky-700">{googleEvent.allDay ? "Toute la journée" : `${formatDate(googleEvent.start, { hour: "2-digit", minute: "2-digit" })}–${formatDate(googleEvent.end, { hour: "2-digit", minute: "2-digit" })}`} · Google</span></span>
+                            </button>
+                          );
+                        }
+
+                        const { intervention } = entry;
+                        const client = clients.find((clientEntry) => clientEntry.id === intervention.clientId);
                         const conflicted = conflictIds.has(intervention.id);
                         const memberColor = member.color || "#f9734f";
                         return (

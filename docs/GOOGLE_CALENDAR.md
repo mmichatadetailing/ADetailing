@@ -1,6 +1,6 @@
 # Connexion Google Calendar
 
-Chaque utilisateur ADetailing peut connecter son propre compte Google. Seules les prestations auxquelles cet utilisateur est affecté sont exportées vers le calendrier qu’il choisit.
+Chaque utilisateur ADetailing peut connecter son propre compte Google. Seules les prestations auxquelles cet utilisateur est affecté sont exportées vers le calendrier qu’il choisit. Les événements créés directement dans ce calendrier Google sont également affichés, en lecture seule, sur sa ligne du planning ADetailing.
 
 ## 1. Configurer Google Cloud
 
@@ -60,6 +60,8 @@ L’URL de retour OAuth est calculée depuis le domaine courant : `localhost` en
 
 La création ou la modification d’une prestation déclenche ensuite une synchronisation en arrière-plan pour l’utilisateur connecté. Le bouton manuel permet de forcer une réconciliation.
 
+Le planning relit la période Google affichée lors de son ouverture, à chaque changement de jour/semaine/mois, au retour sur l’onglet et toutes les 60 secondes tant que la page reste visible. Le bouton **Actualiser Google** force une lecture immédiate. Les événements ADetailing déjà exportés dans Google sont reconnus et ne sont pas affichés une seconde fois.
+
 ## Comportement et sécurité
 
 - le jeton de renouvellement Google est chiffré en AES-256-GCM avant stockage ;
@@ -67,6 +69,8 @@ La création ou la modification d’une prestation déclenche ensuite une synchr
 - une connexion et ses correspondances d’événements sont lisibles uniquement par leur propriétaire grâce aux politiques RLS ;
 - l’identifiant aléatoire OAuth est lié à l’utilisateur et à l’entreprise active pendant dix minutes ;
 - une prestation annulée, déplanifiée ou retirée de l’utilisateur est supprimée du calendrier à la synchronisation suivante ;
+- un événement créé dans Google reste géré dans Google : un clic dans le planning affiche ses détails et permet de l’ouvrir dans Google Calendar ;
+- les événements Google personnels ne sont jamais transformés en prestations ni recopiés dans la base métier ;
 - déconnecter un compte révoque l’autorisation, mais conserve dans Google les événements déjà créés pour éviter une suppression surprise.
 
-Les routes utilisées sont `/api/integrations/google/start`, `/callback`, `/calendars` et `/sync`.
+Les routes utilisées sont `/api/integrations/google/start`, `/callback`, `/calendars`, `/events` et `/sync`.
