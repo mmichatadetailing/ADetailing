@@ -39,6 +39,17 @@ const expenseMutationFields = {
   vatRateBasisPoints: z.number().int().min(0).max(10_000),
   paid: z.boolean(),
 };
+const planningEventMutationFields = {
+  kind: z.enum(["meeting", "unavailability", "absence", "personal"]),
+  title: z.string().trim().min(2).max(160),
+  startAt: z.iso.datetime(),
+  endAt: z.iso.datetime(),
+  allDay: z.boolean(),
+  memberIds: z.array(z.uuid()).min(1).max(12).refine((memberIds) => new Set(memberIds).size === memberIds.length),
+  location: z.string().trim().max(300).optional(),
+  notes: z.string().trim().max(3000).optional(),
+  color: z.string().regex(/^#[0-9a-f]{6}$/i).optional(),
+};
 
 const henrriLineSchema = z.object({
   designation: z.string(),
@@ -55,6 +66,9 @@ const mutationSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("updateExpense"), ...expenseMutationFields }),
   z.object({ action: z.literal("removeExpense"), expenseId: z.uuid() }),
   z.object({ action: z.literal("rescheduleIntervention"), interventionId: z.uuid(), startAt: z.iso.datetime(), endAt: z.iso.datetime() }),
+  z.object({ action: z.literal("addPlanningEvent"), eventId: z.uuid(), ...planningEventMutationFields }),
+  z.object({ action: z.literal("updatePlanningEvent"), eventId: z.uuid(), ...planningEventMutationFields }),
+  z.object({ action: z.literal("removePlanningEvent"), eventId: z.uuid() }),
   z.object({ action: z.literal("setInterventionStatus"), interventionId: z.uuid(), status: z.enum(interventionStatuses) }),
   z.object({
     action: z.literal("updateIntervention"), interventionId: z.uuid(), clientId: z.uuid(), vehicleId: z.uuid().optional(), vehicleFormat: z.enum(["Citadine", "Berline", "SUV", "Monospace", "4x4", "Fourgon", "Autre"]).optional(), title: z.string().trim().min(2).max(160), status: z.enum(interventionStatuses), startAt: z.iso.datetime().nullable().optional(), plannedDurationMinutes: z.number().int().min(15).max(1440), address: z.string().trim().max(300), notes: z.string().trim().max(3000).nullable().optional(),
@@ -164,6 +178,64 @@ export async function POST(request: Request) {
       ensureNoError(readError);
       if (!intervention) throw new Error("Intervention introuvable.");
       const { error } = await supabase.from("interventions").update({ start_at: input.startAt, end_at: input.endAt, status: intervention.status === "to_schedule" ? "scheduled" : intervention.status }).eq("organization_id", organizationId).eq("id", input.interventionId);
+      ensureNoError(error);
+    }
+
+    if (input.action === "addPlanningEvent") {
+      if (new Date(input.endAt) <= new Date(input.startAt)) throw new Error("La fin de l’événement doit être après son début.");
+      await resolveTeamMembers(supabase, organizationId, input.memberIds);
+      if (workspace.role === "employee" && (input.memberIds.length !== 1 || input.memberIds[0] !== userId)) {
+        throw new Error("Un employé peut créer un événement uniquement sur son propre planning.");
+      }
+      const { error } = await supabase.from("planning_events").insert({
+        id: input.eventId,
+        organization_id: organizationId,
+        location_id: locationId,
+        kind: input.kind,
+        title: input.title,
+        starts_at: input.startAt,
+        ends_at: input.endAt,
+        all_day: input.allDay,
+        member_ids: input.memberIds,
+        location_label: input.location || null,
+        notes: input.notes || null,
+        color: input.color || null,
+        created_by: userId,
+      });
+      ensureNoError(error);
+    }
+
+    if (input.action === "updatePlanningEvent") {
+      if (new Date(input.endAt) <= new Date(input.startAt)) throw new Error("La fin de l’événement doit être après son début.");
+      await resolveTeamMembers(supabase, organizationId, input.memberIds);
+      const { data: existing, error: readError } = await supabase.from("planning_events").select("id,member_ids").eq("organization_id", organizationId).eq("id", input.eventId).is("archived_at", null).single();
+      ensureNoError(readError);
+      if (!existing) throw new Error("Événement introuvable.");
+      if (workspace.role === "employee" && (!Array.isArray(existing.member_ids) || !existing.member_ids.includes(userId) || input.memberIds.length !== 1 || input.memberIds[0] !== userId)) {
+        throw new Error("Vous ne pouvez modifier que vos propres événements.");
+      }
+      const { error } = await supabase.from("planning_events").update({
+        kind: input.kind,
+        title: input.title,
+        starts_at: input.startAt,
+        ends_at: input.endAt,
+        all_day: input.allDay,
+        member_ids: input.memberIds,
+        location_label: input.location || null,
+        notes: input.notes || null,
+        color: input.color || null,
+      }).eq("organization_id", organizationId).eq("id", input.eventId).is("archived_at", null);
+      ensureNoError(error);
+    }
+
+    if (input.action === "removePlanningEvent") {
+      const { data: existing, error: readError } = await supabase.from("planning_events").select("id,member_ids").eq("organization_id", organizationId).eq("id", input.eventId).is("archived_at", null).single();
+      ensureNoError(readError);
+      if (!existing) throw new Error("Événement introuvable.");
+      if (workspace.role === "employee" && (!Array.isArray(existing.member_ids) || existing.member_ids.length !== 1 || existing.member_ids[0] !== userId)) {
+        throw new Error("Vous ne pouvez supprimer que vos propres événements.");
+      }
+      const { error } = await supabase.from("planning_events").update({ archived_at: new Date().toISOString() }).eq("organization_id", organizationId).eq("id", input.eventId);
       ensureNoError(error);
     }
 

@@ -30,6 +30,7 @@ export type InvoiceStatus = "imported" | "to_review" | "issued" | "cancelled" | 
 export type PaymentStatus = "unpaid" | "partial" | "paid" | "overdue";
 export type ServiceKind = "formula" | "option" | "subscription" | "pack";
 export type ServicePricingMode = "vehicle_format" | "vehicle_count" | "custom";
+export type PlanningEventKind = "meeting" | "unavailability" | "absence" | "personal";
 
 export interface BaseEntity {
   id: UUID;
@@ -230,6 +231,18 @@ export interface Intervention extends BaseEntity {
   notes?: string;
 }
 
+export interface PlanningEvent extends BaseEntity {
+  kind: PlanningEventKind;
+  title: string;
+  startAt: ISODate;
+  endAt: ISODate;
+  allDay: boolean;
+  memberIds: UUID[];
+  location?: string;
+  notes?: string;
+  color?: string;
+}
+
 export interface Expense extends BaseEntity {
   date: ISODate;
   family: "fixed" | "variable" | "investment" | "personal";
@@ -339,6 +352,7 @@ export interface AppData {
   invoices: Invoice[];
   payments: Payment[];
   interventions: Intervention[];
+  planningEvents: PlanningEvent[];
   expenses: Expense[];
   assets: Asset[];
   objectives: MonthlyObjective[];

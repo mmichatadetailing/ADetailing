@@ -30,6 +30,21 @@ export function googlePlanningRange(selectedDate: Date, view: GooglePlanningView
   return { timeMin: start.toISOString(), timeMax: end.toISOString() };
 }
 
+export function googlePlanningPrefetchRange(selectedDate: Date, view: GooglePlanningView) {
+  const visible = googlePlanningRange(selectedDate, view);
+  const visibleStart = new Date(visible.timeMin);
+  const visibleEnd = new Date(visible.timeMax);
+  const periodDuration = visibleEnd.getTime() - visibleStart.getTime();
+  return {
+    timeMin: new Date(visibleStart.getTime() - periodDuration).toISOString(),
+    timeMax: new Date(visibleEnd.getTime() + periodDuration).toISOString(),
+  };
+}
+
+export function eventOverlapsRange(start: string, end: string, range: { timeMin: string; timeMax: string }) {
+  return new Date(start) < new Date(range.timeMax) && new Date(range.timeMin) < new Date(end);
+}
+
 function eventBoundary(value: string, allDay: boolean) {
   return new Date(allDay ? `${value.slice(0, 10)}T00:00:00` : value).getTime();
 }

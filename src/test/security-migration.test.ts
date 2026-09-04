@@ -7,6 +7,7 @@ const accountMigration = readFileSync(resolve(process.cwd(), "supabase/migration
 const teamMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/202607310003_team_accounts_and_private_messaging.sql"), "utf8");
 const preinviteMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/202608030008_preinvite_team_members.sql"), "utf8");
 const googleCalendarMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/202608040012_google_calendar_user_connections.sql"), "utf8");
+const planningEventsMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/202609040013_planning_events.sql"), "utf8");
 
 describe("migration de sécurité", () => {
   it("active la RLS et isole les données par organisation", () => {
@@ -73,5 +74,21 @@ describe("connexions Google Calendar", () => {
 
   it("empêche plusieurs événements pour la même prestation et le même calendrier", () => {
     expect(googleCalendarMigration).toContain("unique (connection_id, intervention_id, google_calendar_id)");
+  });
+});
+
+describe("événements internes du planning", () => {
+  it("partage les événements uniquement dans l’organisation", () => {
+    expect(planningEventsMigration).toContain("create table if not exists public.planning_events");
+    expect(planningEventsMigration).toContain("public.is_org_member(organization_id)");
+    expect(planningEventsMigration).toContain("public.can_manage_planning_event(organization_id, member_ids)");
+    expect(planningEventsMigration).toContain("public.planning_event_members_are_valid(organization_id, member_ids)");
+    expect(planningEventsMigration).toContain("enable row level security");
+  });
+
+  it("borne les types et garantit une période valide", () => {
+    expect(planningEventsMigration).toContain("'meeting', 'unavailability', 'absence', 'personal'");
+    expect(planningEventsMigration).toContain("check (ends_at > starts_at)");
+    expect(planningEventsMigration).toContain("cardinality(member_ids) > 0");
   });
 });

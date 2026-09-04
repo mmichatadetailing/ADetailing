@@ -14,6 +14,8 @@ import type {
   LeadStage,
   MonthlyObjective,
   Payment,
+  PlanningEvent,
+  PlanningEventKind,
   Service,
   ServicePricingMode,
   Vehicle,
@@ -123,6 +125,18 @@ export interface InterventionEditInput {
   items: Array<{ id?: string; serviceId?: string; label: string; quantity: number; revenueAllocated: number }>;
 }
 
+export interface PlanningEventInput {
+  kind: PlanningEventKind;
+  title: string;
+  startAt: string;
+  endAt: string;
+  allDay: boolean;
+  memberIds: string[];
+  location?: string;
+  notes?: string;
+  color?: string;
+}
+
 interface DemoActions {
   hydrateFromSupabase: (data: AppData) => void;
   resetDemo: () => void;
@@ -149,6 +163,9 @@ interface DemoActions {
   ) => void;
   incrementChecklist: (interventionId: string) => void;
   rescheduleIntervention: (interventionId: string, startAt: string, endAt: string) => void;
+  addPlanningEvent: (input: PlanningEventInput) => string;
+  updatePlanningEvent: (eventId: string, input: PlanningEventInput) => void;
+  removePlanningEvent: (eventId: string) => void;
   addService: (input: NewServiceInput) => string;
   updateService: (serviceId: string, input: NewServiceInput) => void;
   duplicateService: (serviceId: string) => string | null;
@@ -660,6 +677,37 @@ export const useDemoStore = create<DemoStore>()(
         }));
         persistMutation({ action: "rescheduleIntervention", interventionId, startAt, endAt });
       },
+      addPlanningEvent: (input) => {
+        const planningEvent: PlanningEvent = {
+          ...entityBase(),
+          ...input,
+          title: input.title.trim(),
+          memberIds: [...new Set(input.memberIds)],
+          location: input.location?.trim() || undefined,
+          notes: input.notes?.trim() || undefined,
+        };
+        set((state) => ({ planningEvents: [planningEvent, ...state.planningEvents] }));
+        persistMutation({ action: "addPlanningEvent", eventId: planningEvent.id, ...input });
+        return planningEvent.id;
+      },
+      updatePlanningEvent: (eventId, input) => {
+        set((state) => ({
+          planningEvents: state.planningEvents.map((event) => event.id === eventId ? {
+            ...event,
+            ...input,
+            title: input.title.trim(),
+            memberIds: [...new Set(input.memberIds)],
+            location: input.location?.trim() || undefined,
+            notes: input.notes?.trim() || undefined,
+            updatedAt: nowIso(),
+          } : event),
+        }));
+        persistMutation({ action: "updatePlanningEvent", eventId, ...input });
+      },
+      removePlanningEvent: (eventId) => {
+        set((state) => ({ planningEvents: state.planningEvents.filter((event) => event.id !== eventId) }));
+        persistMutation({ action: "removePlanningEvent", eventId });
+      },
       addService: (input) => {
         const service: Service = {
           ...entityBase(),
@@ -888,6 +936,7 @@ export const useDemoStore = create<DemoStore>()(
         invoices: state.invoices,
         payments: state.payments,
         interventions: state.interventions,
+        planningEvents: state.planningEvents,
         expenses: state.expenses,
         assets: state.assets,
         objectives: state.objectives,

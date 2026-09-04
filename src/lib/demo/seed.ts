@@ -586,6 +586,7 @@ export const demoSeed: AppData = {
       depositAmount: 0,
     },
   ],
+  planningEvents: [],
   expenses: [
     { ...base("90000000-0000-4000-8000-000000000001"), date: "2026-07-01T08:00:00.000Z", family: "fixed", category: "Local", supplier: "Bailleur Orange", description: "Loyer atelier", amountIncludingTax: 120000, amountExcludingTax: 100000, vatAmount: 20000, vatRecoverable: true, recurrence: "monthly", allocatedMonth: "2026-07", paid: true, paidAt: "2026-07-03T08:00:00.000Z", paymentMethod: "Virement" },
     { ...base("90000000-0000-4000-8000-000000000002"), date: "2026-07-08T08:00:00.000Z", family: "variable", category: "Produits", supplier: "Detail Supply", description: "Consommables et microfibres", amountIncludingTax: 46200, amountExcludingTax: 38500, vatAmount: 7700, vatRecoverable: true, recurrence: "one_off", allocatedMonth: "2026-07", paid: true, paidAt: "2026-07-08T08:00:00.000Z", paymentMethod: "Carte" },

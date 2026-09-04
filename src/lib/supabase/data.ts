@@ -14,6 +14,7 @@ import type {
   Message,
   MonthlyObjective,
   Payment,
+  PlanningEvent,
   Quote,
   Review,
   Service,
@@ -137,6 +138,7 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User):
     supabase.from("invoices").select("*,invoice_items(*)").eq("organization_id", organizationId).is("archived_at", null).order("issued_at", { ascending: false }),
     supabase.from("payments").select("*").eq("organization_id", organizationId).order("paid_at", { ascending: false }),
     supabase.from("interventions").select("*,intervention_items(*),intervention_workers(*),intervention_checklist_items(*)").eq("organization_id", organizationId).is("archived_at", null).order("start_at"),
+    supabase.from("planning_events").select("*").eq("organization_id", organizationId).is("archived_at", null).order("starts_at"),
     supabase.from("expenses").select("*").eq("organization_id", organizationId).is("archived_at", null).order("expense_date", { ascending: false }),
     supabase.from("assets").select("*").eq("organization_id", organizationId).is("archived_at", null).order("created_at", { ascending: false }),
     supabase.from("monthly_objectives").select("*").eq("organization_id", organizationId).order("month"),
@@ -148,7 +150,7 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User):
   ]);
   const firstError = results.find((result) => result.error)?.error;
   if (firstError) throw firstError;
-  const [memberRows = [], sourceRows = [], formatRows = [], clientRows = [], vehicleRows = [], leadRows = [], serviceRows = [], quoteRows = [], invoiceRows = [], paymentRows = [], interventionRows = [], expenseRows = [], assetRows = [], objectiveRows = [], reviewRows = [], activityRows = [], messageRows = [], settingRows = [], invitationRows = []] = results.map((result) => rows(result.data));
+  const [memberRows = [], sourceRows = [], formatRows = [], clientRows = [], vehicleRows = [], leadRows = [], serviceRows = [], quoteRows = [], invoiceRows = [], paymentRows = [], interventionRows = [], planningEventRows = [], expenseRows = [], assetRows = [], objectiveRows = [], reviewRows = [], activityRows = [], messageRows = [], settingRows = [], invitationRows = []] = results.map((result) => rows(result.data));
 
   const base = (row: Row) => ({
     id: text(row, "id"),
@@ -225,6 +227,18 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User):
     items: rows(row.intervention_items).map((item) => ({ id: text(item, "id"), serviceId: optionalText(item, "service_id"), label: text(item, "label"), revenueAllocated: number(item, "revenue_allocated_cents"), quantity: number(item, "quantity", 1) })),
     productCost: number(row, "product_cost_cents"), travelCost: number(row, "travel_cost_cents"), otherDirectCosts: number(row, "other_direct_costs_cents"), address: text(row, "address"), checklistDone: rows(row.intervention_checklist_items).filter((item) => bool(item, "completed")).length, checklistTotal: rows(row.intervention_checklist_items).length, depositAmount: number(row, "deposit_amount_cents"), notes: optionalText(row, "notes"),
   }));
+  const planningEvents: PlanningEvent[] = planningEventRows.map((row) => ({
+    ...base(row),
+    kind: text(row, "kind", "meeting") as PlanningEvent["kind"],
+    title: text(row, "title", "Événement"),
+    startAt: iso(text(row, "starts_at")),
+    endAt: iso(text(row, "ends_at")),
+    allDay: bool(row, "all_day"),
+    memberIds: Array.isArray(row.member_ids) ? row.member_ids.filter((memberId): memberId is string => typeof memberId === "string") : [],
+    location: optionalText(row, "location_label"),
+    notes: optionalText(row, "notes"),
+    color: optionalText(row, "color"),
+  }));
   const expenses: Expense[] = expenseRows.map((row) => ({
     ...base(row), date: text(row, "expense_date"), family: text(row, "family", "variable") as Expense["family"], category: text(row, "category"), supplier: text(row, "supplier"), description: text(row, "description"), amountIncludingTax: number(row, "amount_including_tax_cents"), amountExcludingTax: number(row, "amount_excluding_tax_cents"), vatAmount: number(row, "vat_amount_cents"), vatRecoverable: bool(row, "vat_recoverable"), recurrence: text(row, "recurrence", "one_off") as Expense["recurrence"], allocatedMonth: text(row, "allocated_month").slice(0, 7), paid: bool(row, "paid"), paidAt: optionalText(row, "paid_at"), paymentMethod: optionalText(row, "payment_method"),
   }));
@@ -271,5 +285,5 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User):
     revokedAt: optionalText(row, "revoked_at"),
     createdAt: iso(text(row, "created_at")),
   }));
-  return { workspace, invitations, data: { team, clients, vehicles, leads, services, quotes, invoices, payments, interventions, expenses, assets, objectives, reviews, activities, messages, settings } };
+  return { workspace, invitations, data: { team, clients, vehicles, leads, services, quotes, invoices, payments, interventions, planningEvents, expenses, assets, objectives, reviews, activities, messages, settings } };
 }

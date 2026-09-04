@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { googlePlanningConflicts, googlePlanningRange } from "./google-planning";
+import { eventOverlapsRange, googlePlanningConflicts, googlePlanningPrefetchRange, googlePlanningRange } from "./google-planning";
 import type { Intervention } from "./types";
 import type { GooglePlanningEvent } from "../integrations/google-calendar-types";
 
@@ -41,5 +41,18 @@ describe("google planning", () => {
   it("does not flag free Google events", () => {
     const conflicts = googlePlanningConflicts([intervention], [{ ...googleEvent, busy: false }], "member-1");
     expect(conflicts.count).toBe(0);
+  });
+
+  it("précharge la période précédente et la suivante", () => {
+    const visible = googlePlanningRange(new Date(2026, 8, 4, 12), "day");
+    const prefetched = googlePlanningPrefetchRange(new Date(2026, 8, 4, 12), "day");
+    expect(new Date(visible.timeMin) > new Date(prefetched.timeMin)).toBe(true);
+    expect(new Date(visible.timeMax) < new Date(prefetched.timeMax)).toBe(true);
+  });
+
+  it("détermine si un événement appartient à la période visible", () => {
+    const range = { timeMin: "2026-09-04T00:00:00.000Z", timeMax: "2026-09-05T00:00:00.000Z" };
+    expect(eventOverlapsRange("2026-09-04T09:00:00.000Z", "2026-09-04T10:00:00.000Z", range)).toBe(true);
+    expect(eventOverlapsRange("2026-09-05T09:00:00.000Z", "2026-09-05T10:00:00.000Z", range)).toBe(false);
   });
 });

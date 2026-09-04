@@ -2,6 +2,7 @@
 
 import { CalendarDays, Clock3, GripVertical } from "lucide-react";
 import type { DragEvent, MouseEvent } from "react";
+import { useEffect, useRef } from "react";
 import { Avatar } from "@/components/avatar";
 import { Badge } from "@/components/ui/badge";
 import { interventionStatusLabels } from "@/lib/domain/labels";
@@ -12,7 +13,7 @@ import {
   PLANNING_START_HOUR,
   planningTimelinePosition,
 } from "@/lib/domain/planning-timeline";
-import type { Client, Intervention, TeamMember } from "@/lib/domain/types";
+import type { Client, Intervention, PlanningEvent, TeamMember } from "@/lib/domain/types";
 import type { GooglePlanningEvent } from "@/lib/integrations/google-calendar-types";
 import { cn, formatDate } from "@/lib/utils";
 
@@ -23,19 +24,25 @@ const HOURS = Array.from({ length: PLANNING_END_HOUR - PLANNING_START_HOUR + 1 }
 const DRAG_TYPE = "application/x-adetailing-intervention";
 
 type DragPayload = { interventionId: string; sourceMemberId?: string };
+const planningKindLabels: Record<PlanningEvent["kind"], string> = {
+  meeting: "Réunion",
+  unavailability: "Indisponibilité",
+  absence: "Absence",
+  personal: "Bloc personnel",
+};
 
 function transparentColor(color: string, alpha: string) {
   return /^#[0-9a-f]{6}$/i.test(color) ? `${color}${alpha}` : "#f9734f18";
 }
 
-function googlePosition(event: GooglePlanningEvent, day: Date) {
-  if (!event.allDay) return planningTimelinePosition(event.start, event.end, day);
+function externalPosition(start: string, end: string, allDay: boolean, day: Date) {
+  if (!allDay) return planningTimelinePosition(start, end, day);
   const dayStart = new Date(day);
   dayStart.setHours(0, 0, 0, 0);
   const dayEnd = new Date(dayStart);
   dayEnd.setDate(dayEnd.getDate() + 1);
-  const eventStart = new Date(`${event.start.slice(0, 10)}T00:00:00`);
-  const eventEnd = new Date(`${event.end.slice(0, 10)}T00:00:00`);
+  const eventStart = new Date(start);
+  const eventEnd = new Date(end);
   return eventStart < dayEnd && dayStart < eventEnd ? { left: 0, width: 100 } : null;
 }
 
@@ -46,18 +53,22 @@ function eventBoundaries(start: string, end: string, allDay = false) {
   };
 }
 
-function dayEvents(memberId: string, day: Date, interventions: Intervention[], googleEvents: GooglePlanningEvent[]) {
+function dayEvents(memberId: string, day: Date, interventions: Intervention[], googleEvents: GooglePlanningEvent[], planningEvents: PlanningEvent[]) {
   const interventionEvents = interventions
     .filter((intervention) => intervention.startAt && intervention.endAt && intervention.workers.some((worker) => worker.memberId === memberId))
     .map((intervention) => ({ kind: "intervention" as const, intervention, position: planningTimelinePosition(intervention.startAt!, intervention.endAt!, day) }))
     .filter((entry): entry is { kind: "intervention"; intervention: Intervention; position: { left: number; width: number } } => Boolean(entry.position));
   const externalEvents = googleEvents
     .filter((event) => event.memberId === memberId)
-    .map((googleEvent) => ({ kind: "google" as const, googleEvent, position: googlePosition(googleEvent, day) }))
+    .map((googleEvent) => ({ kind: "google" as const, googleEvent, position: externalPosition(googleEvent.start, googleEvent.end, googleEvent.allDay, day) }))
     .filter((entry): entry is { kind: "google"; googleEvent: GooglePlanningEvent; position: { left: number; width: number } } => Boolean(entry.position));
-  const events = [...interventionEvents, ...externalEvents].sort((left, right) => {
-    const leftStart = left.kind === "intervention" ? left.intervention.startAt! : left.googleEvent.start;
-    const rightStart = right.kind === "intervention" ? right.intervention.startAt! : right.googleEvent.start;
+  const internalEvents = planningEvents
+    .filter((event) => event.memberIds.includes(memberId))
+    .map((planningEvent) => ({ kind: "planning" as const, planningEvent, position: externalPosition(planningEvent.startAt, planningEvent.endAt, planningEvent.allDay, day) }))
+    .filter((entry): entry is { kind: "planning"; planningEvent: PlanningEvent; position: { left: number; width: number } } => Boolean(entry.position));
+  const events = [...interventionEvents, ...externalEvents, ...internalEvents].sort((left, right) => {
+    const leftStart = left.kind === "intervention" ? left.intervention.startAt! : left.kind === "google" ? left.googleEvent.start : left.planningEvent.startAt;
+    const rightStart = right.kind === "intervention" ? right.intervention.startAt! : right.kind === "google" ? right.googleEvent.start : right.planningEvent.startAt;
     return leftStart.localeCompare(rightStart);
   });
 
@@ -65,7 +76,9 @@ function dayEvents(memberId: string, day: Date, interventions: Intervention[], g
   return events.map((entry) => {
     const boundaries = entry.kind === "intervention"
       ? eventBoundaries(entry.intervention.startAt!, entry.intervention.endAt!)
-      : eventBoundaries(entry.googleEvent.start, entry.googleEvent.end, entry.googleEvent.allDay);
+      : entry.kind === "google"
+        ? eventBoundaries(entry.googleEvent.start, entry.googleEvent.end, entry.googleEvent.allDay)
+        : eventBoundaries(entry.planningEvent.startAt, entry.planningEvent.endAt, entry.planningEvent.allDay);
     const { start, end } = boundaries;
     let lane = laneEnds.findIndex((laneEnd) => laneEnd <= start);
     if (lane === -1) lane = laneEnds.length;
@@ -78,13 +91,16 @@ export function TeamPlanningTimeline({
   members,
   interventions,
   googleEvents,
+  planningEvents,
   clients,
   days,
   conflictIds,
   googleConflictIds,
+  planningConflictIds,
   currentUserId,
   onSelect,
   onSelectGoogle,
+  onSelectPlanningEvent,
   onMove,
   onEmptySlot,
   dayWidth = DEFAULT_DAY_WIDTH,
@@ -93,13 +109,16 @@ export function TeamPlanningTimeline({
   members: TeamMember[];
   interventions: Intervention[];
   googleEvents: GooglePlanningEvent[];
+  planningEvents: PlanningEvent[];
   clients: Client[];
   days: Date[];
   conflictIds: Set<string>;
   googleConflictIds: Set<string>;
+  planningConflictIds: Set<string>;
   currentUserId?: string;
   onSelect: (intervention: Intervention) => void;
   onSelectGoogle: (event: GooglePlanningEvent) => void;
+  onSelectPlanningEvent: (event: PlanningEvent) => void;
   onMove: (payload: DragPayload, targetMemberId: string, start: Date) => void;
   onEmptySlot: (memberId: string, start: Date) => void;
   dayWidth?: number;
@@ -107,6 +126,29 @@ export function TeamPlanningTimeline({
 }) {
   const today = new Date();
   const timelineWidth = days.length * dayWidth;
+  const scrollContainer = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const container = scrollContainer.current;
+    const firstDay = days[0];
+    if (!container || !firstDay) return;
+    const focusNow = new Date();
+    const starts = [
+      ...interventions.map((event) => event.startAt),
+      ...planningEvents.filter((event) => !event.allDay).map((event) => event.startAt),
+      ...googleEvents.filter((event) => !event.allDay).map((event) => event.start),
+    ]
+      .filter((start): start is string => Boolean(start) && isSamePlanningDay(new Date(start!), firstDay))
+      .map((start) => new Date(start))
+      .sort((left, right) => left.getTime() - right.getTime());
+    const reference = isSamePlanningDay(focusNow, firstDay) ? focusNow : starts[0];
+    const minutes = reference ? reference.getHours() * 60 + reference.getMinutes() - 60 : PLANNING_START_HOUR * 60;
+    const ratio = Math.max(0, Math.min(1, (minutes - PLANNING_START_HOUR * 60) / ((PLANNING_END_HOUR - PLANNING_START_HOUR) * 60)));
+    const viewportOffset = Math.max(80, (container.clientWidth - RESOURCE_WIDTH) / 3);
+    const target = Math.max(0, RESOURCE_WIDTH + ratio * dayWidth - viewportOffset);
+    const frame = window.requestAnimationFrame(() => container.scrollTo({ left: target, behavior: "smooth" }));
+    return () => window.cancelAnimationFrame(frame);
+  }, [dayWidth, days, googleEvents, interventions, planningEvents]);
 
   const readDrag = (event: DragEvent) => {
     try {
@@ -123,7 +165,7 @@ export function TeamPlanningTimeline({
 
   return (
     <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_18px_55px_rgba(78,64,120,.08)]">
-      <div className="max-h-[70dvh] overflow-auto">
+      <div ref={scrollContainer} className="max-h-[70dvh] overflow-auto">
         <div style={{ minWidth: RESOURCE_WIDTH + timelineWidth }}>
           <div className="sticky top-0 z-30 flex border-b border-zinc-200 bg-white/95 shadow-sm backdrop-blur-xl">
             <div className="sticky left-0 z-40 flex shrink-0 items-center gap-2 border-r border-zinc-200 bg-white px-4" style={{ width: RESOURCE_WIDTH }}>
@@ -161,7 +203,7 @@ export function TeamPlanningTimeline({
               </div>
               <div className="flex" style={{ width: timelineWidth }}>
                 {days.map((day) => {
-                  const events = dayEvents(member.id, day, interventions, googleEvents);
+                  const events = dayEvents(member.id, day, interventions, googleEvents, planningEvents);
                   const todayDay = isSamePlanningDay(day, today);
                   const nowRatio = (today.getHours() * 60 + today.getMinutes() - PLANNING_START_HOUR * 60) / ((PLANNING_END_HOUR - PLANNING_START_HOUR) * 60);
                   return (
@@ -192,6 +234,24 @@ export function TeamPlanningTimeline({
                             >
                               <CalendarDays className="size-3 shrink-0 text-sky-600" />
                               <span className="min-w-0 flex-1"><span className="block truncate text-[10px] font-extrabold">{googleEvent.title}</span><span className="mt-0.5 block truncate text-[9px] font-semibold text-sky-700">{googleEvent.allDay ? "Toute la journée" : `${formatDate(googleEvent.start, { hour: "2-digit", minute: "2-digit" })}–${formatDate(googleEvent.end, { hour: "2-digit", minute: "2-digit" })}`} · Google</span></span>
+                            </button>
+                          );
+                        }
+
+                        if (entry.kind === "planning") {
+                          const { planningEvent } = entry;
+                          const color = planningEvent.color || "#8b5cf6";
+                          return (
+                            <button
+                              key={`${member.id}-${planningEvent.id}`}
+                              type="button"
+                              title={`${planningEvent.title} · ${planningKindLabels[planningEvent.kind]}`}
+                              onClick={(event) => { event.stopPropagation(); onSelectPlanningEvent(planningEvent); }}
+                              className={cn("focus-ring absolute z-20 flex h-10 cursor-pointer items-center gap-2 overflow-hidden rounded-xl border px-2 text-left text-zinc-900 shadow-[0_7px_18px_rgba(76,29,149,.12)] transition hover:z-30 hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(76,29,149,.18)]", planningConflictIds.has(planningEvent.id) && "ring-2 ring-red-400")}
+                              style={{ left: `${position.left}%`, width: `max(44px, calc(${position.width}% - 5px))`, maxWidth: `calc(${100 - position.left}% - 4px)`, top: 8 + lane * 47, borderColor: color, borderLeftWidth: 4, backgroundColor: transparentColor(color, "1c") }}
+                            >
+                              <CalendarDays className="size-3 shrink-0" style={{ color }} />
+                              <span className="min-w-0 flex-1"><span className="block truncate text-[10px] font-extrabold">{planningEvent.title}</span><span className="mt-0.5 block truncate text-[9px] font-semibold text-zinc-600">{planningEvent.allDay ? "Toute la journée" : `${formatDate(planningEvent.startAt, { hour: "2-digit", minute: "2-digit" })}–${formatDate(planningEvent.endAt, { hour: "2-digit", minute: "2-digit" })}`} · {planningKindLabels[planningEvent.kind]}</span></span>
                             </button>
                           );
                         }

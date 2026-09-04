@@ -14,31 +14,36 @@ import {
   ChevronRight,
   Clock3,
   ExternalLink,
+  Filter,
   GripVertical,
   Link2,
   LoaderCircle,
   MapPin,
+  Plus,
   RefreshCw,
   UserRound,
   UsersRound,
 } from "lucide-react";
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { InterventionDetail } from "@/components/intervention-detail";
 import { PageHeader } from "@/components/page-header";
+import { PlanningDatePicker } from "@/components/planning-date-picker";
+import { PlanningEventEditor } from "@/components/planning-event-editor";
 import { planningDragType, TeamPlanningTimeline } from "@/components/team-planning-timeline";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Field, Input, Select } from "@/components/ui/field";
+import { Field, Select } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { useWorkspace } from "@/components/workspace-provider";
 import { canViewTeamPlanning, filterPlanningForUser } from "@/lib/domain/planning";
-import { googlePlanningConflicts, googlePlanningRange } from "@/lib/domain/google-planning";
+import { eventOverlapsRange, googlePlanningConflicts, googlePlanningPrefetchRange, googlePlanningRange } from "@/lib/domain/google-planning";
+import { interventionStatusLabels } from "@/lib/domain/labels";
+import { planningEventConflicts, planningEventKindLabels } from "@/lib/domain/planning-events";
 import { startOfPlanningWeek } from "@/lib/domain/planning-timeline";
 import { dateKey } from "@/lib/domain/periods";
-import type { Intervention } from "@/lib/domain/types";
+import type { Intervention, InterventionStatus, PlanningEvent } from "@/lib/domain/types";
 import { useDemoStore } from "@/lib/demo/store";
 import type { GooglePlanningEvent, GooglePlanningEventsResponse } from "@/lib/integrations/google-calendar-types";
 import { cn, formatDate } from "@/lib/utils";
@@ -46,6 +51,10 @@ import { cn, formatDate } from "@/lib/utils";
 type CalendarView = "timeline" | "day" | "week" | "month";
 type PlanningSlot = { start: Date; memberId: string };
 type MovePayload = { interventionId: string; sourceMemberId?: string };
+type PlanningSourceFilter = "all" | "adetailing" | "planning" | "google";
+type PlanningStatusFilter = "all" | InterventionStatus;
+
+const PLANNING_PREFERENCES_KEY = "adetailing-planning-preferences-v1";
 
 const calendarViews: Array<{ id: CalendarView; label: string }> = [
   { id: "timeline", label: "Timeline" },
@@ -53,6 +62,12 @@ const calendarViews: Array<{ id: CalendarView; label: string }> = [
   { id: "week", label: "Semaine" },
   { id: "month", label: "Mois" },
 ];
+
+const interventionStatuses: InterventionStatus[] = ["to_schedule", "scheduled", "confirmed", "in_progress", "completed", "cancelled"];
+
+function isCalendarView(value: unknown): value is CalendarView {
+  return calendarViews.some((view) => view.id === value);
+}
 
 function capitalize(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
@@ -93,30 +108,95 @@ export default function PlanningPage() {
   const [slot, setSlot] = useState<PlanningSlot | null>(null);
   const [selected, setSelected] = useState<Intervention | null>(null);
   const [selectedGoogleEvent, setSelectedGoogleEvent] = useState<GooglePlanningEvent | null>(null);
+  const [planningEventEditor, setPlanningEventEditor] = useState<{ event?: PlanningEvent; start: Date } | null>(null);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [view, setView] = useState<CalendarView>("timeline");
+  const [memberFilter, setMemberFilter] = useState("all");
+  const [sourceFilter, setSourceFilter] = useState<PlanningSourceFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<PlanningStatusFilter>("all");
   const [googleEvents, setGoogleEvents] = useState<GooglePlanningEvent[]>([]);
   const [googleConnected, setGoogleConnected] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [googleError, setGoogleError] = useState("");
   const [googleSyncedAt, setGoogleSyncedAt] = useState<string | null>(null);
   const googleRequestId = useRef(0);
+  const calendarRef = useRef<FullCalendar | null>(null);
+  const preferencesReady = useRef(false);
 
   const teamPlanning = canViewTeamPlanning(workspace?.role, mode === "demo");
   const currentUserId = workspace?.userId ?? data.team[0]?.id;
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const stored = JSON.parse(window.localStorage.getItem(PLANNING_PREFERENCES_KEY) ?? "null") as {
+          date?: string;
+          view?: unknown;
+          memberFilter?: string;
+          sourceFilter?: PlanningSourceFilter;
+          statusFilter?: PlanningStatusFilter;
+        } | null;
+        if (stored?.date && Number.isFinite(new Date(stored.date).getTime())) setSelectedDate(new Date(stored.date));
+        if (isCalendarView(stored?.view)) setView(stored.view);
+        if (stored?.memberFilter) setMemberFilter(stored.memberFilter);
+        if (["all", "adetailing", "planning", "google"].includes(stored?.sourceFilter ?? "")) setSourceFilter(stored!.sourceFilter!);
+        if (stored?.statusFilter === "all" || interventionStatuses.includes(stored?.statusFilter as InterventionStatus)) setStatusFilter(stored!.statusFilter!);
+      } catch {
+        window.localStorage.removeItem(PLANNING_PREFERENCES_KEY);
+      } finally {
+        preferencesReady.current = true;
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!preferencesReady.current) return;
+    window.localStorage.setItem(PLANNING_PREFERENCES_KEY, JSON.stringify({
+      date: selectedDate.toISOString(),
+      view,
+      memberFilter,
+      sourceFilter,
+      statusFilter,
+    }));
+  }, [memberFilter, selectedDate, sourceFilter, statusFilter, view]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.matches("input, textarea, select, [contenteditable='true']") || document.querySelector("[role='dialog']")) return;
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        event.preventDefault();
+        setSelectedDate((current) => addToDate(current, view, event.key === "ArrowLeft" ? -1 : 1));
+      } else if (event.key.toLowerCase() === "t") setSelectedDate(new Date());
+      else if (event.key.toLowerCase() === "j") setView("day");
+      else if (event.key.toLowerCase() === "s") setView("week");
+      else if (event.key.toLowerCase() === "m") setView("month");
+      else if (event.key.toLowerCase() === "l") setView("timeline");
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [view]);
   const visibleInterventions = useMemo(
     () => filterPlanningForUser(data.interventions, { canViewTeam: teamPlanning, userId: currentUserId }),
     [currentUserId, data.interventions, teamPlanning],
   );
+  const visiblePlanningEvents = useMemo(
+    () => (data.planningEvents ?? []).filter((event) => teamPlanning || Boolean(currentUserId && event.memberIds.includes(currentUserId))),
+    [currentUserId, data.planningEvents, teamPlanning],
+  );
   const unscheduled = useMemo(
-    () => visibleInterventions.filter((item) => !item.startAt && item.status === "to_schedule"),
-    [visibleInterventions],
+    () => visibleInterventions.filter((item) => !item.startAt && item.status === "to_schedule" && (memberFilter === "all" || item.workers.some((worker) => worker.memberId === memberFilter))),
+    [memberFilter, visibleInterventions],
   );
   const scheduled = useMemo(
     () => visibleInterventions.filter((item) => item.startAt && item.endAt && item.status !== "cancelled"),
     [visibleInterventions],
   );
   const googleRange = useMemo(() => googlePlanningRange(selectedDate, view), [selectedDate, view]);
+  const googleFetchRange = useMemo(() => googlePlanningPrefetchRange(selectedDate, view), [selectedDate, view]);
   const loadGoogleEvents = useCallback(async (notify = false) => {
     if (mode !== "supabase" || !workspace?.userId) {
       setGoogleEvents([]);
@@ -127,7 +207,7 @@ export default function PlanningPage() {
     setGoogleLoading(true);
     setGoogleError("");
     try {
-      const params = new URLSearchParams(googleRange);
+      const params = new URLSearchParams(googleFetchRange);
       const response = await fetch(`/api/integrations/google/events?${params}`, { cache: "no-store" });
       const payload = await response.json() as GooglePlanningEventsResponse & { error?: string };
       if (!response.ok) throw new Error(payload.error || "Lecture de Google Calendar impossible.");
@@ -148,7 +228,7 @@ export default function PlanningPage() {
     } finally {
       if (requestId === googleRequestId.current) setGoogleLoading(false);
     }
-  }, [googleRange, mode, workspace?.userId]);
+  }, [googleFetchRange, mode, workspace?.userId]);
 
   useEffect(() => {
     const initialTimer = window.setTimeout(() => { void loadGoogleEvents(); }, 0);
@@ -167,27 +247,77 @@ export default function PlanningPage() {
     };
   }, [loadGoogleEvents]);
   const planningMembers = useMemo(() => {
-    const assignedMemberIds = new Set(visibleInterventions.flatMap((item) => item.workers.map((worker) => worker.memberId)));
+    const assignedMemberIds = new Set([
+      ...visibleInterventions.flatMap((item) => item.workers.map((worker) => worker.memberId)),
+      ...visiblePlanningEvents.flatMap((event) => event.memberIds),
+    ]);
     return data.team.filter((member) =>
       (teamPlanning || member.id === currentUserId) && (member.active || assignedMemberIds.has(member.id)),
     );
-  }, [currentUserId, data.team, teamPlanning, visibleInterventions]);
+  }, [currentUserId, data.team, teamPlanning, visibleInterventions, visiblePlanningEvents]);
+  const filteredMembers = useMemo(
+    () => planningMembers.filter((member) => memberFilter === "all" || member.id === memberFilter),
+    [memberFilter, planningMembers],
+  );
+  const filteredScheduled = useMemo(
+    () => scheduled.filter((intervention) =>
+      (sourceFilter === "all" || sourceFilter === "adetailing")
+      && (statusFilter === "all" || intervention.status === statusFilter)
+      && (memberFilter === "all" || intervention.workers.some((worker) => worker.memberId === memberFilter)),
+    ),
+    [memberFilter, scheduled, sourceFilter, statusFilter],
+  );
+  const filteredPlanningEvents = useMemo(
+    () => visiblePlanningEvents.filter((event) =>
+      (sourceFilter === "all" || sourceFilter === "planning")
+      && (memberFilter === "all" || event.memberIds.includes(memberFilter)),
+    ),
+    [memberFilter, sourceFilter, visiblePlanningEvents],
+  );
+  const filteredGoogleEvents = useMemo(
+    () => googleEvents.filter((event) =>
+      (sourceFilter === "all" || sourceFilter === "google")
+      && (memberFilter === "all" || event.memberId === memberFilter),
+    ),
+    [googleEvents, memberFilter, sourceFilter],
+  );
+  const visibleGoogleEvents = useMemo(
+    () => googleEvents.filter((event) => eventOverlapsRange(event.start, event.end, googleRange)),
+    [googleEvents, googleRange],
+  );
 
-  const conflictPairs = useMemo(() => scheduled.flatMap((item, index) => scheduled.slice(index + 1).filter((other) => {
+  const conflictScheduled = useMemo(
+    () => scheduled.filter((item) => item.startAt && item.endAt && eventOverlapsRange(item.startAt, item.endAt, googleRange)),
+    [googleRange, scheduled],
+  );
+  const conflictPlanningEvents = useMemo(
+    () => visiblePlanningEvents.filter((event) => eventOverlapsRange(event.startAt, event.endAt, googleRange)),
+    [googleRange, visiblePlanningEvents],
+  );
+  const conflictPairs = useMemo(() => conflictScheduled.flatMap((item, index) => conflictScheduled.slice(index + 1).filter((other) => {
     if (!item.startAt || !item.endAt || !other.startAt || !other.endAt) return false;
     const sameWorker = item.workers.some((worker) => other.workers.some((entry) => entry.memberId === worker.memberId));
     return sameWorker && new Date(item.startAt) < new Date(other.endAt) && new Date(other.startAt) < new Date(item.endAt);
-  }).map((other) => [item.id, other.id] as const)), [scheduled]);
+  }).map((other) => [item.id, other.id] as const)), [conflictScheduled]);
   const googleConflicts = useMemo(
-    () => googlePlanningConflicts(scheduled, googleEvents, currentUserId),
-    [currentUserId, googleEvents, scheduled],
+    () => googlePlanningConflicts(conflictScheduled, visibleGoogleEvents, currentUserId),
+    [conflictScheduled, currentUserId, visibleGoogleEvents],
+  );
+  const internalPlanningConflicts = useMemo(
+    () => planningEventConflicts(conflictScheduled, conflictPlanningEvents, visibleGoogleEvents),
+    [conflictPlanningEvents, conflictScheduled, visibleGoogleEvents],
   );
   const conflictIds = useMemo(
-    () => new Set([...conflictPairs.flat(), ...googleConflicts.interventionIds]),
-    [conflictPairs, googleConflicts.interventionIds],
+    () => new Set([...conflictPairs.flat(), ...googleConflicts.interventionIds, ...internalPlanningConflicts.interventionIds]),
+    [conflictPairs, googleConflicts.interventionIds, internalPlanningConflicts.interventionIds],
   );
+  const googleConflictIds = useMemo(
+    () => new Set([...googleConflicts.googleEventIds, ...internalPlanningConflicts.googleEventIds]),
+    [googleConflicts.googleEventIds, internalPlanningConflicts.googleEventIds],
+  );
+  const conflictCount = conflictPairs.length + googleConflicts.count + internalPlanningConflicts.count;
 
-  const events = useMemo(() => [...scheduled.map((item) => {
+  const events = useMemo(() => [...filteredScheduled.map((item) => {
     const member = planningMembers.find((entry) => item.workers.some((worker) => worker.memberId === entry.id));
     const client = data.clients.find((entry) => entry.id === item.clientId);
     const clientLabel = client?.company || `${client?.firstName ?? ""} ${client?.lastName ?? ""}`.trim() || "Client";
@@ -202,7 +332,18 @@ export default function PlanningPage() {
       textColor: "#172033",
       extendedProps: { source: "adetailing" },
     };
-  }), ...googleEvents.map((event) => ({
+  }), ...filteredPlanningEvents.map((event) => ({
+    id: event.id,
+    title: `${planningEventKindLabels[event.kind]} · ${event.title}`,
+    start: event.startAt,
+    end: event.endAt,
+    allDay: event.allDay,
+    editable: teamPlanning || (event.memberIds.length === 1 && event.memberIds[0] === currentUserId),
+    backgroundColor: internalPlanningConflicts.planningEventIds.has(event.id) ? "#fef2f2" : `${event.color ?? "#8b5cf6"}1c`,
+    borderColor: internalPlanningConflicts.planningEventIds.has(event.id) ? "#ef4444" : event.color ?? "#8b5cf6",
+    textColor: "#27223a",
+    extendedProps: { source: "planning" },
+  })), ...filteredGoogleEvents.map((event) => ({
     id: event.id,
     title: `Google · ${event.title}`,
     start: event.start,
@@ -211,12 +352,12 @@ export default function PlanningPage() {
     editable: false,
     startEditable: false,
     durationEditable: false,
-    backgroundColor: googleConflicts.googleEventIds.has(event.id) ? "#fef2f2" : "#f0f9ff",
-    borderColor: googleConflicts.googleEventIds.has(event.id) ? "#ef4444" : event.color,
+    backgroundColor: googleConflictIds.has(event.id) ? "#fef2f2" : "#f0f9ff",
+    borderColor: googleConflictIds.has(event.id) ? "#ef4444" : event.color,
     textColor: "#0c4a6e",
     classNames: event.busy ? ["google-calendar-event"] : ["google-calendar-event", "opacity-70"],
     extendedProps: { source: "google" },
-  }))], [data.clients, googleConflicts.googleEventIds, googleEvents, planningMembers, scheduled]);
+  }))], [currentUserId, data.clients, filteredGoogleEvents, filteredPlanningEvents, filteredScheduled, googleConflictIds, internalPlanningConflicts.planningEventIds, planningMembers, teamPlanning]);
 
   const moveIntervention = (payload: MovePayload, targetMemberId: string, start: Date) => {
     const intervention = visibleInterventions.find((item) => item.id === payload.interventionId);
@@ -245,6 +386,39 @@ export default function PlanningPage() {
     const computedEnd = end ?? new Date(start.getTime() + intervention.plannedDurationMinutes * 60_000);
     data.rescheduleIntervention(interventionId, start.toISOString(), computedEnd.toISOString());
     toast.success("Créneau mis à jour", { description: formatDate(start.toISOString(), { weekday: "long", hour: "2-digit", minute: "2-digit" }) });
+  };
+
+  const persistPlanningEventDates = (eventId: string, start: Date | null, end: Date | null, allDay: boolean) => {
+    const planningEvent = visiblePlanningEvents.find((event) => event.id === eventId);
+    if (!planningEvent || !start) return;
+    const computedEnd = end ?? new Date(start.getTime() + Math.max(15 * 60_000, new Date(planningEvent.endAt).getTime() - new Date(planningEvent.startAt).getTime()));
+    data.updatePlanningEvent(eventId, { ...planningEvent, startAt: start.toISOString(), endAt: computedEnd.toISOString(), allDay });
+    toast.success("Événement déplacé", { description: formatDate(start.toISOString(), { weekday: "long", hour: "2-digit", minute: "2-digit" }) });
+  };
+
+  const openNewPlanningEvent = () => {
+    const start = new Date(selectedDate);
+    const now = new Date();
+    if (dateKey(start) === dateKey(now)) {
+      start.setHours(now.getHours() + 1, 0, 0, 0);
+    } else {
+      start.setHours(9, 0, 0, 0);
+    }
+    setPlanningEventEditor({ start });
+  };
+
+  const jumpToFirstConflict = () => {
+    const candidates = [
+      ...conflictScheduled.filter((event) => conflictIds.has(event.id)).map((event) => ({ start: event.startAt!, memberId: event.workers[0]?.memberId })),
+      ...conflictPlanningEvents.filter((event) => internalPlanningConflicts.planningEventIds.has(event.id)).map((event) => ({ start: event.startAt, memberId: event.memberIds[0] })),
+      ...visibleGoogleEvents.filter((event) => googleConflictIds.has(event.id)).map((event) => ({ start: event.start, memberId: event.memberId })),
+    ].sort((left, right) => left.start.localeCompare(right.start));
+    const first = candidates[0];
+    if (!first) return;
+    setSelectedDate(new Date(first.start));
+    if (teamPlanning) setView("timeline");
+    else setView("day");
+    if (first.memberId && planningMembers.some((member) => member.id === first.memberId)) setMemberFilter(first.memberId);
   };
 
   const chooseEmptySlot = (memberId: string, start: Date) => {
@@ -276,19 +450,48 @@ export default function PlanningPage() {
   };
 
   const fullCalendarView = view === "day" ? "timeGridDay" : view === "week" ? "timeGridWeek" : "dayGridMonth";
-  const emptyUnscheduledLabel = teamPlanning
-    ? "Toutes les prestations sont planifiées."
-    : "Aucune prestation non planifiée ne vous est affectée.";
+  const showUnscheduled = unscheduled.length > 0 && (sourceFilter === "all" || sourceFilter === "adetailing");
+  const preferredScrollTime = useMemo(() => {
+    const selectedKey = dateKey(selectedDate);
+    const starts = [
+      ...filteredScheduled.map((item) => item.startAt),
+      ...filteredPlanningEvents.filter((event) => !event.allDay).map((event) => event.startAt),
+      ...filteredGoogleEvents.filter((event) => !event.allDay).map((event) => event.start),
+    ]
+      .filter((start): start is string => Boolean(start) && dateKey(new Date(start!)) === selectedKey)
+      .map((start) => new Date(start));
+    const now = new Date();
+    const first = starts.sort((left, right) => left.getTime() - right.getTime())[0];
+    const reference = selectedKey === dateKey(now) ? now : first;
+    const minutes = reference ? reference.getHours() * 60 + reference.getMinutes() - 60 : 8 * 60;
+    const clamped = Math.max(7 * 60, Math.min(19 * 60, minutes));
+    return `${String(Math.floor(clamped / 60)).padStart(2, "0")}:${String(clamped % 60).padStart(2, "0")}:00`;
+  }, [filteredGoogleEvents, filteredPlanningEvents, filteredScheduled, selectedDate]);
+
+  useEffect(() => {
+    if (view === "timeline") return;
+    const api = calendarRef.current?.getApi();
+    if (!api) return;
+    if (api.view.type !== fullCalendarView) api.changeView(fullCalendarView, selectedDate);
+    else api.gotoDate(selectedDate);
+    window.setTimeout(() => api.scrollToTime(preferredScrollTime), 0);
+  }, [fullCalendarView, preferredScrollTime, selectedDate, view]);
 
   return (
     <div className="space-y-7">
       <PageHeader
         eyebrow={teamPlanning ? "Organisation de l’équipe" : "Mon agenda"}
         title={teamPlanning ? "Planning de l’équipe" : "Mon planning"}
-        description={teamPlanning
-          ? "Visualisez toute l’équipe sur une seule journée, puis basculez instantanément vers le jour, la semaine ou le mois."
-          : "Votre agenda reste centré sur vos propres prestations, avec quatre niveaux de lecture complémentaires."}
-        actions={<Link href="/parametres#integrations"><Button variant="secondary"><Link2 className="size-4" /> Connecter Google Calendar</Button></Link>}
+        actions={(
+          <div className="flex flex-wrap gap-2">
+            {!googleConnected && !googleLoading && mode === "supabase" && (
+              <Button variant="secondary" onClick={() => window.location.assign("/parametres#integrations")}>
+                <Link2 className="size-4" /> Connecter Google Calendar
+              </Button>
+            )}
+            <Button onClick={openNewPlanningEvent}><Plus className="size-4" /> Ajouter un événement</Button>
+          </div>
+        )}
       />
 
       <Card className="overflow-hidden bg-[linear-gradient(120deg,rgba(255,255,255,.98),rgba(255,247,237,.72),rgba(245,243,255,.72))]">
@@ -300,21 +503,17 @@ export default function PlanningPage() {
                 <Button size="sm" variant="ghost" onClick={() => setSelectedDate(new Date())}>Aujourd’hui</Button>
                 <Button size="sm" variant="ghost" aria-label="Période suivante" onClick={() => setSelectedDate((current) => addToDate(current, view, 1))}><ChevronRight className="size-4" /></Button>
               </div>
-              <Input
-                type="date"
-                aria-label="Aller à une date"
-                value={dateKey(selectedDate)}
-                onChange={(event) => {
-                  const [year, month, day] = event.target.value.split("-").map(Number);
-                  if (year && month && day) setSelectedDate(new Date(year, month - 1, day));
-                }}
-                className="min-h-9 w-[142px] text-zinc-900"
-              />
             </div>
 
             <div className="text-center">
-              <h2 className="text-lg font-extrabold capitalize text-zinc-900 sm:text-xl">{viewTitle(selectedDate, view)}</h2>
-              <p className="mt-1 text-[11px] text-zinc-500">Créneaux de 15 minutes · journée de 7h à 20h</p>
+              <button
+                type="button"
+                className="focus-ring inline-flex items-center gap-2 rounded-xl px-3 py-2 text-lg font-extrabold capitalize text-zinc-900 transition hover:bg-white hover:shadow-sm sm:text-xl"
+                onClick={() => setDatePickerOpen(true)}
+                title="Choisir une date"
+              >
+                <CalendarDays className="size-4 text-brand-500" /> {viewTitle(selectedDate, view)}
+              </button>
             </div>
 
             <div className="flex flex-wrap justify-center gap-1 rounded-xl border border-zinc-200 bg-white p-1 shadow-sm xl:justify-end">
@@ -333,37 +532,72 @@ export default function PlanningPage() {
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap items-center justify-center gap-2 xl:justify-end">
-            <Badge variant={teamPlanning ? "blue" : "green"}>{teamPlanning ? <UsersRound className="mr-1.5 size-3" /> : <UserRound className="mr-1.5 size-3" />}{teamPlanning ? "Vue équipe" : "Vue personnelle"}</Badge>
-            {googleConnected && <Badge variant="blue"><CalendarDays className="mr-1 size-3" /> Google · {googleEvents.length} événement(s)</Badge>}
-            {googleError && <Badge variant="red" title={googleError}><AlertTriangle className="mr-1 size-3" /> Synchronisation Google à vérifier</Badge>}
-            {conflictPairs.length + googleConflicts.count > 0 && <Badge variant="red"><AlertTriangle className="mr-1 size-3" /> {conflictPairs.length + googleConflicts.count} conflit(s)</Badge>}
-            <Badge variant="orange">{unscheduled.length} à planifier</Badge>
-            {mode === "supabase" && (
+          <div className="mt-4 grid gap-3 border-t border-zinc-200/80 pt-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="mr-1 inline-flex items-center gap-1 text-xs font-bold text-zinc-500"><Filter className="size-3.5" /> Filtres</span>
+              {teamPlanning && (
+                <Select aria-label="Filtrer par collaborateur" value={memberFilter} onChange={(event) => setMemberFilter(event.target.value)} className="min-h-9 w-auto max-w-[210px] py-1.5 text-xs text-zinc-900">
+                  <option value="all">Toute l’équipe</option>
+                  {planningMembers.map((member) => <option key={member.id} value={member.id}>{member.firstName} {member.lastName}</option>)}
+                </Select>
+              )}
+              <Select aria-label="Filtrer par source" value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value as PlanningSourceFilter)} className="min-h-9 w-auto py-1.5 text-xs text-zinc-900">
+                <option value="all">Toutes les sources</option>
+                <option value="adetailing">Prestations</option>
+                <option value="planning">Événements internes</option>
+                <option value="google">Google Calendar</option>
+              </Select>
+              <Select aria-label="Filtrer par statut" value={statusFilter} disabled={sourceFilter === "planning" || sourceFilter === "google"} onChange={(event) => setStatusFilter(event.target.value as PlanningStatusFilter)} className="min-h-9 w-auto max-w-[190px] py-1.5 text-xs text-zinc-900 disabled:opacity-50">
+                <option value="all">Tous les statuts</option>
+                {interventionStatuses.filter((status) => status !== "to_schedule").map((status) => <option key={status} value={status}>{interventionStatusLabels[status]}</option>)}
+              </Select>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+              <Badge variant={teamPlanning ? "blue" : "green"}>{teamPlanning ? <UsersRound className="mr-1.5 size-3" /> : <UserRound className="mr-1.5 size-3" />}{teamPlanning ? "Vue équipe" : "Vue personnelle"}</Badge>
+              {googleConnected && <Badge variant="blue"><CalendarDays className="mr-1 size-3" /> Google · {visibleGoogleEvents.length}</Badge>}
+              {googleError && <Badge variant="red" title={googleError}><AlertTriangle className="mr-1 size-3" /> Google à vérifier</Badge>}
+              {conflictCount > 0 && (
+                <Button size="sm" variant="secondary" className="border-red-200 bg-red-50 text-red-700 hover:bg-red-100" onClick={jumpToFirstConflict}>
+                  <AlertTriangle className="size-3.5" /> {conflictCount} conflit(s)
+                </Button>
+              )}
+              {showUnscheduled && <Badge variant="orange">{unscheduled.length} à planifier</Badge>}
+              {mode === "supabase" && googleConnected && (
               <Button
                 size="sm"
-                variant="secondary"
-                className="text-zinc-700"
+                variant="ghost"
+                className="text-zinc-600"
                 disabled={googleLoading}
                 title={googleSyncedAt ? `Dernière lecture : ${formatDate(googleSyncedAt, { hour: "2-digit", minute: "2-digit" })}` : "Lire les nouveaux événements Google"}
                 onClick={() => void loadGoogleEvents(true)}
               >
                 {googleLoading ? <LoaderCircle className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
-                Actualiser Google
+                Synchroniser
               </Button>
-            )}
+              )}
+            </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-[10px] font-semibold text-zinc-500">
+            <div className="flex flex-wrap items-center gap-3" aria-label="Légende du planning">
+              <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-brand-500" /> Prestation</span>
+              <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-violet-500" /> Événement interne</span>
+              <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-sky-500" /> Google</span>
+              <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-red-500" /> Conflit</span>
+            </div>
+            <span className="hidden md:block" title="Raccourcis clavier actifs hors des champs de saisie">← → naviguer · T aujourd’hui · J jour · S semaine · M mois · L timeline</span>
           </div>
         </CardContent>
       </Card>
 
-      <div className="grid gap-5 xl:grid-cols-[250px_minmax(0,1fr)]">
-        <aside className="space-y-3">
+      <div className={cn("grid gap-5", showUnscheduled ? "xl:grid-cols-[250px_minmax(0,1fr)]" : "grid-cols-1")}>
+        {showUnscheduled && <aside>
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-2"><CalendarPlus2 className="size-4 text-brand-500" /><h2 className="text-sm font-bold">{teamPlanning ? "Non planifiées" : "À planifier pour moi"}</h2></div>
-              <p className="mt-2 text-xs leading-5 text-zinc-500">{view === "timeline" ? "Glissez une carte sur la ligne d’un collaborateur, au jour et à l’heure souhaités." : "Cliquez sur un créneau pour y placer une prestation, ou déplacez directement un rendez-vous existant."}</p>
               <div className="mt-4 grid gap-2">
-                {unscheduled.length === 0 ? <p className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50 p-5 text-center text-xs text-zinc-500">{emptyUnscheduledLabel}</p> : unscheduled.map((item) => {
+                {unscheduled.map((item) => {
                   const client = data.clients.find((entry) => entry.id === item.clientId);
                   const vehicle = data.vehicles.find((entry) => entry.id === item.vehicleId);
                   return (
@@ -382,24 +616,26 @@ export default function PlanningPage() {
               </div>
             </CardContent>
           </Card>
-          <div className="rounded-2xl border border-sky-100 bg-sky-50/80 p-4 text-[11px] leading-5 text-sky-800"><strong>Astuce :</strong> cliquez sur une date du mois pour l’ouvrir directement dans la Timeline. Sur mobile, la frise défile horizontalement tout en gardant les collaborateurs visibles.</div>
-        </aside>
+        </aside>}
 
         <div className="min-w-0">
           {view === "timeline" ? (
             <TeamPlanningTimeline
-              members={planningMembers}
-              interventions={scheduled}
-              googleEvents={googleEvents}
+              members={filteredMembers}
+              interventions={filteredScheduled}
+              planningEvents={filteredPlanningEvents}
+              googleEvents={filteredGoogleEvents}
               clients={data.clients}
               days={[selectedDate]}
               conflictIds={conflictIds}
-              googleConflictIds={googleConflicts.googleEventIds}
+              googleConflictIds={googleConflictIds}
+              planningConflictIds={internalPlanningConflicts.planningEventIds}
               currentUserId={currentUserId}
               dayWidth={1080}
               showDayLabels={false}
               onSelect={setSelected}
               onSelectGoogle={setSelectedGoogleEvent}
+              onSelectPlanningEvent={(event) => setPlanningEventEditor({ event, start: new Date(event.startAt) })}
               onMove={moveIntervention}
               onEmptySlot={chooseEmptySlot}
             />
@@ -407,7 +643,7 @@ export default function PlanningPage() {
             <Card className="overflow-hidden">
               <CardContent className="p-3 sm:p-5">
                 <FullCalendar
-                  key={`${view}-${dateKey(selectedDate)}`}
+                  ref={calendarRef}
                   plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
                   locale={frLocale}
                   initialView={fullCalendarView}
@@ -415,15 +651,19 @@ export default function PlanningPage() {
                   headerToolbar={false}
                   firstDay={1}
                   weekends
-                  allDaySlot={googleEvents.some((event) => event.allDay)}
+                  allDaySlot={[...filteredGoogleEvents, ...filteredPlanningEvents].some((event) => event.allDay)}
                   nowIndicator
                   editable
+                  eventStartEditable
+                  eventDurationEditable
                   selectable={view !== "month" && unscheduled.length > 0}
                   selectMirror
                   slotMinTime="07:00:00"
                   slotMaxTime="20:00:00"
                   slotDuration="00:30:00"
                   snapDuration="00:15:00"
+                  scrollTime={preferredScrollTime}
+                  scrollTimeReset={false}
                   height="auto"
                   dayMaxEvents={3}
                   events={events}
@@ -435,15 +675,28 @@ export default function PlanningPage() {
                       if (googleEvent) setSelectedGoogleEvent(googleEvent);
                       return;
                     }
+                    if (info.event.extendedProps.source === "planning") {
+                      const planningEvent = visiblePlanningEvents.find((event) => event.id === info.event.id);
+                      if (planningEvent) setPlanningEventEditor({ event: planningEvent, start: new Date(planningEvent.startAt) });
+                      return;
+                    }
                     const intervention = visibleInterventions.find((item) => item.id === info.event.id);
                     if (intervention) setSelected(intervention);
                   }}
                   eventDrop={(info: EventDropArg) => {
                     if (info.event.extendedProps.source === "google") return info.revert();
+                    if (info.event.extendedProps.source === "planning") {
+                      persistPlanningEventDates(info.event.id, info.event.start, info.event.end, info.event.allDay);
+                      return;
+                    }
                     persistDates(info.event.id, info.event.start, info.event.end);
                   }}
                   eventResize={(info: EventResizeDoneArg) => {
                     if (info.event.extendedProps.source === "google") return info.revert();
+                    if (info.event.extendedProps.source === "planning") {
+                      persistPlanningEventDates(info.event.id, info.event.start, info.event.end, info.event.allDay);
+                      return;
+                    }
                     persistDates(info.event.id, info.event.start, info.event.end);
                   }}
                   dateClick={(info) => handleDateClick(info.date)}
@@ -454,6 +707,27 @@ export default function PlanningPage() {
           )}
         </div>
       </div>
+
+      {datePickerOpen && (
+        <PlanningDatePicker
+          selectedDate={selectedDate}
+          onSelect={setSelectedDate}
+          onClose={() => setDatePickerOpen(false)}
+        />
+      )}
+
+      {planningEventEditor && currentUserId && (
+        <PlanningEventEditor
+          key={planningEventEditor.event?.id ?? planningEventEditor.start.toISOString()}
+          event={planningEventEditor.event}
+          initialStart={planningEventEditor.start}
+          currentUserId={currentUserId}
+          members={planningMembers}
+          canAssignTeam={teamPlanning}
+          canEdit={!planningEventEditor.event || teamPlanning || (planningEventEditor.event.memberIds.length === 1 && planningEventEditor.event.memberIds[0] === currentUserId)}
+          onClose={() => setPlanningEventEditor(null)}
+        />
+      )}
 
       <Modal open={Boolean(slot)} onClose={() => setSlot(null)} title="Planifier sur ce créneau" description={slot ? `${data.team.find((member) => member.id === slot.memberId)?.firstName ?? "Collaborateur"} · ${formatDate(slot.start.toISOString(), { weekday: "long", day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit" })}` : undefined}>
         <div className="grid gap-4">
