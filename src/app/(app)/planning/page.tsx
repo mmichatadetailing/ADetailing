@@ -69,6 +69,10 @@ function isCalendarView(value: unknown): value is CalendarView {
   return calendarViews.some((view) => view.id === value);
 }
 
+function fullCalendarViewId(view: CalendarView) {
+  return view === "day" ? "timeGridDay" : view === "week" ? "timeGridWeek" : "dayGridMonth";
+}
+
 function capitalize(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
@@ -122,10 +126,49 @@ export default function PlanningPage() {
   const [googleSyncedAt, setGoogleSyncedAt] = useState<string | null>(null);
   const googleRequestId = useRef(0);
   const calendarRef = useRef<FullCalendar | null>(null);
+  const calendarWasShown = useRef(false);
+  const pendingCalendarScroll = useRef<string | null>(null);
   const preferencesReady = useRef(false);
 
   const teamPlanning = canViewTeamPlanning(workspace?.role, mode === "demo");
   const currentUserId = workspace?.userId ?? data.team[0]?.id;
+
+  const navigatePeriod = useCallback((direction: -1 | 1) => {
+    if (view === "timeline") {
+      setSelectedDate((current) => addToDate(current, view, direction));
+      return;
+    }
+    const api = calendarRef.current?.getApi();
+    if (!api) {
+      setSelectedDate((current) => addToDate(current, view, direction));
+      return;
+    }
+    if (direction === -1) api.prev();
+    else api.next();
+    setSelectedDate(new Date(api.getDate()));
+  }, [view]);
+
+  const goToToday = useCallback(() => {
+    if (view === "timeline") {
+      setSelectedDate(new Date());
+      return;
+    }
+    const api = calendarRef.current?.getApi();
+    if (!api) {
+      setSelectedDate(new Date());
+      return;
+    }
+    api.today();
+    setSelectedDate(new Date(api.getDate()));
+  }, [view]);
+
+  const changeCalendarView = useCallback((nextView: CalendarView) => {
+    if (nextView !== "timeline") {
+      const api = calendarRef.current?.getApi();
+      if (api) api.changeView(fullCalendarViewId(nextView), selectedDate);
+    }
+    setView(nextView);
+  }, [selectedDate]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -169,16 +212,16 @@ export default function PlanningPage() {
       if (target?.matches("input, textarea, select, [contenteditable='true']") || document.querySelector("[role='dialog']")) return;
       if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
         event.preventDefault();
-        setSelectedDate((current) => addToDate(current, view, event.key === "ArrowLeft" ? -1 : 1));
-      } else if (event.key.toLowerCase() === "t") setSelectedDate(new Date());
-      else if (event.key.toLowerCase() === "j") setView("day");
-      else if (event.key.toLowerCase() === "s") setView("week");
-      else if (event.key.toLowerCase() === "m") setView("month");
-      else if (event.key.toLowerCase() === "l") setView("timeline");
+        navigatePeriod(event.key === "ArrowLeft" ? -1 : 1);
+      } else if (event.key.toLowerCase() === "t") goToToday();
+      else if (event.key.toLowerCase() === "j") changeCalendarView("day");
+      else if (event.key.toLowerCase() === "s") changeCalendarView("week");
+      else if (event.key.toLowerCase() === "m") changeCalendarView("month");
+      else if (event.key.toLowerCase() === "l") changeCalendarView("timeline");
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [view]);
+  }, [changeCalendarView, goToToday, navigatePeriod]);
   const visibleInterventions = useMemo(
     () => filterPlanningForUser(data.interventions, { canViewTeam: teamPlanning, userId: currentUserId }),
     [currentUserId, data.interventions, teamPlanning],
@@ -415,7 +458,12 @@ export default function PlanningPage() {
     ].sort((left, right) => left.start.localeCompare(right.start));
     const first = candidates[0];
     if (!first) return;
-    setSelectedDate(new Date(first.start));
+    const conflictDate = new Date(first.start);
+    if (!teamPlanning) {
+      const minutes = Math.max(7 * 60, conflictDate.getHours() * 60 + conflictDate.getMinutes() - 45);
+      pendingCalendarScroll.current = `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}:00`;
+    }
+    setSelectedDate(conflictDate);
     if (teamPlanning) setView("timeline");
     else setView("day");
     if (first.memberId && planningMembers.some((member) => member.id === first.memberId)) setMemberFilter(first.memberId);
@@ -449,7 +497,7 @@ export default function PlanningPage() {
     chooseCalendarSlot(date);
   };
 
-  const fullCalendarView = view === "day" ? "timeGridDay" : view === "week" ? "timeGridWeek" : "dayGridMonth";
+  const fullCalendarView = fullCalendarViewId(view);
   const showUnscheduled = unscheduled.length > 0 && (sourceFilter === "all" || sourceFilter === "adetailing");
   const preferredScrollTime = useMemo(() => {
     const selectedKey = dateKey(selectedDate);
@@ -474,8 +522,15 @@ export default function PlanningPage() {
     if (!api) return;
     if (api.view.type !== fullCalendarView) api.changeView(fullCalendarView, selectedDate);
     else api.gotoDate(selectedDate);
-    window.setTimeout(() => api.scrollToTime(preferredScrollTime), 0);
-  }, [fullCalendarView, preferredScrollTime, selectedDate, view]);
+    const scrollTarget = pendingCalendarScroll.current ?? (!calendarWasShown.current ? preferredScrollTime : null);
+    pendingCalendarScroll.current = null;
+    calendarWasShown.current = true;
+    const frame = window.requestAnimationFrame(() => {
+      api.updateSize();
+      if (scrollTarget) api.scrollToTime(scrollTarget);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [fullCalendarView, preferredScrollTime, selectedDate, showUnscheduled, view]);
 
   return (
     <div className="space-y-7">
@@ -499,9 +554,9 @@ export default function PlanningPage() {
           <div className="grid gap-4 xl:grid-cols-[auto_minmax(240px,1fr)_auto] xl:items-center">
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex items-center rounded-xl border border-zinc-200 bg-white p-1 shadow-sm">
-                <Button size="sm" variant="ghost" aria-label="Période précédente" onClick={() => setSelectedDate((current) => addToDate(current, view, -1))}><ChevronLeft className="size-4" /></Button>
-                <Button size="sm" variant="ghost" onClick={() => setSelectedDate(new Date())}>Aujourd’hui</Button>
-                <Button size="sm" variant="ghost" aria-label="Période suivante" onClick={() => setSelectedDate((current) => addToDate(current, view, 1))}><ChevronRight className="size-4" /></Button>
+                <Button size="sm" variant="ghost" aria-label="Période précédente" onClick={() => navigatePeriod(-1)}><ChevronLeft className="size-4" /></Button>
+                <Button size="sm" variant="ghost" onClick={goToToday}>Aujourd’hui</Button>
+                <Button size="sm" variant="ghost" aria-label="Période suivante" onClick={() => navigatePeriod(1)}><ChevronRight className="size-4" /></Button>
               </div>
             </div>
 
@@ -524,7 +579,7 @@ export default function PlanningPage() {
                   variant="ghost"
                   aria-pressed={view === entry.id}
                   className={cn(view === entry.id && "bg-gradient-to-r from-sky-500 to-cyan-500 text-white shadow-sm hover:text-white")}
-                  onClick={() => setView(entry.id)}
+                  onClick={() => changeCalendarView(entry.id)}
                 >
                   {entry.label}
                 </Button>
@@ -619,7 +674,7 @@ export default function PlanningPage() {
         </aside>}
 
         <div className="min-w-0">
-          {view === "timeline" ? (
+          {view === "timeline" && (
             <TeamPlanningTimeline
               members={filteredMembers}
               interventions={filteredScheduled}
@@ -639,7 +694,8 @@ export default function PlanningPage() {
               onMove={moveIntervention}
               onEmptySlot={chooseEmptySlot}
             />
-          ) : (
+          )}
+          <div className={cn(view === "timeline" && "hidden")} aria-hidden={view === "timeline"}>
             <Card className="overflow-hidden">
               <CardContent className="p-3 sm:p-5">
                 <FullCalendar
@@ -704,7 +760,7 @@ export default function PlanningPage() {
                 />
               </CardContent>
             </Card>
-          )}
+          </div>
         </div>
       </div>
 
