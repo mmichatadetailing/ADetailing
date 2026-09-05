@@ -33,6 +33,7 @@
 
 :root {
   color-scheme: light;
+  --app-header-height: 70px;
   --background: #f8f7fc;
   --surface: #ffffff;
   --surface-raised: #fffdf9;
@@ -323,6 +324,50 @@ table tbody tr {
 
 .text-balance {
   text-wrap: balance;
+}
+
+/* The planning navigation sits immediately below the app header. */
+.planning-toolbar {
+  container: planning-toolbar / inline-size;
+}
+
+.planning-toolbar-main {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+}
+
+.planning-toolbar-quick-actions, .planning-toolbar-calendar-controls { display: flex; min-width: 0; align-items: center; gap: 8px; }
+.planning-toolbar-navigation { margin-right: auto; }
+.planning-toolbar-date { flex: 1; }
+.planning-toolbar-view-buttons, .planning-toolbar-filter-label { display: none; }
+
+@container planning-toolbar (min-width: 680px) {
+  .planning-toolbar-main { display: flex; gap: 10px; padding: 10px 12px; }
+  .planning-toolbar-quick-actions, .planning-toolbar-calendar-controls { display: contents; }
+  .planning-toolbar-navigation { margin-right: 0; }
+  .planning-toolbar-date { order: 1; }
+  .planning-toolbar-views { order: 2; }
+  .planning-toolbar-filters { order: 3; }
+  .planning-toolbar-add { order: 4; }
+}
+
+@container planning-toolbar (min-width: 900px) {
+  .planning-toolbar-view-buttons { display: flex; }
+  .planning-toolbar-view-select { display: none; }
+  .planning-toolbar-filter-label { display: inline; }
+}
+
+@container planning-toolbar (max-width: 340px) {
+  .planning-toolbar-add-label { display: none; }
+  .planning-toolbar-add { width: 40px; padding: 0; }
+  .planning-toolbar-quick-actions { gap: 4px; }
+  .planning-toolbar-filters { position: relative; width: 40px; overflow: visible; padding: 0; }
+  .planning-toolbar-filter-count { position: absolute; top: -4px; right: -4px; }
+}
+
+@media (min-width: 1024px) {
+  :root { --app-header-height: 76px; }
 }
 
 .fc {

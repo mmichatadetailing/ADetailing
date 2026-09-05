@@ -125,7 +125,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       )}
 
       <div className="min-w-0 lg:col-start-2">
-        <header className="glass sticky top-0 z-30 flex h-[70px] items-center gap-3 border-b border-white/[0.06] px-4 shadow-[0_8px_25px_rgba(78,64,120,.035)] sm:px-6 lg:h-[76px] lg:px-8">
+        <header className="glass sticky top-0 z-30 flex h-[var(--app-header-height)] items-center gap-3 border-b border-white/[0.06] px-4 shadow-[0_8px_25px_rgba(78,64,120,.035)] sm:px-6 lg:px-8">
           <Button variant="ghost" size="icon" className="shrink-0 lg:hidden" onClick={() => setMenuOpen(true)} aria-label="Ouvrir le menu"><Menu className="size-5" /></Button>
           <GlobalSearch />
           <div className="ml-auto flex items-center gap-2">

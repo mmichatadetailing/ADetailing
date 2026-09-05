@@ -7,39 +7,26 @@ import interactionPlugin, { type EventResizeDoneArg } from "@fullcalendar/intera
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import {
-  AlertTriangle,
   CalendarDays,
   CalendarPlus2,
-  ChevronLeft,
-  ChevronRight,
   Clock3,
   ExternalLink,
-  Filter,
   GripVertical,
-  Link2,
-  LoaderCircle,
   MapPin,
-  Plus,
-  RefreshCw,
-  UserRound,
-  UsersRound,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { InterventionDetail } from "@/components/intervention-detail";
-import { PageHeader } from "@/components/page-header";
+import { PlanningToolbar } from "@/components/planning-toolbar";
 import { PlanningDatePicker } from "@/components/planning-date-picker";
 import { PlanningEventEditor } from "@/components/planning-event-editor";
 import { planningDragType, TeamPlanningTimeline } from "@/components/team-planning-timeline";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Field, Select } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { useWorkspace } from "@/components/workspace-provider";
 import { canViewTeamPlanning, filterPlanningForUser } from "@/lib/domain/planning";
 import { eventOverlapsRange, googlePlanningConflicts, googlePlanningPrefetchRange, googlePlanningRange } from "@/lib/domain/google-planning";
-import { interventionStatusLabels } from "@/lib/domain/labels";
 import { planningEventConflicts, planningEventKindLabels } from "@/lib/domain/planning-events";
 import { startOfPlanningWeek } from "@/lib/domain/planning-timeline";
 import { dateKey } from "@/lib/domain/periods";
@@ -63,7 +50,7 @@ const calendarViews: Array<{ id: CalendarView; label: string }> = [
   { id: "month", label: "Mois" },
 ];
 
-const interventionStatuses: InterventionStatus[] = ["to_schedule", "scheduled", "confirmed", "in_progress", "completed", "cancelled"];
+const interventionStatuses: InterventionStatus[] = ["scheduled", "confirmed", "in_progress", "completed"];
 
 function isCalendarView(value: unknown): value is CalendarView {
   return calendarViews.some((view) => view.id === value);
@@ -126,6 +113,7 @@ export default function PlanningPage() {
   const [googleSyncedAt, setGoogleSyncedAt] = useState<string | null>(null);
   const googleRequestId = useRef(0);
   const calendarRef = useRef<FullCalendar | null>(null);
+  const unscheduledRef = useRef<HTMLElement | null>(null);
   const calendarWasShown = useRef(false);
   const pendingCalendarScroll = useRef<string | null>(null);
   const preferencesReady = useRef(false);
@@ -209,7 +197,7 @@ export default function PlanningPage() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.ctrlKey || event.metaKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
-      if (target?.matches("input, textarea, select, [contenteditable='true']") || document.querySelector("[role='dialog']")) return;
+      if (target?.matches("input, textarea, select, [contenteditable='true']") || document.querySelector("[role='dialog'], [aria-label='Filtres du planning'], [aria-label='Aide du planning']")) return;
       if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
         event.preventDefault();
         navigatePeriod(event.key === "ArrowLeft" ? -1 : 1);
@@ -533,121 +521,46 @@ export default function PlanningPage() {
   }, [fullCalendarView, preferredScrollTime, selectedDate, showUnscheduled, view]);
 
   return (
-    <div className="space-y-7">
-      <PageHeader
-        eyebrow={teamPlanning ? "Organisation de l’équipe" : "Mon agenda"}
-        title={teamPlanning ? "Planning de l’équipe" : "Mon planning"}
-        actions={(
-          <div className="flex flex-wrap gap-2">
-            {!googleConnected && !googleLoading && mode === "supabase" && (
-              <Button variant="secondary" onClick={() => window.location.assign("/parametres#integrations")}>
-                <Link2 className="size-4" /> Connecter Google Calendar
-              </Button>
-            )}
-            <Button onClick={openNewPlanningEvent}><Plus className="size-4" /> Ajouter un événement</Button>
-          </div>
-        )}
+    <div className="space-y-4">
+      <h1 className="text-lg font-extrabold tracking-tight text-slate-900">{teamPlanning ? "Planning de l’équipe" : "Mon planning"}</h1>
+      <PlanningToolbar
+        title={viewTitle(selectedDate, view)}
+        view={view}
+        onNavigate={navigatePeriod}
+        onToday={goToToday}
+        onChooseDate={() => setDatePickerOpen(true)}
+        onChangeView={changeCalendarView}
+        onAdd={openNewPlanningEvent}
+        teamPlanning={teamPlanning}
+        members={planningMembers}
+        memberFilter={memberFilter}
+        sourceFilter={sourceFilter}
+        statusFilter={statusFilter}
+        onMemberChange={setMemberFilter}
+        onSourceChange={(source) => {
+          setSourceFilter(source);
+          if (source === "google" || source === "planning") setStatusFilter("all");
+        }}
+        onStatusChange={setStatusFilter}
+        onResetFilters={() => { setMemberFilter("all"); setSourceFilter("all"); setStatusFilter("all"); }}
+        googleEnabled={mode === "supabase"}
+        googleConnected={googleConnected}
+        googleLoading={googleLoading}
+        googleError={googleError}
+        googleCount={visibleGoogleEvents.length}
+        googleSyncedAt={googleSyncedAt}
+        onSync={() => void loadGoogleEvents(true)}
+        conflictCount={conflictCount}
+        onConflict={jumpToFirstConflict}
+        unscheduledCount={showUnscheduled ? unscheduled.length : 0}
+        onUnscheduled={() => {
+          unscheduledRef.current?.scrollIntoView({ block: "start" });
+          unscheduledRef.current?.focus({ preventScroll: true });
+        }}
       />
 
-      <Card className="overflow-hidden bg-[linear-gradient(120deg,rgba(255,255,255,.98),rgba(255,247,237,.72),rgba(245,243,255,.72))]">
-        <CardContent className="p-4 sm:p-5">
-          <div className="grid gap-4 xl:grid-cols-[auto_minmax(240px,1fr)_auto] xl:items-center">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center rounded-xl border border-zinc-200 bg-white p-1 shadow-sm">
-                <Button size="sm" variant="ghost" aria-label="Période précédente" onClick={() => navigatePeriod(-1)}><ChevronLeft className="size-4" /></Button>
-                <Button size="sm" variant="ghost" onClick={goToToday}>Aujourd’hui</Button>
-                <Button size="sm" variant="ghost" aria-label="Période suivante" onClick={() => navigatePeriod(1)}><ChevronRight className="size-4" /></Button>
-              </div>
-            </div>
-
-            <div className="text-center">
-              <button
-                type="button"
-                className="focus-ring inline-flex items-center gap-2 rounded-xl px-3 py-2 text-lg font-extrabold capitalize text-zinc-900 transition hover:bg-white hover:shadow-sm sm:text-xl"
-                onClick={() => setDatePickerOpen(true)}
-                title="Choisir une date"
-              >
-                <CalendarDays className="size-4 text-brand-500" /> {viewTitle(selectedDate, view)}
-              </button>
-            </div>
-
-            <div className="flex flex-wrap justify-center gap-1 rounded-xl border border-zinc-200 bg-white p-1 shadow-sm xl:justify-end">
-              {calendarViews.map((entry) => (
-                <Button
-                  key={entry.id}
-                  size="sm"
-                  variant="ghost"
-                  aria-pressed={view === entry.id}
-                  className={cn(view === entry.id && "bg-gradient-to-r from-sky-500 to-cyan-500 text-white shadow-sm hover:text-white")}
-                  onClick={() => changeCalendarView(entry.id)}
-                >
-                  {entry.label}
-                </Button>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-3 border-t border-zinc-200/80 pt-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="mr-1 inline-flex items-center gap-1 text-xs font-bold text-zinc-500"><Filter className="size-3.5" /> Filtres</span>
-              {teamPlanning && (
-                <Select aria-label="Filtrer par collaborateur" value={memberFilter} onChange={(event) => setMemberFilter(event.target.value)} className="min-h-9 w-auto max-w-[210px] py-1.5 text-xs text-zinc-900">
-                  <option value="all">Toute l’équipe</option>
-                  {planningMembers.map((member) => <option key={member.id} value={member.id}>{member.firstName} {member.lastName}</option>)}
-                </Select>
-              )}
-              <Select aria-label="Filtrer par source" value={sourceFilter} onChange={(event) => setSourceFilter(event.target.value as PlanningSourceFilter)} className="min-h-9 w-auto py-1.5 text-xs text-zinc-900">
-                <option value="all">Toutes les sources</option>
-                <option value="adetailing">Prestations</option>
-                <option value="planning">Événements internes</option>
-                <option value="google">Google Calendar</option>
-              </Select>
-              <Select aria-label="Filtrer par statut" value={statusFilter} disabled={sourceFilter === "planning" || sourceFilter === "google"} onChange={(event) => setStatusFilter(event.target.value as PlanningStatusFilter)} className="min-h-9 w-auto max-w-[190px] py-1.5 text-xs text-zinc-900 disabled:opacity-50">
-                <option value="all">Tous les statuts</option>
-                {interventionStatuses.filter((status) => status !== "to_schedule").map((status) => <option key={status} value={status}>{interventionStatusLabels[status]}</option>)}
-              </Select>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-              <Badge variant={teamPlanning ? "blue" : "green"}>{teamPlanning ? <UsersRound className="mr-1.5 size-3" /> : <UserRound className="mr-1.5 size-3" />}{teamPlanning ? "Vue équipe" : "Vue personnelle"}</Badge>
-              {googleConnected && <Badge variant="blue"><CalendarDays className="mr-1 size-3" /> Google · {visibleGoogleEvents.length}</Badge>}
-              {googleError && <Badge variant="red" title={googleError}><AlertTriangle className="mr-1 size-3" /> Google à vérifier</Badge>}
-              {conflictCount > 0 && (
-                <Button size="sm" variant="secondary" className="border-red-200 bg-red-50 text-red-700 hover:bg-red-100" onClick={jumpToFirstConflict}>
-                  <AlertTriangle className="size-3.5" /> {conflictCount} conflit(s)
-                </Button>
-              )}
-              {showUnscheduled && <Badge variant="orange">{unscheduled.length} à planifier</Badge>}
-              {mode === "supabase" && googleConnected && (
-              <Button
-                size="sm"
-                variant="ghost"
-                className="text-zinc-600"
-                disabled={googleLoading}
-                title={googleSyncedAt ? `Dernière lecture : ${formatDate(googleSyncedAt, { hour: "2-digit", minute: "2-digit" })}` : "Lire les nouveaux événements Google"}
-                onClick={() => void loadGoogleEvents(true)}
-              >
-                {googleLoading ? <LoaderCircle className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
-                Synchroniser
-              </Button>
-              )}
-            </div>
-          </div>
-
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-[10px] font-semibold text-zinc-500">
-            <div className="flex flex-wrap items-center gap-3" aria-label="Légende du planning">
-              <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-brand-500" /> Prestation</span>
-              <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-violet-500" /> Événement interne</span>
-              <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-sky-500" /> Google</span>
-              <span className="inline-flex items-center gap-1.5"><span className="size-2.5 rounded-full bg-red-500" /> Conflit</span>
-            </div>
-            <span className="hidden md:block" title="Raccourcis clavier actifs hors des champs de saisie">← → naviguer · T aujourd’hui · J jour · S semaine · M mois · L timeline</span>
-          </div>
-        </CardContent>
-      </Card>
-
       <div className={cn("grid gap-5", showUnscheduled ? "xl:grid-cols-[250px_minmax(0,1fr)]" : "grid-cols-1")}>
-        {showUnscheduled && <aside>
+        {showUnscheduled && <aside ref={unscheduledRef} tabIndex={-1} aria-label="Prestations à planifier" className="scroll-mt-[calc(var(--app-header-height)+170px)] rounded-2xl">
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-2"><CalendarPlus2 className="size-4 text-brand-500" /><h2 className="text-sm font-bold">{teamPlanning ? "Non planifiées" : "À planifier pour moi"}</h2></div>
@@ -673,7 +586,7 @@ export default function PlanningPage() {
           </Card>
         </aside>}
 
-        <div className="min-w-0">
+        <div className="relative z-0 min-w-0">
           {view === "timeline" && (
             <TeamPlanningTimeline
               members={filteredMembers}
