@@ -22,13 +22,19 @@ export function isSamePlanningDay(left: Date, right: Date) {
   return left.getFullYear() === right.getFullYear() && left.getMonth() === right.getMonth() && left.getDate() === right.getDate();
 }
 
-export function dateAtPlanningPosition(day: Date, ratio: number) {
+export function dateAtPlanningPosition(day: Date, ratio: number, allowEnd = false) {
   const totalMinutes = (PLANNING_END_HOUR - PLANNING_START_HOUR) * 60;
-  const rawMinutes = Math.max(0, Math.min(totalMinutes - PLANNING_SLOT_MINUTES, ratio * totalMinutes));
+  const rawMinutes = Math.max(0, Math.min(totalMinutes - (allowEnd ? 0 : PLANNING_SLOT_MINUTES), ratio * totalMinutes));
   const roundedMinutes = Math.round(rawMinutes / PLANNING_SLOT_MINUTES) * PLANNING_SLOT_MINUTES;
   const result = new Date(day);
   result.setHours(PLANNING_START_HOUR, roundedMinutes, 0, 0);
   return result;
+}
+
+export function planningSelectionRange(anchor: Date, current: Date) {
+  const start = new Date(Math.min(anchor.getTime(), current.getTime()));
+  const end = new Date(Math.max(anchor.getTime(), current.getTime(), start.getTime() + PLANNING_SLOT_MINUTES * 60_000));
+  return { start, end };
 }
 
 export function planningTimelinePosition(startValue: string, endValue: string, day: Date) {

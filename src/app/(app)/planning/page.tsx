@@ -7,7 +7,6 @@ import interactionPlugin, { type EventResizeDoneArg } from "@fullcalendar/intera
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import {
-  CalendarDays,
   CalendarPlus2,
   Clock3,
   ExternalLink,
@@ -17,26 +16,27 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { InterventionDetail } from "@/components/intervention-detail";
+import { AppointmentForm } from "@/components/global-add";
+import { PlanningSlotMenu } from "@/components/planning-slot-menu";
 import { PlanningToolbar } from "@/components/planning-toolbar";
 import { PlanningDatePicker } from "@/components/planning-date-picker";
 import { PlanningEventEditor } from "@/components/planning-event-editor";
 import { planningDragType, TeamPlanningTimeline } from "@/components/team-planning-timeline";
 import { Card, CardContent } from "@/components/ui/card";
-import { Field, Select } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { useWorkspace } from "@/components/workspace-provider";
 import { canViewTeamPlanning, filterPlanningForUser } from "@/lib/domain/planning";
 import { eventOverlapsRange, googlePlanningConflicts, googlePlanningPrefetchRange, googlePlanningRange } from "@/lib/domain/google-planning";
 import { planningEventConflicts, planningEventKindLabels } from "@/lib/domain/planning-events";
 import { startOfPlanningWeek } from "@/lib/domain/planning-timeline";
+import { createPlanningSlot, resolvePlanningSlotMember, type PlanningSlot } from "@/lib/domain/planning-slot";
 import { dateKey } from "@/lib/domain/periods";
-import type { Intervention, InterventionStatus, PlanningEvent } from "@/lib/domain/types";
+import type { Intervention, InterventionStatus, PlanningEvent, PlanningEventKind } from "@/lib/domain/types";
 import { useDemoStore } from "@/lib/demo/store";
 import type { GooglePlanningEvent, GooglePlanningEventsResponse } from "@/lib/integrations/google-calendar-types";
 import { cn, formatDate } from "@/lib/utils";
 
 type CalendarView = "timeline" | "day" | "week" | "month";
-type PlanningSlot = { start: Date; memberId: string };
 type MovePayload = { interventionId: string; sourceMemberId?: string };
 type PlanningSourceFilter = "all" | "adetailing" | "planning" | "google";
 type PlanningStatusFilter = "all" | InterventionStatus;
@@ -97,9 +97,11 @@ export default function PlanningPage() {
   const data = useDemoStore();
   const { mode, workspace } = useWorkspace();
   const [slot, setSlot] = useState<PlanningSlot | null>(null);
+  const [appointmentSlot, setAppointmentSlot] = useState<PlanningSlot | null>(null);
+  const [editOnOpen, setEditOnOpen] = useState(false);
   const [selected, setSelected] = useState<Intervention | null>(null);
   const [selectedGoogleEvent, setSelectedGoogleEvent] = useState<GooglePlanningEvent | null>(null);
-  const [planningEventEditor, setPlanningEventEditor] = useState<{ event?: PlanningEvent; start: Date } | null>(null);
+  const [planningEventEditor, setPlanningEventEditor] = useState<{ event?: PlanningEvent; start: Date; end?: Date; allDay?: boolean; memberId?: string; kind?: PlanningEventKind } | null>(null);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [view, setView] = useState<CalendarView>("timeline");
@@ -390,7 +392,7 @@ export default function PlanningPage() {
     extendedProps: { source: "google" },
   }))], [currentUserId, data.clients, filteredGoogleEvents, filteredPlanningEvents, filteredScheduled, googleConflictIds, internalPlanningConflicts.planningEventIds, planningMembers, teamPlanning]);
 
-  const moveIntervention = (payload: MovePayload, targetMemberId: string, start: Date) => {
+  const moveIntervention = (payload: MovePayload, targetMemberId: string, start: Date, durationMinutes?: number) => {
     const intervention = visibleInterventions.find((item) => item.id === payload.interventionId);
     if (!intervention) return toast.error("Cette prestation n’est plus disponible dans le planning.");
     const workers = reassignWorkers(intervention, teamPlanning ? payload.sourceMemberId : undefined, targetMemberId);
@@ -399,12 +401,12 @@ export default function PlanningPage() {
       vehicleId: intervention.vehicleId,
       vehicleFormat: intervention.vehicleFormat,
       title: intervention.title,
-      status: intervention.status,
+      status: intervention.status === "to_schedule" ? "scheduled" : intervention.status,
       startAt: start.toISOString(),
-      plannedDurationMinutes: intervention.plannedDurationMinutes,
+      plannedDurationMinutes: durationMinutes ?? intervention.plannedDurationMinutes,
       address: intervention.address,
       notes: intervention.notes,
-      workers: workers.map((worker) => ({ memberId: worker.memberId, plannedMinutes: worker.plannedMinutes })),
+      workers: workers.map((worker) => ({ memberId: worker.memberId, plannedMinutes: worker.memberId === targetMemberId ? durationMinutes ?? worker.plannedMinutes : worker.plannedMinutes })),
       items: intervention.items.map((item) => ({ id: item.id, serviceId: item.serviceId, label: item.label, quantity: item.quantity, revenueAllocated: item.revenueAllocated })),
     });
     const member = data.team.find((entry) => entry.id === targetMemberId);
@@ -427,7 +429,7 @@ export default function PlanningPage() {
     toast.success("Événement déplacé", { description: formatDate(start.toISOString(), { weekday: "long", hour: "2-digit", minute: "2-digit" }) });
   };
 
-  const openNewPlanningEvent = () => {
+  const openNewSlot = () => {
     const start = new Date(selectedDate);
     const now = new Date();
     if (dateKey(start) === dateKey(now)) {
@@ -435,7 +437,7 @@ export default function PlanningPage() {
     } else {
       start.setHours(9, 0, 0, 0);
     }
-    setPlanningEventEditor({ start });
+    chooseCalendarSlot(start);
   };
 
   const jumpToFirstConflict = () => {
@@ -457,32 +459,52 @@ export default function PlanningPage() {
     if (first.memberId && planningMembers.some((member) => member.id === first.memberId)) setMemberFilter(first.memberId);
   };
 
-  const chooseEmptySlot = (memberId: string, start: Date) => {
-    if (unscheduled.length === 0) return;
-    setSlot({ memberId, start });
+  const chooseEmptySlot = (memberId: string, start: Date, end?: Date) => {
+    if (!planningMembers.some((member) => member.id === memberId && member.active)) return toast.error("Ce collaborateur est inactif. Choisissez une ligne active.");
+    setSlot(createPlanningSlot(start, memberId, end));
   };
 
-  const chooseCalendarSlot = (start: Date) => {
-    if (unscheduled.length === 0) return;
-    const memberId = currentUserId && planningMembers.some((member) => member.id === currentUserId)
-      ? currentUserId
-      : planningMembers[0]?.id;
-    if (memberId) setSlot({ memberId, start });
+  const chooseCalendarSlot = (start: Date, end?: Date, allDay = false) => {
+    const memberId = resolvePlanningSlotMember(planningMembers, memberFilter, currentUserId);
+    if (memberId) setSlot(createPlanningSlot(start, memberId, end, allDay));
+    else toast.error("Ajoutez un collaborateur actif avant de planifier un événement.");
   };
 
-  const scheduleInSlot = (intervention: Intervention) => {
-    if (!slot) return;
-    moveIntervention({ interventionId: intervention.id }, slot.memberId, slot.start);
+  const closeSlot = () => {
     setSlot(null);
+    calendarRef.current?.getApi().unselect();
   };
 
-  const handleDateClick = (date: Date) => {
-    if (view === "month") {
-      setSelectedDate(date);
-      setView("timeline");
-      return;
+  const scheduleInSlot = (intervention: Intervention, start: Date, durationMinutes: number) => {
+    if (!slot) return;
+    moveIntervention({ interventionId: intervention.id }, slot.memberId, start, durationMinutes);
+    setSourceFilter("all");
+    setStatusFilter("all");
+    if (memberFilter !== "all") setMemberFilter(slot.memberId);
+    closeSlot();
+  };
+
+  const createFromSlot = (kind: "appointment" | PlanningEventKind) => {
+    if (!slot) return;
+    if (kind === "appointment") setAppointmentSlot(slot);
+    else setPlanningEventEditor({ start: slot.start, end: slot.end, allDay: slot.allDay, memberId: slot.memberId, kind });
+    closeSlot();
+  };
+
+  const openIntervention = (intervention: Intervention) => {
+    setEditOnOpen(false);
+    setSelected(intervention);
+  };
+
+  const openCreatedIntervention = (id: string) => {
+    const intervention = useDemoStore.getState().interventions.find((item) => item.id === id);
+    if (intervention) {
+      setEditOnOpen(true);
+      setSelected(intervention);
+      if (memberFilter !== "all" && !intervention.workers.some((worker) => worker.memberId === memberFilter)) setMemberFilter(intervention.workers[0]?.memberId ?? "all");
     }
-    chooseCalendarSlot(date);
+    setSourceFilter("all");
+    setStatusFilter("all");
   };
 
   const fullCalendarView = fullCalendarViewId(view);
@@ -530,7 +552,7 @@ export default function PlanningPage() {
         onToday={goToToday}
         onChooseDate={() => setDatePickerOpen(true)}
         onChangeView={changeCalendarView}
-        onAdd={openNewPlanningEvent}
+        onAdd={openNewSlot}
         teamPlanning={teamPlanning}
         members={planningMembers}
         memberFilter={memberFilter}
@@ -574,7 +596,7 @@ export default function PlanningPage() {
                       draggable={view === "timeline"}
                       type="button"
                       onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData(planningDragType, JSON.stringify({ interventionId: item.id } satisfies MovePayload)); }}
-                      onClick={() => setSelected(item)}
+                      onClick={() => openIntervention(item)}
                       className={cn("focus-ring surface-interactive rounded-xl border border-zinc-200 bg-white p-3 text-left shadow-sm", view === "timeline" && "cursor-grab active:cursor-grabbing")}
                     >
                       <div className="flex items-start gap-2"><GripVertical className="mt-0.5 size-3.5 text-zinc-400" /><div className="min-w-0"><p className="truncate text-xs font-bold text-zinc-900">{client?.company || `${client?.firstName ?? ""} ${client?.lastName ?? ""}`.trim()}</p><p className="mt-1 truncate text-[11px] text-zinc-500">{vehicle ? `${vehicle.make} ${vehicle.model}` : item.vehicleFormat || "Véhicule non renseigné"}</p><p className="mt-2 text-[10px] font-bold text-brand-600">{item.plannedDurationMinutes / 60} h · {item.workers.length || 1} pers.</p></div></div>
@@ -601,7 +623,7 @@ export default function PlanningPage() {
               currentUserId={currentUserId}
               dayWidth={1080}
               showDayLabels={false}
-              onSelect={setSelected}
+              onSelect={openIntervention}
               onSelectGoogle={setSelectedGoogleEvent}
               onSelectPlanningEvent={(event) => setPlanningEventEditor({ event, start: new Date(event.startAt) })}
               onMove={moveIntervention}
@@ -620,12 +642,14 @@ export default function PlanningPage() {
                   headerToolbar={false}
                   firstDay={1}
                   weekends
-                  allDaySlot={[...filteredGoogleEvents, ...filteredPlanningEvents].some((event) => event.allDay)}
+                  allDaySlot
                   nowIndicator
                   editable
                   eventStartEditable
                   eventDurationEditable
-                  selectable={view !== "month" && unscheduled.length > 0}
+                  selectable
+                  selectMinDistance={5}
+                  selectLongPressDelay={350}
                   selectMirror
                   slotMinTime="07:00:00"
                   slotMaxTime="20:00:00"
@@ -650,7 +674,7 @@ export default function PlanningPage() {
                       return;
                     }
                     const intervention = visibleInterventions.find((item) => item.id === info.event.id);
-                    if (intervention) setSelected(intervention);
+                    if (intervention) openIntervention(intervention);
                   }}
                   eventDrop={(info: EventDropArg) => {
                     if (info.event.extendedProps.source === "google") return info.revert();
@@ -668,8 +692,8 @@ export default function PlanningPage() {
                     }
                     persistDates(info.event.id, info.event.start, info.event.end);
                   }}
-                  dateClick={(info) => handleDateClick(info.date)}
-                  select={(info: DateSelectArg) => chooseCalendarSlot(info.start)}
+                  dateClick={(info) => chooseCalendarSlot(info.date, undefined, info.allDay)}
+                  select={(info: DateSelectArg) => chooseCalendarSlot(info.start, info.end, info.allDay)}
                 />
               </CardContent>
             </Card>
@@ -690,31 +714,27 @@ export default function PlanningPage() {
           key={planningEventEditor.event?.id ?? planningEventEditor.start.toISOString()}
           event={planningEventEditor.event}
           initialStart={planningEventEditor.start}
+          initialEnd={planningEventEditor.end}
+          initialAllDay={planningEventEditor.allDay}
+          initialMemberId={planningEventEditor.memberId}
+          initialKind={planningEventEditor.kind}
           currentUserId={currentUserId}
           members={planningMembers}
           canAssignTeam={teamPlanning}
           canEdit={!planningEventEditor.event || teamPlanning || (planningEventEditor.event.memberIds.length === 1 && planningEventEditor.event.memberIds[0] === currentUserId)}
+          onSaved={() => { if (!planningEventEditor.event) { setSourceFilter("all"); setMemberFilter("all"); } }}
           onClose={() => setPlanningEventEditor(null)}
         />
       )}
 
-      <Modal open={Boolean(slot)} onClose={() => setSlot(null)} title="Planifier sur ce créneau" description={slot ? `${data.team.find((member) => member.id === slot.memberId)?.firstName ?? "Collaborateur"} · ${formatDate(slot.start.toISOString(), { weekday: "long", day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit" })}` : undefined}>
-        <div className="grid gap-4">
-          {slot && teamPlanning && (
-            <Field label="Collaborateur">
-              <Select value={slot.memberId} className="text-zinc-900" onChange={(event) => setSlot({ ...slot, memberId: event.target.value })}>
-                {planningMembers.map((member) => <option key={member.id} value={member.id}>{member.firstName} {member.lastName}</option>)}
-              </Select>
-            </Field>
-          )}
-          <div className="grid gap-2">
-            {unscheduled.map((item) => <button key={item.id} onClick={() => scheduleInSlot(item)} className="focus-ring surface-interactive flex items-center justify-between gap-4 rounded-xl border border-zinc-200 p-4 text-left"><span><span className="block text-sm font-bold">{item.title}</span><span className="mt-1 block text-xs text-zinc-500">{item.plannedDurationMinutes / 60} h · {item.address}</span></span><CalendarDays className="size-4 text-brand-500" /></button>)}
-          </div>
-        </div>
+      {slot && <PlanningSlotMenu key={`${slot.start.toISOString()}-${slot.end.toISOString()}`} slot={slot} members={planningMembers} canAssignTeam={teamPlanning} unscheduled={unscheduled} clients={data.clients} onChange={setSlot} onCreate={createFromSlot} onSchedule={scheduleInSlot} onClose={closeSlot} />}
+
+      <Modal open={Boolean(appointmentSlot)} onClose={() => setAppointmentSlot(null)} title="Nouvelle prestation" description="Le créneau du planning est repris. Tout reste modifiable.">
+        {appointmentSlot && <AppointmentForm initialSlot={appointmentSlot} allowedMemberIds={planningMembers.map((member) => member.id)} close={() => setAppointmentSlot(null)} onCreated={openCreatedIntervention} />}
       </Modal>
 
       <Modal open={Boolean(selected)} onClose={() => setSelected(null)} title={selected?.title ?? "Dossier prestation"} description="Rendez-vous · réalisation · facture · paiement" className="sm:max-w-5xl">
-        {selected && <InterventionDetail key={selected.id} interventionId={selected.id} />}
+        {selected && <InterventionDetail key={`${selected.id}-${editOnOpen}`} interventionId={selected.id} startEditing={editOnOpen} />}
       </Modal>
 
       <Modal

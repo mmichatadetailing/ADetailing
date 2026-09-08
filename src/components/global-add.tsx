@@ -8,6 +8,7 @@ import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { getServicePricingMode, servicePriceRuleLabel, suggestedServicePrice } from "@/lib/domain/service-pricing";
+import { appointmentSlotDefaults, localPlanningDateTime, type PlanningSlot } from "@/lib/domain/planning-slot";
 import { useDemoStore } from "@/lib/demo/store";
 import { formatMoney } from "@/lib/utils";
 import { useWorkspace } from "./workspace-provider";
@@ -147,12 +148,18 @@ function ClientForm({ close }: { close: () => void }) {
   );
 }
 
-function AppointmentForm({ close }: { close: () => void }) {
+export function AppointmentForm({ close, initialSlot, allowedMemberIds, onCreated }: {
+  close: () => void;
+  initialSlot?: PlanningSlot;
+  allowedMemberIds?: string[];
+  onCreated?: (id: string) => void;
+}) {
   const data = useDemoStore();
   const addAppointment = useDemoStore((state) => state.addAppointment);
   const { mode, createRecord } = useWorkspace();
   const router = useRouter();
-  const activeTeam = data.team.filter((member) => member.active);
+  const activeTeam = data.team.filter((member) => member.active && (!allowedMemberIds || allowedMemberIds.includes(member.id)));
+  const slotDefaults = initialSlot ? appointmentSlotDefaults(initialSlot) : undefined;
   const activeServices = data.services.filter((service) => service.active && !service.archivedAt);
   const initialClient = data.clients[0];
   const [clientId, setClientId] = useState(initialClient?.id ?? "");
@@ -162,16 +169,17 @@ function AppointmentForm({ close }: { close: () => void }) {
   const [serviceId, setServiceId] = useState("");
   const [serviceLabel, setServiceLabel] = useState("");
   const [date, setDate] = useState(() => {
+    if (slotDefaults) return localPlanningDateTime(slotDefaults.start).slice(0, 10);
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
-    return tomorrow.toISOString().slice(0, 10);
+    return localPlanningDateTime(tomorrow).slice(0, 10);
   });
-  const [time, setTime] = useState("09:00");
+  const [time, setTime] = useState(slotDefaults ? localPlanningDateTime(slotDefaults.start).slice(11, 16) : "09:00");
   const [completed, setCompleted] = useState(false);
-  const [durationHours, setDurationHours] = useState(2);
+  const [durationHours, setDurationHours] = useState(slotDefaults ? slotDefaults.durationMinutes / 60 : 2);
   const [priceEuros, setPriceEuros] = useState(0);
   const [address, setAddress] = useState(initialClient ? [initialClient.address, initialClient.postalCode, initialClient.city].filter(Boolean).join(" ") : "");
-  const [workerId, setWorkerId] = useState(activeTeam[0]?.id ?? "");
+  const [workerId, setWorkerId] = useState(slotDefaults?.memberId ?? activeTeam[0]?.id ?? "");
   const [submitting, setSubmitting] = useState(false);
   const pricingFor = (nextServiceId: string, nextVehicleFormat: string, nextVehicleCount: number, nextPriceLabel = customPricingLabel) => {
     const service = activeServices.find((item) => item.id === nextServiceId);
@@ -203,7 +211,7 @@ function AppointmentForm({ close }: { close: () => void }) {
     const service = activeServices.find((item) => item.name.trim().toLocaleLowerCase("fr-FR") === normalizedLabel);
     setServiceId(service?.id ?? "");
     if (service) {
-      setDurationHours(service.targetDurationMinutes / 60);
+      if (!initialSlot) setDurationHours(service.targetDurationMinutes / 60);
       const pricingMode = getServicePricingMode(service);
       const nextPriceLabel = pricingMode === "custom" && service.prices[0] ? servicePriceRuleLabel(service.prices[0], pricingMode) : "";
       setCustomPricingLabel(nextPriceLabel);
@@ -229,7 +237,8 @@ function AppointmentForm({ close }: { close: () => void }) {
     if (!clientId) return toast.error("Sélectionnez un client");
     if (title.length < 2) return toast.error("Indiquez la formule ou la prestation réalisée");
     if (!workerId) return toast.error("Affectez un collaborateur");
-    if (!date || !time || !Number.isFinite(durationHours) || durationHours <= 0) return toast.error("Le créneau est incomplet");
+    if (!activeTeam.some((member) => member.id === workerId)) return toast.error("Choisissez un collaborateur actif disponible.");
+    if (!date || !time || !Number.isFinite(durationHours) || durationHours < 0.25 || durationHours > 24) return toast.error("Indiquez un créneau de 15 minutes à 24 heures.");
     const startAt = new Date(`${date}T${time}`).toISOString();
     const input = { clientId, vehicleFormat: vehicleFormat || undefined, serviceId: serviceId || undefined, title, startAt, plannedDurationMinutes: Math.round(durationHours * 60), workerIds: [workerId], address, revenueAllocated: Math.round(priceEuros * 100), completed };
     setSubmitting(true);
@@ -237,7 +246,8 @@ function AppointmentForm({ close }: { close: () => void }) {
       const id = mode === "supabase" ? await createRecord({ kind: "appointment", ...input }) : addAppointment(input);
       toast.success("Prestation créée — complétez les informations puis validez");
       close();
-      router.push(`/prestations?intervention=${id}&edit=1`);
+      if (onCreated) onCreated(id);
+      else router.push(`/prestations?intervention=${id}&edit=1`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Création du rendez-vous impossible");
     } finally {
@@ -245,13 +255,13 @@ function AppointmentForm({ close }: { close: () => void }) {
     }
   };
 
-  if (data.clients.length === 0) return <div className="rounded-2xl border border-dashed border-zinc-200 p-8 text-center"><p className="text-sm font-bold">Créez d’abord un client</p><p className="mt-2 text-xs text-zinc-500">Un rendez-vous doit être rattaché à un client et à son véhicule.</p></div>;
+  if (data.clients.length === 0) return <div className="rounded-2xl border border-dashed border-zinc-200 p-8 text-center"><p className="text-sm font-bold">Créez d’abord un client</p><p className="mt-2 text-xs text-zinc-500">Un rendez-vous doit être rattaché à un client. Le véhicule reste facultatif.</p></div>;
 
   return (
     <div className="grid gap-4">
       <div className="grid grid-cols-2 gap-2 rounded-2xl bg-zinc-100 p-1">
-        <button type="button" aria-pressed={!completed} onClick={() => { setCompleted(false); const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1); setDate(tomorrow.toISOString().slice(0, 10)); }} className={`focus-ring rounded-xl px-3 py-2.5 text-xs font-bold transition ${!completed ? "bg-white text-brand-700 shadow-sm" : "text-zinc-500"}`}><CalendarPlus2 className="mr-1.5 inline size-3.5" /> Rendez-vous à venir</button>
-        <button type="button" aria-pressed={completed} onClick={() => { setCompleted(true); setDate(new Date().toISOString().slice(0, 10)); }} className={`focus-ring rounded-xl px-3 py-2.5 text-xs font-bold transition ${completed ? "bg-white text-emerald-700 shadow-sm" : "text-zinc-500"}`}><CheckCircle2 className="mr-1.5 inline size-3.5" /> Déjà effectuée</button>
+        <button type="button" aria-pressed={!completed} onClick={() => { setCompleted(false); if (!initialSlot) { const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1); setDate(localPlanningDateTime(tomorrow).slice(0, 10)); } }} className={`focus-ring rounded-xl px-3 py-2.5 text-xs font-bold transition ${!completed ? "bg-white text-brand-700 shadow-sm" : "text-zinc-500"}`}><CalendarPlus2 className="mr-1.5 inline size-3.5" /> Rendez-vous à venir</button>
+        <button type="button" aria-pressed={completed} onClick={() => { setCompleted(true); if (!initialSlot) setDate(localPlanningDateTime(new Date()).slice(0, 10)); }} className={`focus-ring rounded-xl px-3 py-2.5 text-xs font-bold transition ${completed ? "bg-white text-emerald-700 shadow-sm" : "text-zinc-500"}`}><CheckCircle2 className="mr-1.5 inline size-3.5" /> Déjà effectuée</button>
       </div>
       <div className={`rounded-2xl border p-4 ${completed ? "border-emerald-200 bg-emerald-50/70" : "border-brand-200 bg-brand-50/70"}`}><p className={`flex items-center gap-2 text-sm font-bold ${completed ? "text-emerald-800" : "text-brand-700"}`}>{completed ? <CheckCircle2 className="size-4" /> : <CalendarPlus2 className="size-4" />} {completed ? "Ajouter une prestation terminée" : "Nouveau rendez-vous"}</p><p className={`mt-1 text-xs ${completed ? "text-emerald-700" : "text-brand-600"}`}>{completed ? "Le dossier commencera directement à l’étape Facture, avec les temps prévus repris comme temps réalisés." : "Les informations pourront être modifiées ensuite depuis la fiche prestation."}</p></div>
       <div className="grid gap-4 sm:grid-cols-2">
@@ -261,7 +271,7 @@ function AppointmentForm({ close }: { close: () => void }) {
       {selectedPricingMode === "vehicle_count" && <Field label="Nombre de véhicules dans l’abonnement" hint="Le palier et le montant total sont recalculés automatiquement."><Input min="1" step="1" type="number" value={vehicleCount} onChange={(event) => chooseVehicleCount(Number(event.target.value))} /></Field>}
       {selectedPricingMode === "custom" && selectedService && <Field label="Règle tarifaire"><Select value={customPricingLabel} onChange={(event) => chooseCustomPricing(event.target.value)}>{selectedService.prices.map((price, index) => { const label = servicePriceRuleLabel(price, "custom"); return <option key={`${label}-${index}`} value={label}>{label}</option>; })}</Select></Field>}
       <div className="grid gap-4 sm:grid-cols-[1.35fr_.65fr]">
-        <Field label="Formule ou prestation" hint={serviceId ? "Prestation du catalogue reconnue : durée et fourchette retrouvées." : "Saisie libre : écrivez n’importe quel intitulé."}>
+        <Field label="Formule ou prestation" hint={serviceId ? (initialSlot ? "Tarif du catalogue retrouvé. La durée choisie dans le planning est conservée." : "Prestation du catalogue reconnue : durée et fourchette retrouvées.") : "Saisie libre : écrivez n’importe quel intitulé."}>
           <div className="grid gap-2">
             <Input list="adetailing-service-options" value={serviceLabel} onChange={(event) => chooseServiceLabel(event.target.value)} placeholder="Ex. Formule Premium ou nettoyage ponctuel" autoComplete="off" />
             <datalist id="adetailing-service-options">{activeServices.map((service) => <option key={service.id} value={service.name} />)}</datalist>
@@ -272,9 +282,9 @@ function AppointmentForm({ close }: { close: () => void }) {
       </div>
       {selectedPricing && selectedService && <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-xs text-violet-800"><strong>Repère catalogue · {servicePriceRuleLabel(selectedPricing.rule, getServicePricingMode(selectedService))} :</strong> {selectedPricingMode === "vehicle_count" ? `${formatMoney(selectedPricing.unitAmount)} par véhicule · total conseillé ${formatMoney(selectedPricing.minimumAmount)}` : `${formatMoney(selectedPricing.minimumAmount)} à ${formatMoney(selectedPricing.maximumAmount)}`}. Vous restez libre de fixer le prix final.</div>}
       <div className="grid gap-4 sm:grid-cols-3">
-        <Field label={completed ? "Date de réalisation" : "Date"}><Input min={completed ? undefined : new Date().toISOString().slice(0, 10)} type="date" value={date} onChange={(event) => setDate(event.target.value)} /></Field>
+        <Field label={completed ? "Date de réalisation" : "Date"}><Input min={completed || initialSlot ? undefined : localPlanningDateTime(new Date()).slice(0, 10)} type="date" value={date} onChange={(event) => setDate(event.target.value)} /></Field>
         <Field label="Heure"><Input type="time" value={time} onChange={(event) => setTime(event.target.value)} /></Field>
-        <Field label="Durée prévue (h)"><Input min="0.25" step="0.25" type="number" value={durationHours} onChange={(event) => setDurationHours(Number(event.target.value))} /></Field>
+        <Field label="Durée prévue (h)"><Input min="0.25" max="24" step="0.25" type="number" value={durationHours} onChange={(event) => setDurationHours(Number(event.target.value))} /></Field>
       </div>
       <Field label="Adresse de la prestation"><Input value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Adresse, code postal, ville" /></Field>
       <Field label="Collaborateur" hint="Vous pourrez ajouter d’autres personnes dans l’étape suivante.">

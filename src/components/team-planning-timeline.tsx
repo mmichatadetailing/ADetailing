@@ -1,8 +1,8 @@
 "use client";
 
-import { CalendarDays, Clock3, GripVertical } from "lucide-react";
-import type { DragEvent, MouseEvent } from "react";
-import { useEffect, useRef } from "react";
+import { CalendarDays, Clock3, GripVertical, Plus } from "lucide-react";
+import type { DragEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Avatar } from "@/components/avatar";
 import { Badge } from "@/components/ui/badge";
 import { interventionStatusLabels } from "@/lib/domain/labels";
@@ -12,6 +12,7 @@ import {
   PLANNING_END_HOUR,
   PLANNING_START_HOUR,
   planningTimelinePosition,
+  planningSelectionRange,
 } from "@/lib/domain/planning-timeline";
 import type { Client, Intervention, PlanningEvent, TeamMember } from "@/lib/domain/types";
 import type { GooglePlanningEvent } from "@/lib/integrations/google-calendar-types";
@@ -120,18 +121,24 @@ export function TeamPlanningTimeline({
   onSelectGoogle: (event: GooglePlanningEvent) => void;
   onSelectPlanningEvent: (event: PlanningEvent) => void;
   onMove: (payload: DragPayload, targetMemberId: string, start: Date) => void;
-  onEmptySlot: (memberId: string, start: Date) => void;
+  onEmptySlot: (memberId: string, start: Date, end?: Date) => void;
   dayWidth?: number;
   showDayLabels?: boolean;
 }) {
   const today = new Date();
   const timelineWidth = days.length * dayWidth;
   const scrollContainer = useRef<HTMLDivElement>(null);
+  const positionedDays = useRef("");
+  const dragSelection = useRef<{ memberId: string; day: Date; anchor: Date; current: Date; x: number; moved: boolean } | null>(null);
+  const suppressClick = useRef(false);
+  const [selection, setSelection] = useState<{ memberId: string; day: Date; start: Date; end: Date } | null>(null);
 
   useEffect(() => {
     const container = scrollContainer.current;
     const firstDay = days[0];
-    if (!container || !firstDay) return;
+    const positionKey = `${dayWidth}:${days.map((day) => day.toDateString()).join("|")}`;
+    // Opening a creation form or saving an event must not reset the horizontal scroll.
+    if (!container || !firstDay || members.length === 0 || positionedDays.current === positionKey) return;
     const focusNow = new Date();
     const starts = [
       ...interventions.map((event) => event.startAt),
@@ -146,9 +153,12 @@ export function TeamPlanningTimeline({
     const ratio = Math.max(0, Math.min(1, (minutes - PLANNING_START_HOUR * 60) / ((PLANNING_END_HOUR - PLANNING_START_HOUR) * 60)));
     const viewportOffset = Math.max(80, (container.clientWidth - RESOURCE_WIDTH) / 3);
     const target = Math.max(0, RESOURCE_WIDTH + ratio * dayWidth - viewportOffset);
-    const frame = window.requestAnimationFrame(() => container.scrollTo({ left: target, behavior: "smooth" }));
+    const frame = window.requestAnimationFrame(() => {
+      positionedDays.current = positionKey;
+      container.scrollTo({ left: target, behavior: "smooth" });
+    });
     return () => window.cancelAnimationFrame(frame);
-  }, [dayWidth, days, googleEvents, interventions, planningEvents]);
+  }, [dayWidth, days, googleEvents, interventions, planningEvents, members.length]);
 
   const readDrag = (event: DragEvent) => {
     try {
@@ -158,9 +168,9 @@ export function TeamPlanningTimeline({
     }
   };
 
-  const dateFromPointer = (event: DragEvent<HTMLDivElement> | MouseEvent<HTMLDivElement>, day: Date) => {
+  const dateFromPointer = (event: { currentTarget: HTMLDivElement; clientX: number }, day: Date, allowEnd = false) => {
     const bounds = event.currentTarget.getBoundingClientRect();
-    return dateAtPlanningPosition(day, (event.clientX - bounds.left) / bounds.width);
+    return dateAtPlanningPosition(day, (event.clientX - bounds.left) / bounds.width, allowEnd);
   };
 
   return (
@@ -200,23 +210,56 @@ export function TeamPlanningTimeline({
               <div className="sticky left-0 z-20 flex shrink-0 items-center gap-3 border-r border-zinc-200 bg-white px-4 shadow-[8px_0_18px_rgba(41,50,71,.035)]" style={{ width: RESOURCE_WIDTH }}>
                 <Avatar label={member.initials} color={member.color} />
                 <div className="min-w-0"><p className="truncate text-xs font-extrabold text-zinc-900">{member.firstName} {member.lastName}</p><p className="mt-1 flex items-center gap-1 text-[10px] text-zinc-500"><Clock3 className="size-3" /> {new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(member.weeklyCapacityMinutes / 60)} h/semaine</p>{member.id === currentUserId && <p className="mt-1 text-[9px] font-bold text-emerald-700">Votre ligne</p>}</div>
+                {member.active && <button type="button" className="focus-ring ml-auto grid size-7 shrink-0 place-items-center rounded-lg text-brand-600 hover:bg-orange-50" aria-label={`Ajouter pour ${member.firstName} ${member.lastName}`} title="Ajouter sur cette ligne" onClick={() => { const start = new Date(days[0] ?? today); start.setHours(9, 0, 0, 0); onEmptySlot(member.id, start); }}><Plus className="size-4" /></button>}
               </div>
               <div className="flex" style={{ width: timelineWidth }}>
                 {days.map((day) => {
                   const events = dayEvents(member.id, day, interventions, googleEvents, planningEvents);
                   const todayDay = isSamePlanningDay(day, today);
                   const nowRatio = (today.getHours() * 60 + today.getMinutes() - PLANNING_START_HOUR * 60) / ((PLANNING_END_HOUR - PLANNING_START_HOUR) * 60);
+                  const selectedRange = selection && selection.memberId === member.id && isSamePlanningDay(selection.day, day) ? selection : null;
+                  const selectedPosition = selectedRange ? planningTimelinePosition(selectedRange.start.toISOString(), selectedRange.end.toISOString(), day) : null;
                   return (
                     <div
                       key={`${member.id}-${day.toISOString()}`}
-                      className={cn("group/day relative shrink-0 border-r border-zinc-200 transition-colors hover:bg-brand-50/35", todayDay && "bg-orange-50/25")}
+                      className={cn("group/day relative shrink-0 select-none border-r border-zinc-200 transition-colors hover:bg-brand-50/35", member.active && "cursor-crosshair", todayDay && "bg-orange-50/25")}
                       style={{ width: dayWidth, height: ROW_HEIGHT }}
                       aria-label={`Planning de ${member.firstName} le ${formatDate(day.toISOString())}`}
-                      onClick={(event) => onEmptySlot(member.id, dateAtPlanningPosition(day, (event.clientX - event.currentTarget.getBoundingClientRect().left) / event.currentTarget.getBoundingClientRect().width))}
+                      onPointerDown={(event) => {
+                        if (!member.active || event.pointerType !== "mouse" || event.button !== 0 || (event.target as HTMLElement).closest("button")) return;
+                        suppressClick.current = false;
+                        const anchor = dateFromPointer(event, day);
+                        dragSelection.current = { memberId: member.id, day, anchor, current: anchor, x: event.clientX, moved: false };
+                        event.currentTarget.setPointerCapture(event.pointerId);
+                      }}
+                      onPointerMove={(event) => {
+                        const drag = dragSelection.current;
+                        if (!drag || drag.memberId !== member.id) return;
+                        drag.current = dateFromPointer(event, day, true);
+                        if (Math.abs(event.clientX - drag.x) >= 5) drag.moved = true;
+                        if (drag.moved) setSelection({ memberId: member.id, day, ...planningSelectionRange(drag.anchor, drag.current) });
+                      }}
+                      onPointerUp={() => {
+                        const drag = dragSelection.current;
+                        dragSelection.current = null;
+                        setSelection(null);
+                        if (drag?.moved) {
+                          suppressClick.current = true;
+                          const range = planningSelectionRange(drag.anchor, drag.current);
+                          onEmptySlot(member.id, range.start, range.end);
+                        }
+                      }}
+                      onPointerCancel={() => { dragSelection.current = null; setSelection(null); }}
+                      onLostPointerCapture={() => { dragSelection.current = null; setSelection(null); }}
+                      onClick={(event) => {
+                        if (suppressClick.current) { suppressClick.current = false; return; }
+                        onEmptySlot(member.id, dateFromPointer(event, day));
+                      }}
                       onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }}
                       onDrop={(event) => { event.preventDefault(); const payload = readDrag(event); if (payload) onMove(payload, member.id, dateFromPointer(event, day)); }}
                     >
                       {HOURS.map((hour) => <span key={hour} className="pointer-events-none absolute inset-y-0 border-l border-zinc-100" style={{ left: `${(hour - PLANNING_START_HOUR) / (PLANNING_END_HOUR - PLANNING_START_HOUR) * 100}%` }} />)}
+                      {selectedPosition && selectedRange && <div className="pointer-events-none absolute inset-y-1 z-30 overflow-hidden rounded-xl border-2 border-brand-500 bg-orange-100/85 p-2 text-xs font-bold text-orange-900" style={{ left: `${selectedPosition.left}%`, width: `${selectedPosition.width}%` }}>{formatDate(selectedRange.start.toISOString(), { hour: "2-digit", minute: "2-digit" })} – {formatDate(selectedRange.end.toISOString(), { hour: "2-digit", minute: "2-digit" })}</div>}
                       {todayDay && nowRatio >= 0 && nowRatio <= 1 && <span className="pointer-events-none absolute inset-y-0 z-10 w-px bg-red-400" style={{ left: `${nowRatio * 100}%` }}><span className="absolute -left-1 top-0 size-2 rounded-full bg-red-500" /></span>}
                       {events.map((entry) => {
                         const { position, lane } = entry;

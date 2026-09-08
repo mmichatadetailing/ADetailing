@@ -43,28 +43,39 @@ function isoFromLocal(value: string) {
 export function PlanningEventEditor({
   event,
   initialStart,
+  initialEnd,
+  initialAllDay = false,
+  initialKind = "meeting",
+  initialMemberId,
   currentUserId,
   members,
   canAssignTeam,
   canEdit,
+  onSaved,
   onClose,
 }: {
   event?: PlanningEvent;
   initialStart: Date;
+  initialEnd?: Date;
+  initialAllDay?: boolean;
+  initialKind?: PlanningEventKind;
+  initialMemberId?: string;
   currentUserId: string;
   members: TeamMember[];
   canAssignTeam: boolean;
   canEdit: boolean;
+  onSaved?: () => void;
   onClose: () => void;
 }) {
   const data = useDemoStore();
-  const defaultEnd = new Date(initialStart.getTime() + 60 * 60_000);
-  const [kind, setKind] = useState<PlanningEventKind>(event?.kind ?? "meeting");
+  const defaultEnd = initialEnd ?? new Date(initialStart.getTime() + 60 * 60_000);
+  const startsAllDay = event?.allDay ?? initialAllDay;
+  const [kind, setKind] = useState<PlanningEventKind>(event?.kind ?? initialKind);
   const [title, setTitle] = useState(event?.title ?? "");
-  const [allDay, setAllDay] = useState(event?.allDay ?? false);
-  const [start, setStart] = useState(event ? (event.allDay ? localDate(event.startAt) : localDateTime(event.startAt)) : localDateTime(initialStart));
-  const [end, setEnd] = useState(event ? (event.allDay ? localDate(event.endAt, true) : localDateTime(event.endAt)) : localDateTime(defaultEnd));
-  const [memberIds, setMemberIds] = useState<string[]>(event?.memberIds ?? [currentUserId]);
+  const [allDay, setAllDay] = useState(startsAllDay);
+  const [start, setStart] = useState(startsAllDay ? localDate(event?.startAt ?? initialStart) : localDateTime(event?.startAt ?? initialStart));
+  const [end, setEnd] = useState(startsAllDay ? localDate(event?.endAt ?? defaultEnd, true) : localDateTime(event?.endAt ?? defaultEnd));
+  const [memberIds, setMemberIds] = useState<string[]>(event?.memberIds ?? [canAssignTeam ? initialMemberId ?? currentUserId : currentUserId]);
   const [location, setLocation] = useState(event?.location ?? "");
   const [notes, setNotes] = useState(event?.notes ?? "");
 
@@ -103,6 +114,7 @@ export function PlanningEventEditor({
     if (event) data.updatePlanningEvent(event.id, input);
     else data.addPlanningEvent(input);
     toast.success(event ? "Événement modifié" : "Événement ajouté au planning");
+    onSaved?.();
     onClose();
   };
 
@@ -128,7 +140,7 @@ export function PlanningEventEditor({
           </Field>
         </div>
 
-        <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-sm font-semibold text-zinc-700">
+        <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm font-semibold text-slate-700">
           <input type="checkbox" checked={allDay} onChange={(input) => changeAllDay(input.target.checked)} className="size-4 accent-violet-500" />
           Toute la journée
         </label>
