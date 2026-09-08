@@ -7,6 +7,8 @@ import interactionPlugin, { type EventResizeDoneArg } from "@fullcalendar/intera
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import {
+  AlertTriangle,
+  CalendarClock,
   Clock3,
   ExternalLink,
   MapPin,
@@ -19,6 +21,7 @@ import { PlanningSlotMenu } from "@/components/planning-slot-menu";
 import { PlanningToolbar } from "@/components/planning-toolbar";
 import { PlanningDatePicker } from "@/components/planning-date-picker";
 import { PlanningEventEditor } from "@/components/planning-event-editor";
+import { PlanningMoveDialog } from "@/components/planning-move-dialog";
 import { PlanningSidePanel } from "@/components/planning-side-panel";
 import { PlanningUnscheduledTray } from "@/components/planning-unscheduled-tray";
 import { TeamPlanningTimeline } from "@/components/team-planning-timeline";
@@ -28,7 +31,7 @@ import { Button } from "@/components/ui/button";
 import { useWorkspace } from "@/components/workspace-provider";
 import { canViewTeamPlanning, filterPlanningForUser } from "@/lib/domain/planning";
 import { eventOverlapsRange, googlePlanningConflicts, googlePlanningPrefetchRange, googlePlanningRange } from "@/lib/domain/google-planning";
-import { planningEventConflicts, planningEventKindLabels } from "@/lib/domain/planning-events";
+import { planningEventConflicts, planningEventKindLabels, planningMoveConflicts, type PlanningMoveConflict } from "@/lib/domain/planning-events";
 import { startOfPlanningWeek } from "@/lib/domain/planning-timeline";
 import { createPlanningSlot, resolvePlanningSlotMember, type PlanningSlot } from "@/lib/domain/planning-slot";
 import { dateKey } from "@/lib/domain/periods";
@@ -41,6 +44,14 @@ type CalendarView = "timeline" | "day" | "week" | "month";
 type MovePayload = { interventionId: string; sourceMemberId?: string };
 type PlanningSourceFilter = "all" | "adetailing" | "planning" | "google";
 type PlanningStatusFilter = "all" | InterventionStatus;
+type MoveEditor = { source: "intervention" | "planning"; id: string };
+type PendingCalendarMove = {
+  label: string;
+  start: Date;
+  conflicts: PlanningMoveConflict[];
+  apply: () => void;
+  cancel?: () => void;
+};
 
 const PLANNING_PREFERENCES_KEY = "adetailing-planning-preferences-v1";
 
@@ -94,6 +105,27 @@ function reassignWorkers(intervention: Intervention, sourceMemberId: string | un
   return [{ ...workers[0]!, memberId: targetMemberId }, ...workers.slice(1)];
 }
 
+function reassignMemberIds(memberIds: string[], sourceMemberId: string | undefined, targetMemberId: string) {
+  if (!sourceMemberId || sourceMemberId === targetMemberId || memberIds.includes(targetMemberId)) return memberIds;
+  return memberIds.map((memberId) => memberId === sourceMemberId ? targetMemberId : memberId);
+}
+
+function editableIntervention(intervention: Intervention) {
+  return {
+    clientId: intervention.clientId,
+    vehicleId: intervention.vehicleId,
+    vehicleFormat: intervention.vehicleFormat,
+    title: intervention.title,
+    status: intervention.status,
+    startAt: intervention.startAt,
+    plannedDurationMinutes: intervention.plannedDurationMinutes,
+    address: intervention.address,
+    notes: intervention.notes,
+    workers: intervention.workers.map((worker) => ({ memberId: worker.memberId, plannedMinutes: worker.plannedMinutes })),
+    items: intervention.items.map((item) => ({ id: item.id, serviceId: item.serviceId, label: item.label, quantity: item.quantity, revenueAllocated: item.revenueAllocated })),
+  };
+}
+
 export default function PlanningPage() {
   const data = useDemoStore();
   const { mode, workspace } = useWorkspace();
@@ -103,6 +135,8 @@ export default function PlanningPage() {
   const [selected, setSelected] = useState<Intervention | null>(null);
   const [selectedGoogleEvent, setSelectedGoogleEvent] = useState<GooglePlanningEvent | null>(null);
   const [planningEventEditor, setPlanningEventEditor] = useState<{ event?: PlanningEvent; start: Date; end?: Date; allDay?: boolean; memberId?: string; kind?: PlanningEventKind } | null>(null);
+  const [moveEditor, setMoveEditor] = useState<MoveEditor | null>(null);
+  const [pendingMove, setPendingMove] = useState<PendingCalendarMove | null>(null);
   const [panelDirty, setPanelDirty] = useState(false);
   const [panelBusy, setPanelBusy] = useState(false);
   const [panelRevision, setPanelRevision] = useState(0);
@@ -110,6 +144,7 @@ export default function PlanningPage() {
   const panelTrigger = useRef<HTMLElement | null>(null);
   const calendarContainer = useRef<HTMLDivElement | null>(null);
   const panelOpen = Boolean(selected || selectedGoogleEvent || planningEventEditor || appointmentSlot);
+  const calendarInteractionLocked = panelOpen || Boolean(pendingMove);
 
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
@@ -136,6 +171,7 @@ export default function PlanningPage() {
     setSelectedGoogleEvent(null);
     setPlanningEventEditor(null);
     setAppointmentSlot(null);
+    setMoveEditor(null);
     setPanelDirty(false);
     setPanelBusy(false);
   };
@@ -413,7 +449,7 @@ export default function PlanningPage() {
     start: event.startAt,
     end: event.endAt,
     allDay: event.allDay,
-    editable: !panelOpen && (teamPlanning || (event.memberIds.length === 1 && event.memberIds[0] === currentUserId)),
+    editable: !calendarInteractionLocked && (teamPlanning || (event.memberIds.length === 1 && event.memberIds[0] === currentUserId)),
     backgroundColor: internalPlanningConflicts.planningEventIds.has(event.id) ? "#fef2f2" : `${event.color ?? "#8b5cf6"}1c`,
     borderColor: internalPlanningConflicts.planningEventIds.has(event.id) ? "#ef4444" : event.color ?? "#8b5cf6",
     textColor: "#27223a",
@@ -432,43 +468,120 @@ export default function PlanningPage() {
     textColor: "#0c4a6e",
     classNames: event.busy ? ["google-calendar-event"] : ["google-calendar-event", "opacity-70"],
     extendedProps: { source: "google" },
-  }))], [currentUserId, data.clients, filteredGoogleEvents, filteredPlanningEvents, filteredScheduled, googleConflictIds, internalPlanningConflicts.planningEventIds, panelOpen, planningMembers, teamPlanning]);
+  }))], [calendarInteractionLocked, currentUserId, data.clients, filteredGoogleEvents, filteredPlanningEvents, filteredScheduled, googleConflictIds, internalPlanningConflicts.planningEventIds, planningMembers, teamPlanning]);
 
-  const moveIntervention = (payload: MovePayload, targetMemberId: string, start: Date, durationMinutes?: number) => {
+  const showMoveToast = (key: string, label: string, start: Date, undo: () => void) => {
+    const toastId = `planning-move:${key}`;
+    toast.success(`${label} déplacé${label.endsWith("e") ? "e" : ""}`, {
+      id: toastId,
+      description: formatDate(start.toISOString(), { weekday: "long", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }),
+      duration: 8_000,
+      action: {
+        label: "Annuler",
+        onClick: () => {
+          undo();
+          toast.success("Déplacement annulé", { duration: 2_500 });
+        },
+      },
+    });
+  };
+
+  const runOrConfirmMove = (request: PendingCalendarMove) => {
+    if (request.conflicts.length === 0) request.apply();
+    else setPendingMove(request);
+  };
+
+  const requestInterventionMove = ({
+    payload,
+    targetMemberId,
+    start,
+    end,
+    durationMinutes,
+    cancel,
+  }: {
+    payload: MovePayload;
+    targetMemberId: string;
+    start: Date;
+    end?: Date | null;
+    durationMinutes?: number;
+    cancel?: () => void;
+  }) => {
     const intervention = visibleInterventions.find((item) => item.id === payload.interventionId);
     if (!intervention) return toast.error("Cette prestation n’est plus disponible dans le planning.");
     const workers = reassignWorkers(intervention, teamPlanning ? payload.sourceMemberId : undefined, targetMemberId);
-    data.updateIntervention(intervention.id, {
-      clientId: intervention.clientId,
-      vehicleId: intervention.vehicleId,
-      vehicleFormat: intervention.vehicleFormat,
-      title: intervention.title,
-      status: intervention.status === "to_schedule" ? "scheduled" : intervention.status,
+    const resolvedDuration = durationMinutes ?? (end ? Math.max(15, Math.round((end.getTime() - start.getTime()) / 60_000)) : intervention.plannedDurationMinutes);
+    const nextInput = {
+      ...editableIntervention(intervention),
+      status: intervention.status === "to_schedule" ? "scheduled" as const : intervention.status,
       startAt: start.toISOString(),
-      plannedDurationMinutes: durationMinutes ?? intervention.plannedDurationMinutes,
-      address: intervention.address,
-      notes: intervention.notes,
-      workers: workers.map((worker) => ({ memberId: worker.memberId, plannedMinutes: worker.memberId === targetMemberId ? durationMinutes ?? worker.plannedMinutes : worker.plannedMinutes })),
-      items: intervention.items.map((item) => ({ id: item.id, serviceId: item.serviceId, label: item.label, quantity: item.quantity, revenueAllocated: item.revenueAllocated })),
+      plannedDurationMinutes: resolvedDuration,
+      workers: workers.map((worker) => ({ memberId: worker.memberId, plannedMinutes: worker.memberId === targetMemberId ? resolvedDuration : worker.plannedMinutes })),
+    };
+    const previousInput = editableIntervention(intervention);
+    const computedEnd = new Date(start.getTime() + resolvedDuration * 60_000);
+    const assignmentChanged = workers.length !== intervention.workers.length || workers.some((worker, index) => worker.memberId !== intervention.workers[index]?.memberId);
+    const canUseLightweightMove = Boolean(intervention.startAt && intervention.endAt) && !assignmentChanged && resolvedDuration === intervention.plannedDurationMinutes;
+    const conflicts = planningMoveConflicts({
+      id: intervention.id,
+      source: "intervention",
+      title: intervention.title,
+      startAt: start.toISOString(),
+      endAt: computedEnd.toISOString(),
+      memberIds: workers.map((worker) => worker.memberId),
+    }, visibleInterventions, visiblePlanningEvents, googleEvents);
+    runOrConfirmMove({
+      label: "Rendez-vous",
+      start,
+      conflicts,
+      cancel,
+      apply: () => {
+        if (canUseLightweightMove) data.rescheduleIntervention(intervention.id, nextInput.startAt, computedEnd.toISOString());
+        else data.updateIntervention(intervention.id, nextInput);
+        showMoveToast(`intervention:${intervention.id}`, "Rendez-vous", start, () => {
+          if (canUseLightweightMove && intervention.startAt && intervention.endAt) data.rescheduleIntervention(intervention.id, intervention.startAt, intervention.endAt);
+          else data.updateIntervention(intervention.id, previousInput);
+        });
+      },
     });
-    const member = data.team.find((entry) => entry.id === targetMemberId);
-    toast.success("Planning mis à jour", { description: `${formatDate(start.toISOString(), { weekday: "long", hour: "2-digit", minute: "2-digit" })}${teamPlanning && member ? ` · ${member.firstName}` : ""}` });
   };
 
-  const persistDates = (interventionId: string, start: Date | null, end: Date | null) => {
+  const moveIntervention = (payload: MovePayload, targetMemberId: string, start: Date, durationMinutes?: number) => {
+    requestInterventionMove({ payload, targetMemberId, start, durationMinutes });
+  };
+
+  const persistDates = (interventionId: string, start: Date | null, end: Date | null, cancel?: () => void) => {
     const intervention = visibleInterventions.find((item) => item.id === interventionId);
     if (!intervention || !start) return;
-    const computedEnd = end ?? new Date(start.getTime() + intervention.plannedDurationMinutes * 60_000);
-    data.rescheduleIntervention(interventionId, start.toISOString(), computedEnd.toISOString());
-    toast.success("Créneau mis à jour", { description: formatDate(start.toISOString(), { weekday: "long", hour: "2-digit", minute: "2-digit" }) });
+    const targetMemberId = intervention.workers[0]?.memberId;
+    if (!targetMemberId) return cancel?.();
+    requestInterventionMove({ payload: { interventionId }, targetMemberId, start, end, cancel });
   };
 
-  const persistPlanningEventDates = (eventId: string, start: Date | null, end: Date | null, allDay: boolean) => {
+  const persistPlanningEventDates = (eventId: string, start: Date | null, end: Date | null, allDay: boolean, memberIds?: string[], cancel?: () => void) => {
     const planningEvent = visiblePlanningEvents.find((event) => event.id === eventId);
     if (!planningEvent || !start) return;
     const computedEnd = end ?? new Date(start.getTime() + Math.max(15 * 60_000, new Date(planningEvent.endAt).getTime() - new Date(planningEvent.startAt).getTime()));
-    data.updatePlanningEvent(eventId, { ...planningEvent, startAt: start.toISOString(), endAt: computedEnd.toISOString(), allDay });
-    toast.success("Événement déplacé", { description: formatDate(start.toISOString(), { weekday: "long", hour: "2-digit", minute: "2-digit" }) });
+    const nextMemberIds = memberIds ?? planningEvent.memberIds;
+    const nextInput = { ...planningEvent, startAt: start.toISOString(), endAt: computedEnd.toISOString(), allDay, memberIds: nextMemberIds };
+    const previousInput = { ...planningEvent };
+    const conflicts = planningMoveConflicts({
+      id: planningEvent.id,
+      source: "planning",
+      title: planningEvent.title,
+      startAt: nextInput.startAt,
+      endAt: nextInput.endAt,
+      memberIds: nextMemberIds,
+    }, visibleInterventions, visiblePlanningEvents, googleEvents);
+    runOrConfirmMove({
+      label: "Événement",
+      start,
+      conflicts,
+      cancel,
+      apply: () => {
+        data.updatePlanningEvent(eventId, nextInput);
+        showMoveToast(`planning:${eventId}`, "Événement", start, () => data.updatePlanningEvent(eventId, previousInput));
+      },
+    });
   };
 
   const openNewSlot = () => {
@@ -571,6 +684,9 @@ export default function PlanningPage() {
   const panelIndex = panelItems.findIndex((item) => item.key === panelKey);
   const currentIntervention = data.interventions.find((item) => item.id === selected?.id);
   const currentPlanningEvent = data.planningEvents?.find((item) => item.id === planningEventEditor?.event?.id);
+  const movableIntervention = moveEditor?.source === "intervention" ? data.interventions.find((item) => item.id === moveEditor.id) : undefined;
+  const movablePlanningEvent = moveEditor?.source === "planning" ? data.planningEvents?.find((item) => item.id === moveEditor.id) : undefined;
+  const canMovePlanningEvent = Boolean(currentPlanningEvent && (teamPlanning || (currentPlanningEvent.memberIds.length === 1 && currentPlanningEvent.memberIds[0] === currentUserId)));
   const panelTitle = selected ? currentIntervention?.title ?? "Dossier prestation" : selectedGoogleEvent?.title ?? (planningEventEditor ? currentPlanningEvent?.title ?? "Nouvel événement" : "Nouvelle prestation");
   const panelDescription = selected ? "Rendez-vous · réalisation · facture · paiement" : selectedGoogleEvent ? `${selectedGoogleEvent.calendarName} · ${selectedGoogleEvent.accountEmail}` : planningEventEditor ? "Réunion, absence ou bloc horaire sans créer de prestation." : "Le créneau sélectionné est repris. Tout reste modifiable.";
   const showUnscheduled = unscheduled.length > 0 && (sourceFilter === "all" || sourceFilter === "adetailing");
@@ -676,7 +792,7 @@ export default function PlanningPage() {
       />
 
       <div className="grid gap-4">
-        {showUnscheduled && <PlanningUnscheduledTray ref={unscheduledRef} interventions={unscheduled} clients={data.clients} vehicles={data.vehicles} members={data.team} expanded={unscheduledExpanded} canDrag={view === "timeline" && !panelOpen} teamPlanning={teamPlanning} onToggle={() => setUnscheduledExpanded((expanded) => !expanded)} onOpen={openIntervention} />}
+        {showUnscheduled && <PlanningUnscheduledTray ref={unscheduledRef} interventions={unscheduled} clients={data.clients} vehicles={data.vehicles} members={data.team} expanded={unscheduledExpanded} canDrag={view === "timeline" && !calendarInteractionLocked} teamPlanning={teamPlanning} onToggle={() => setUnscheduledExpanded((expanded) => !expanded)} onOpen={openIntervention} />}
 
         <div ref={calendarContainer} tabIndex={-1} aria-label="Calendrier" className="relative z-0 min-w-0">
           {view === "timeline" && (
@@ -697,7 +813,7 @@ export default function PlanningPage() {
               onSelectGoogle={openGoogleEvent}
               onSelectPlanningEvent={openPlanningEvent}
               onMove={moveIntervention}
-              canDrag={!panelOpen}
+              canDrag={!calendarInteractionLocked}
               activeEventKey={panelOpen ? panelKey : undefined}
               onEmptySlot={chooseEmptySlot}
             />
@@ -716,9 +832,9 @@ export default function PlanningPage() {
                   weekends
                   allDaySlot
                   nowIndicator
-                  editable={!panelOpen}
-                  eventStartEditable={!panelOpen}
-                  eventDurationEditable={!panelOpen}
+                  editable={!calendarInteractionLocked}
+                  eventStartEditable={!calendarInteractionLocked}
+                  eventDurationEditable={!calendarInteractionLocked}
                   selectable
                   selectMinDistance={5}
                   selectLongPressDelay={350}
@@ -755,18 +871,18 @@ export default function PlanningPage() {
                   eventDrop={(info: EventDropArg) => {
                     if (info.event.extendedProps.source === "google") return info.revert();
                     if (info.event.extendedProps.source === "planning") {
-                      persistPlanningEventDates(info.event.id, info.event.start, info.event.end, info.event.allDay);
+                      persistPlanningEventDates(info.event.id, info.event.start, info.event.end, info.event.allDay, undefined, info.revert);
                       return;
                     }
-                    persistDates(info.event.id, info.event.start, info.event.end);
+                    persistDates(info.event.id, info.event.start, info.event.end, info.revert);
                   }}
                   eventResize={(info: EventResizeDoneArg) => {
                     if (info.event.extendedProps.source === "google") return info.revert();
                     if (info.event.extendedProps.source === "planning") {
-                      persistPlanningEventDates(info.event.id, info.event.start, info.event.end, info.event.allDay);
+                      persistPlanningEventDates(info.event.id, info.event.start, info.event.end, info.event.allDay, undefined, info.revert);
                       return;
                     }
-                    persistDates(info.event.id, info.event.start, info.event.end);
+                    persistDates(info.event.id, info.event.start, info.event.end, info.revert);
                   }}
                   dateClick={(info) => chooseCalendarSlot(info.date, undefined, info.allDay)}
                   select={(info: DateSelectArg) => chooseCalendarSlot(info.start, info.end, info.allDay)}
@@ -796,6 +912,7 @@ export default function PlanningPage() {
         onClose={closePanel}
         onPrevious={panelIndex > 0 ? panelItems[panelIndex - 1]?.open : undefined}
         onNext={panelIndex >= 0 ? panelItems[panelIndex + 1]?.open : undefined}
+        actions={currentIntervention?.startAt && currentIntervention.endAt ? <Button size="sm" variant="secondary" disabled={panelBusy || panelDirty} onClick={() => setMoveEditor({ source: "intervention", id: currentIntervention.id })}><CalendarClock className="size-3.5" /> Déplacer</Button> : canMovePlanningEvent && currentPlanningEvent ? <Button size="sm" variant="secondary" disabled={panelBusy || panelDirty} onClick={() => setMoveEditor({ source: "planning", id: currentPlanningEvent.id })}><CalendarClock className="size-3.5" /> Déplacer</Button> : undefined}
       >
       {planningEventEditor && currentUserId && (
         <PlanningEventEditor
@@ -848,6 +965,73 @@ export default function PlanningPage() {
           </div>
         )}
       </PlanningSidePanel>}
+
+      {movableIntervention?.startAt && movableIntervention.endAt && (
+        <PlanningMoveDialog
+          key={`move-intervention:${movableIntervention.id}`}
+          title={movableIntervention.title}
+          start={new Date(movableIntervention.startAt)}
+          end={new Date(movableIntervention.endAt)}
+          memberId={movableIntervention.workers[0]?.memberId}
+          members={planningMembers}
+          canAssignTeam={teamPlanning}
+          onClose={() => setMoveEditor(null)}
+          onMove={(input) => {
+            const sourceMemberId = movableIntervention.workers[0]?.memberId;
+            const targetMemberId = input.memberId ?? sourceMemberId;
+            setMoveEditor(null);
+            if (!targetMemberId) return toast.error("Aucun collaborateur n’est affecté à ce rendez-vous.");
+            requestInterventionMove({ payload: { interventionId: movableIntervention.id, sourceMemberId }, targetMemberId, start: input.start, end: input.end });
+          }}
+        />
+      )}
+
+      {movablePlanningEvent && (
+        <PlanningMoveDialog
+          key={`move-event:${movablePlanningEvent.id}`}
+          title={movablePlanningEvent.title}
+          start={new Date(movablePlanningEvent.startAt)}
+          end={new Date(movablePlanningEvent.endAt)}
+          allDay={movablePlanningEvent.allDay}
+          memberId={movablePlanningEvent.memberIds[0]}
+          members={planningMembers}
+          canAssignTeam={teamPlanning}
+          onClose={() => setMoveEditor(null)}
+          onMove={(input) => {
+            const sourceMemberId = movablePlanningEvent.memberIds[0];
+            const targetMemberId = input.memberId ?? sourceMemberId;
+            const nextMemberIds = targetMemberId ? reassignMemberIds(movablePlanningEvent.memberIds, sourceMemberId, targetMemberId) : movablePlanningEvent.memberIds;
+            setMoveEditor(null);
+            persistPlanningEventDates(movablePlanningEvent.id, input.start, input.end, movablePlanningEvent.allDay, nextMemberIds);
+          }}
+        />
+      )}
+
+      <Modal
+        open={Boolean(pendingMove)}
+        onClose={() => {
+          pendingMove?.cancel?.();
+          setPendingMove(null);
+        }}
+        title="Ce créneau crée un conflit"
+        description={pendingMove?.conflicts.length === 1 ? "Un élément occupe déjà ce collaborateur. Rien n’est encore enregistré." : `${pendingMove?.conflicts.length ?? 0} éléments occupent déjà ce collaborateur. Rien n’est encore enregistré.`}
+        className="sm:max-w-lg"
+      >
+        {pendingMove && <div className="grid gap-5">
+          <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
+            <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-600" />
+            <div><p className="text-sm font-bold">Vérifiez avant de déplacer</p><p className="mt-1 text-xs leading-5">Nouveau départ : {formatDate(pendingMove.start.toISOString(), { weekday: "long", day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit" })}</p></div>
+          </div>
+          <ul className="grid gap-2" aria-label="Éléments en conflit">
+            {pendingMove.conflicts.slice(0, 5).map((conflict) => <li key={`${conflict.source}:${conflict.id}`} className="rounded-xl border border-black/[0.08] bg-zinc-50 px-4 py-3"><p className="text-sm font-bold text-slate-900">{conflict.title}</p><p className="mt-1 text-xs text-slate-600">{conflict.source === "google" ? "Google Calendar" : conflict.source === "planning" ? "Événement interne" : "Prestation"} · {formatDate(conflict.startAt, { hour: "2-digit", minute: "2-digit" })}–{formatDate(conflict.endAt, { hour: "2-digit", minute: "2-digit" })}</p></li>)}
+            {pendingMove.conflicts.length > 5 && <li className="px-1 text-xs font-semibold text-slate-500">+ {pendingMove.conflicts.length - 5} autre(s) élément(s)</li>}
+          </ul>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="secondary" onClick={() => { pendingMove.cancel?.(); setPendingMove(null); }}>Garder l’ancien créneau</Button>
+            <Button onClick={() => { const apply = pendingMove.apply; setPendingMove(null); apply(); }}>Déplacer quand même</Button>
+          </div>
+        </div>}
+      </Modal>
 
       <Modal open={Boolean(pendingPanelAction)} onClose={() => setPendingPanelAction(null)} title="Modifications non enregistrées" description="Des champs ont été modifiés dans cette fiche. Voulez-vous quitter sans les enregistrer ?">
         <div className="flex flex-wrap justify-end gap-3">

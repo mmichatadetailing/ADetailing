@@ -25,6 +25,8 @@ Les brouillons sont protégés lors de la fermeture ou du changement de fiche et
 
 Les prestations sans créneau sont regroupées dans un tiroir horizontal repliable au-dessus du calendrier. Son état est mémorisé, le compteur de la barre d’outils permet de le retrouver même avec un filtre incompatible, et les cartes peuvent être ouvertes ou glissées vers la timeline sans réduire la largeur du planning.
 
+Les déplacements sont appliqués immédiatement puis enregistrés en arrière-plan. Une action « Annuler » reste disponible pendant huit secondes. Avant tout chevauchement avec une prestation, un événement interne ou un créneau Google occupé, une confirmation liste précisément les éléments concernés. Sur écran tactile, l’action « Déplacer » de la fiche permet de choisir la date, l’heure, la durée et le collaborateur sans utiliser le glisser-déposer.
+
 ## À configurer
 
 - Supabase pour remplacer la persistance navigateur par PostgreSQL/Storage/Realtime ;

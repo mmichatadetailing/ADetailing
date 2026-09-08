@@ -16,6 +16,68 @@ function sharesMember(left: string[], right: string[]) {
   return left.some((memberId) => right.includes(memberId));
 }
 
+export interface PlanningMoveCandidate {
+  id: string;
+  source: "intervention" | "planning";
+  title: string;
+  startAt: string;
+  endAt: string;
+  memberIds: string[];
+}
+
+export interface PlanningMoveConflict {
+  id: string;
+  source: "intervention" | "planning" | "google";
+  title: string;
+  startAt: string;
+  endAt: string;
+}
+
+/**
+ * Lists the busy items that a proposed calendar move would overlap. The moving
+ * item itself is excluded so this can be used before the optimistic update.
+ */
+export function planningMoveConflicts(
+  candidate: PlanningMoveCandidate,
+  interventions: Intervention[],
+  planningEvents: PlanningEvent[],
+  googleEvents: GooglePlanningEvent[],
+) {
+  const conflicts: PlanningMoveConflict[] = [];
+
+  for (const intervention of interventions) {
+    if (
+      candidate.source === "intervention" && intervention.id === candidate.id
+      || intervention.status === "cancelled"
+      || !intervention.startAt
+      || !intervention.endAt
+      || !sharesMember(candidate.memberIds, intervention.workers.map((worker) => worker.memberId))
+      || !overlaps(candidate.startAt, candidate.endAt, intervention.startAt, intervention.endAt)
+    ) continue;
+    conflicts.push({ id: intervention.id, source: "intervention", title: intervention.title, startAt: intervention.startAt, endAt: intervention.endAt });
+  }
+
+  for (const event of planningEvents) {
+    if (
+      candidate.source === "planning" && event.id === candidate.id
+      || !sharesMember(candidate.memberIds, event.memberIds)
+      || !overlaps(candidate.startAt, candidate.endAt, event.startAt, event.endAt)
+    ) continue;
+    conflicts.push({ id: event.id, source: "planning", title: event.title, startAt: event.startAt, endAt: event.endAt });
+  }
+
+  for (const event of googleEvents) {
+    if (
+      !event.busy
+      || !candidate.memberIds.includes(event.memberId)
+      || !overlaps(candidate.startAt, candidate.endAt, event.start, event.end)
+    ) continue;
+    conflicts.push({ id: event.id, source: "google", title: event.title, startAt: event.start, endAt: event.end });
+  }
+
+  return conflicts.sort((left, right) => left.startAt.localeCompare(right.startAt) || left.title.localeCompare(right.title));
+}
+
 export function planningEventConflicts(
   interventions: Intervention[],
   planningEvents: PlanningEvent[],
