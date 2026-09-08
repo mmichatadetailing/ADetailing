@@ -23,6 +23,8 @@ Les prestations, événements internes et événements Google s’ouvrent dans u
 
 Les brouillons sont protégés lors de la fermeture ou du changement de fiche et avant de recharger l’onglet. Chaque section conserve son propre état de saisie : enregistrer les détails ne valide pas un paiement en cours de saisie. Fermer l’édition masque les champs sans abandonner le brouillon. Les événements Google restent en lecture seule. Le déplacement à la souris est suspendu tant qu’une fiche est ouverte pour ne pas écraser son créneau en cours d’édition.
 
+Les prestations sans créneau sont regroupées dans un tiroir horizontal repliable au-dessus du calendrier. Son état est mémorisé, le compteur de la barre d’outils permet de le retrouver même avec un filtre incompatible, et les cartes peuvent être ouvertes ou glissées vers la timeline sans réduire la largeur du planning.
+
 ## À configurer
 
 - Supabase pour remplacer la persistance navigateur par PostgreSQL/Storage/Realtime ;

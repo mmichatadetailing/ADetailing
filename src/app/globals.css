@@ -504,6 +504,15 @@ table tbody tr {
   cursor: pointer;
 }
 
+.planning-unscheduled-items {
+  animation: planning-tray-enter 140ms ease-out;
+}
+
+.planning-unscheduled-items ul {
+  scrollbar-color: rgb(245 158 11 / 45%) transparent;
+  scrollbar-width: thin;
+}
+
 @container planning-panel-content (min-width: 440px) {
   .planning-panel-body :where(.grid[class*="sm:grid-cols-2"], .grid[class*="sm:grid-cols-3"], .grid[class*="sm:grid-cols-4"]) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -531,6 +540,11 @@ table tbody tr {
 @keyframes planning-panel-enter {
   from { opacity: 0; transform: translateX(12px); }
   to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes planning-tray-enter {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @media (prefers-reduced-motion: reduce) {

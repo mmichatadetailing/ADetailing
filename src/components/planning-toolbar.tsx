@@ -27,7 +27,7 @@ export function PlanningToolbar({
   teamPlanning, members, memberFilter, sourceFilter, statusFilter,
   onMemberChange, onSourceChange, onStatusChange, onResetFilters,
   googleEnabled, googleConnected, googleLoading, googleError, googleCount, googleSyncedAt, onSync,
-  conflictCount, onConflict, unscheduledCount, onUnscheduled,
+  conflictCount, onConflict, unscheduledCount, unscheduledExpanded, onUnscheduled,
 }: {
   title: string;
   view: CalendarView;
@@ -55,6 +55,7 @@ export function PlanningToolbar({
   conflictCount: number;
   onConflict: () => void;
   unscheduledCount: number;
+  unscheduledExpanded: boolean;
   onUnscheduled: () => void;
 }) {
   const [panel, setPanel] = useState<"filters" | "help" | null>(null);
@@ -162,7 +163,7 @@ export function PlanningToolbar({
             ) : <Link href="/parametres#integrations" className="focus-ring inline-flex min-h-7 items-center gap-1 rounded-md px-1 text-sky-700 hover:bg-sky-50"><Link2 className="size-3" /> Connecter Google</Link>
           )}
           {conflictCount > 0 && <button type="button" className="focus-ring inline-flex min-h-7 items-center gap-1 rounded-md bg-red-50 px-2 font-semibold text-red-700 hover:bg-red-100" onClick={onConflict} title="Aller au premier conflit"><AlertTriangle className="size-3" /> {conflictCount} conflit(s)</button>}
-          {unscheduledCount > 0 && <button type="button" className="focus-ring inline-flex min-h-7 items-center gap-1 rounded-md px-1 text-amber-800 hover:bg-amber-50" onClick={onUnscheduled}><CalendarPlus2 className="size-3" /> {unscheduledCount} à planifier</button>}
+          {unscheduledCount > 0 && <button type="button" className={cn("focus-ring inline-flex min-h-7 items-center gap-1 rounded-md px-1 text-amber-800 hover:bg-amber-50", unscheduledExpanded && "bg-amber-50")} onClick={onUnscheduled} aria-expanded={unscheduledExpanded} aria-controls="planning-unscheduled"><CalendarPlus2 className="size-3" /> {unscheduledCount} à planifier</button>}
         </div>
         <Button ref={helpRef} size="icon" variant="ghost" className="size-7 min-h-7 shrink-0" aria-label="Légende et raccourcis" title="Légende et raccourcis" aria-expanded={panel === "help"} aria-controls={panel === "help" ? panelId : undefined} onClick={() => setPanel((current) => current === "help" ? null : "help")}><HelpCircle className="size-4" /></Button>
       </div>

@@ -7,10 +7,8 @@ import interactionPlugin, { type EventResizeDoneArg } from "@fullcalendar/intera
 import FullCalendar from "@fullcalendar/react";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import {
-  CalendarPlus2,
   Clock3,
   ExternalLink,
-  GripVertical,
   MapPin,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -22,7 +20,8 @@ import { PlanningToolbar } from "@/components/planning-toolbar";
 import { PlanningDatePicker } from "@/components/planning-date-picker";
 import { PlanningEventEditor } from "@/components/planning-event-editor";
 import { PlanningSidePanel } from "@/components/planning-side-panel";
-import { planningDragType, TeamPlanningTimeline } from "@/components/team-planning-timeline";
+import { PlanningUnscheduledTray } from "@/components/planning-unscheduled-tray";
+import { TeamPlanningTimeline } from "@/components/team-planning-timeline";
 import { Card, CardContent } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
@@ -118,6 +117,7 @@ export default function PlanningPage() {
   const [memberFilter, setMemberFilter] = useState("all");
   const [sourceFilter, setSourceFilter] = useState<PlanningSourceFilter>("all");
   const [statusFilter, setStatusFilter] = useState<PlanningStatusFilter>("all");
+  const [unscheduledExpanded, setUnscheduledExpanded] = useState(false);
   const [googleEvents, setGoogleEvents] = useState<GooglePlanningEvent[]>([]);
   const [googleConnected, setGoogleConnected] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -129,6 +129,7 @@ export default function PlanningPage() {
   const calendarWasShown = useRef(false);
   const pendingCalendarScroll = useRef<string | null>(null);
   const preferencesReady = useRef(false);
+  const pendingUnscheduledFocus = useRef(false);
 
   const clearPanel = () => {
     setSelected(null);
@@ -207,12 +208,14 @@ export default function PlanningPage() {
           memberFilter?: string;
           sourceFilter?: PlanningSourceFilter;
           statusFilter?: PlanningStatusFilter;
+          unscheduledExpanded?: boolean;
         } | null;
         if (stored?.date && Number.isFinite(new Date(stored.date).getTime())) setSelectedDate(new Date(stored.date));
         if (isCalendarView(stored?.view)) setView(stored.view);
         if (stored?.memberFilter) setMemberFilter(stored.memberFilter);
         if (["all", "adetailing", "planning", "google"].includes(stored?.sourceFilter ?? "")) setSourceFilter(stored!.sourceFilter!);
         if (stored?.statusFilter === "all" || interventionStatuses.includes(stored?.statusFilter as InterventionStatus)) setStatusFilter(stored!.statusFilter!);
+        if (typeof stored?.unscheduledExpanded === "boolean") setUnscheduledExpanded(stored.unscheduledExpanded);
       } catch {
         window.localStorage.removeItem(PLANNING_PREFERENCES_KEY);
       } finally {
@@ -230,8 +233,9 @@ export default function PlanningPage() {
       memberFilter,
       sourceFilter,
       statusFilter,
+      unscheduledExpanded,
     }));
-  }, [memberFilter, selectedDate, sourceFilter, statusFilter, view]);
+  }, [memberFilter, selectedDate, sourceFilter, statusFilter, unscheduledExpanded, view]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -570,6 +574,12 @@ export default function PlanningPage() {
   const panelTitle = selected ? currentIntervention?.title ?? "Dossier prestation" : selectedGoogleEvent?.title ?? (planningEventEditor ? currentPlanningEvent?.title ?? "Nouvel événement" : "Nouvelle prestation");
   const panelDescription = selected ? "Rendez-vous · réalisation · facture · paiement" : selectedGoogleEvent ? `${selectedGoogleEvent.calendarName} · ${selectedGoogleEvent.accountEmail}` : planningEventEditor ? "Réunion, absence ou bloc horaire sans créer de prestation." : "Le créneau sélectionné est repris. Tout reste modifiable.";
   const showUnscheduled = unscheduled.length > 0 && (sourceFilter === "all" || sourceFilter === "adetailing");
+  const revealUnscheduled = () => {
+    pendingUnscheduledFocus.current = true;
+    setSourceFilter("all");
+    setStatusFilter("all");
+    setUnscheduledExpanded(true);
+  };
   const preferredScrollTime = useMemo(() => {
     const selectedKey = dateKey(selectedDate);
     const starts = [
@@ -602,6 +612,16 @@ export default function PlanningPage() {
     });
     return () => window.cancelAnimationFrame(frame);
   }, [fullCalendarView, preferredScrollTime, selectedDate, showUnscheduled, view]);
+
+  useEffect(() => {
+    if (!showUnscheduled || !unscheduledExpanded || !pendingUnscheduledFocus.current) return;
+    pendingUnscheduledFocus.current = false;
+    const frame = requestAnimationFrame(() => {
+      unscheduledRef.current?.scrollIntoView({ block: "nearest" });
+      unscheduledRef.current?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [showUnscheduled, unscheduledExpanded]);
 
   useEffect(() => {
     const container = calendarContainer.current;
@@ -650,39 +670,13 @@ export default function PlanningPage() {
         onSync={() => void loadGoogleEvents(true)}
         conflictCount={conflictCount}
         onConflict={jumpToFirstConflict}
-        unscheduledCount={showUnscheduled ? unscheduled.length : 0}
-        onUnscheduled={() => {
-          unscheduledRef.current?.scrollIntoView({ block: "start" });
-          unscheduledRef.current?.focus({ preventScroll: true });
-        }}
+        unscheduledCount={unscheduled.length}
+        unscheduledExpanded={showUnscheduled && unscheduledExpanded}
+        onUnscheduled={revealUnscheduled}
       />
 
-      <div className={cn("grid gap-5", showUnscheduled && !panelOpen ? "xl:grid-cols-[250px_minmax(0,1fr)]" : "grid-cols-1")}>
-        {showUnscheduled && <aside ref={unscheduledRef} tabIndex={-1} aria-label="Prestations à planifier" className={cn("scroll-mt-[calc(var(--app-header-height)+170px)] rounded-2xl", panelOpen && "xl:order-last")}>
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center gap-2"><CalendarPlus2 className="size-4 text-brand-500" /><h2 className="text-sm font-bold">{teamPlanning ? "Non planifiées" : "À planifier pour moi"}</h2></div>
-              <div className="mt-4 grid gap-2">
-                {unscheduled.map((item) => {
-                  const client = data.clients.find((entry) => entry.id === item.clientId);
-                  const vehicle = data.vehicles.find((entry) => entry.id === item.vehicleId);
-                  return (
-                    <button
-                      key={item.id}
-                      draggable={view === "timeline" && !panelOpen}
-                      type="button"
-                      onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData(planningDragType, JSON.stringify({ interventionId: item.id } satisfies MovePayload)); }}
-                      onClick={() => openIntervention(item)}
-                      className={cn("focus-ring surface-interactive rounded-xl border border-zinc-200 bg-white p-3 text-left shadow-sm", view === "timeline" && "cursor-grab active:cursor-grabbing")}
-                    >
-                      <div className="flex items-start gap-2"><GripVertical className="mt-0.5 size-3.5 text-zinc-400" /><div className="min-w-0"><p className="truncate text-xs font-bold text-zinc-900">{client?.company || `${client?.firstName ?? ""} ${client?.lastName ?? ""}`.trim()}</p><p className="mt-1 truncate text-[11px] text-zinc-500">{vehicle ? `${vehicle.make} ${vehicle.model}` : item.vehicleFormat || "Véhicule non renseigné"}</p><p className="mt-2 text-[10px] font-bold text-brand-600">{item.plannedDurationMinutes / 60} h · {item.workers.length || 1} pers.</p></div></div>
-                    </button>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        </aside>}
+      <div className="grid gap-4">
+        {showUnscheduled && <PlanningUnscheduledTray ref={unscheduledRef} interventions={unscheduled} clients={data.clients} vehicles={data.vehicles} members={data.team} expanded={unscheduledExpanded} canDrag={view === "timeline" && !panelOpen} teamPlanning={teamPlanning} onToggle={() => setUnscheduledExpanded((expanded) => !expanded)} onOpen={openIntervention} />}
 
         <div ref={calendarContainer} tabIndex={-1} aria-label="Calendrier" className="relative z-0 min-w-0">
           {view === "timeline" && (
