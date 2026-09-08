@@ -17,6 +17,12 @@
 - mode responsive/PWA minimal et données de démonstration persistantes ;
 - schéma Supabase, Auth, RLS, stockage privé et audit.
 
+## Planning : fiches latérales
+
+Les prestations, événements internes et événements Google s’ouvrent dans une fiche à droite du calendrier sur ordinateur, ou en plein écran avec un bouton de retour sur mobile. Les flèches de la fiche parcourent chronologiquement les événements de la période et des filtres affichés. Le calendrier reste monté pendant la consultation et l’enregistrement.
+
+Les brouillons sont protégés lors de la fermeture ou du changement de fiche et avant de recharger l’onglet. Chaque section conserve son propre état de saisie : enregistrer les détails ne valide pas un paiement en cours de saisie. Fermer l’édition masque les champs sans abandonner le brouillon. Les événements Google restent en lecture seule. Le déplacement à la souris est suspendu tant qu’une fiche est ouverte pour ne pas écraser son créneau en cours d’édition.
+
 ## À configurer
 
 - Supabase pour remplacer la persistance navigateur par PostgreSQL/Storage/Realtime ;

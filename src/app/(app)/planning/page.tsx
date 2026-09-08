@@ -21,9 +21,11 @@ import { PlanningSlotMenu } from "@/components/planning-slot-menu";
 import { PlanningToolbar } from "@/components/planning-toolbar";
 import { PlanningDatePicker } from "@/components/planning-date-picker";
 import { PlanningEventEditor } from "@/components/planning-event-editor";
+import { PlanningSidePanel } from "@/components/planning-side-panel";
 import { planningDragType, TeamPlanningTimeline } from "@/components/team-planning-timeline";
 import { Card, CardContent } from "@/components/ui/card";
 import { Modal } from "@/components/ui/modal";
+import { Button } from "@/components/ui/button";
 import { useWorkspace } from "@/components/workspace-provider";
 import { canViewTeamPlanning, filterPlanningForUser } from "@/lib/domain/planning";
 import { eventOverlapsRange, googlePlanningConflicts, googlePlanningPrefetchRange, googlePlanningRange } from "@/lib/domain/google-planning";
@@ -102,6 +104,14 @@ export default function PlanningPage() {
   const [selected, setSelected] = useState<Intervention | null>(null);
   const [selectedGoogleEvent, setSelectedGoogleEvent] = useState<GooglePlanningEvent | null>(null);
   const [planningEventEditor, setPlanningEventEditor] = useState<{ event?: PlanningEvent; start: Date; end?: Date; allDay?: boolean; memberId?: string; kind?: PlanningEventKind } | null>(null);
+  const [panelDirty, setPanelDirty] = useState(false);
+  const [panelBusy, setPanelBusy] = useState(false);
+  const [panelRevision, setPanelRevision] = useState(0);
+  const [pendingPanelAction, setPendingPanelAction] = useState<(() => void) | null>(null);
+  const panelTrigger = useRef<HTMLElement | null>(null);
+  const calendarContainer = useRef<HTMLDivElement | null>(null);
+  const panelOpen = Boolean(selected || selectedGoogleEvent || planningEventEditor || appointmentSlot);
+
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [view, setView] = useState<CalendarView>("timeline");
@@ -119,6 +129,34 @@ export default function PlanningPage() {
   const calendarWasShown = useRef(false);
   const pendingCalendarScroll = useRef<string | null>(null);
   const preferencesReady = useRef(false);
+
+  const clearPanel = () => {
+    setSelected(null);
+    setSelectedGoogleEvent(null);
+    setPlanningEventEditor(null);
+    setAppointmentSlot(null);
+    setPanelDirty(false);
+    setPanelBusy(false);
+  };
+  const attemptPanelAction = (action: () => void) => {
+    if (panelBusy) return toast.info("Veuillez attendre la fin de l’enregistrement.");
+    if (panelDirty) setPendingPanelAction(() => action);
+    else action();
+  };
+  const replacePanel = (open: () => void) => attemptPanelAction(() => {
+    if (!panelOpen && document.activeElement instanceof HTMLElement) panelTrigger.current = document.activeElement;
+    clearPanel();
+    setPanelRevision((revision) => revision + 1);
+    open();
+  });
+  const closePanel = () => attemptPanelAction(() => {
+    clearPanel();
+    requestAnimationFrame(() => {
+      const target = panelTrigger.current;
+      if (target?.isConnected) target.focus({ preventScroll: true });
+      else calendarContainer.current?.focus({ preventScroll: true });
+    });
+  });
 
   const teamPlanning = canViewTeamPlanning(workspace?.role, mode === "demo");
   const currentUserId = workspace?.userId ?? data.team[0]?.id;
@@ -199,7 +237,7 @@ export default function PlanningPage() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.ctrlKey || event.metaKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
-      if (target?.matches("input, textarea, select, [contenteditable='true']") || document.querySelector("[role='dialog'], [aria-label='Filtres du planning'], [aria-label='Aide du planning']")) return;
+      if (target?.closest("[data-planning-panel]") || target?.matches("input, textarea, select, [contenteditable='true']") || document.querySelector("[role='dialog'], [aria-label='Filtres du planning'], [aria-label='Aide du planning']")) return;
       if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
         event.preventDefault();
         navigatePeriod(event.key === "ArrowLeft" ? -1 : 1);
@@ -371,7 +409,7 @@ export default function PlanningPage() {
     start: event.startAt,
     end: event.endAt,
     allDay: event.allDay,
-    editable: teamPlanning || (event.memberIds.length === 1 && event.memberIds[0] === currentUserId),
+    editable: !panelOpen && (teamPlanning || (event.memberIds.length === 1 && event.memberIds[0] === currentUserId)),
     backgroundColor: internalPlanningConflicts.planningEventIds.has(event.id) ? "#fef2f2" : `${event.color ?? "#8b5cf6"}1c`,
     borderColor: internalPlanningConflicts.planningEventIds.has(event.id) ? "#ef4444" : event.color ?? "#8b5cf6",
     textColor: "#27223a",
@@ -390,7 +428,7 @@ export default function PlanningPage() {
     textColor: "#0c4a6e",
     classNames: event.busy ? ["google-calendar-event"] : ["google-calendar-event", "opacity-70"],
     extendedProps: { source: "google" },
-  }))], [currentUserId, data.clients, filteredGoogleEvents, filteredPlanningEvents, filteredScheduled, googleConflictIds, internalPlanningConflicts.planningEventIds, planningMembers, teamPlanning]);
+  }))], [currentUserId, data.clients, filteredGoogleEvents, filteredPlanningEvents, filteredScheduled, googleConflictIds, internalPlanningConflicts.planningEventIds, panelOpen, planningMembers, teamPlanning]);
 
   const moveIntervention = (payload: MovePayload, targetMemberId: string, start: Date, durationMinutes?: number) => {
     const intervention = visibleInterventions.find((item) => item.id === payload.interventionId);
@@ -486,17 +524,28 @@ export default function PlanningPage() {
 
   const createFromSlot = (kind: "appointment" | PlanningEventKind) => {
     if (!slot) return;
-    if (kind === "appointment") setAppointmentSlot(slot);
-    else setPlanningEventEditor({ start: slot.start, end: slot.end, allDay: slot.allDay, memberId: slot.memberId, kind });
     closeSlot();
+    replacePanel(() => {
+      if (kind === "appointment") setAppointmentSlot(slot);
+      else setPlanningEventEditor({ start: slot.start, end: slot.end, allDay: slot.allDay, memberId: slot.memberId, kind });
+    });
   };
 
   const openIntervention = (intervention: Intervention) => {
-    setEditOnOpen(false);
-    setSelected(intervention);
+    if (selected?.id === intervention.id) return;
+    replacePanel(() => { setEditOnOpen(false); setSelected(intervention); });
+  };
+  const openPlanningEvent = (event: PlanningEvent) => {
+    if (planningEventEditor?.event?.id === event.id) return;
+    replacePanel(() => setPlanningEventEditor({ event, start: new Date(event.startAt) }));
+  };
+  const openGoogleEvent = (event: GooglePlanningEvent) => {
+    if (selectedGoogleEvent?.id === event.id) return;
+    replacePanel(() => setSelectedGoogleEvent(event));
   };
 
   const openCreatedIntervention = (id: string) => {
+    clearPanel();
     const intervention = useDemoStore.getState().interventions.find((item) => item.id === id);
     if (intervention) {
       setEditOnOpen(true);
@@ -508,6 +557,18 @@ export default function PlanningPage() {
   };
 
   const fullCalendarView = fullCalendarViewId(view);
+  const panelItems = [
+    ...filteredScheduled.map((item) => ({ key: `intervention:${item.id}`, start: item.startAt!, end: item.endAt!, open: () => openIntervention(item) })),
+    ...filteredPlanningEvents.map((item) => ({ key: `planning:${item.id}`, start: item.startAt, end: item.endAt, open: () => openPlanningEvent(item) })),
+    ...filteredGoogleEvents.map((item) => ({ key: `google:${item.id}`, start: item.start, end: item.end, open: () => openGoogleEvent(item) })),
+  ].filter((item) => eventOverlapsRange(item.start, item.end, googleRange))
+    .sort((left, right) => new Date(left.start).getTime() - new Date(right.start).getTime() || left.key.localeCompare(right.key));
+  const panelKey = selected ? `intervention:${selected.id}` : selectedGoogleEvent ? `google:${selectedGoogleEvent.id}` : planningEventEditor?.event ? `planning:${planningEventEditor.event.id}` : appointmentSlot ? "new-appointment" : "new-event";
+  const panelIndex = panelItems.findIndex((item) => item.key === panelKey);
+  const currentIntervention = data.interventions.find((item) => item.id === selected?.id);
+  const currentPlanningEvent = data.planningEvents?.find((item) => item.id === planningEventEditor?.event?.id);
+  const panelTitle = selected ? currentIntervention?.title ?? "Dossier prestation" : selectedGoogleEvent?.title ?? (planningEventEditor ? currentPlanningEvent?.title ?? "Nouvel événement" : "Nouvelle prestation");
+  const panelDescription = selected ? "Rendez-vous · réalisation · facture · paiement" : selectedGoogleEvent ? `${selectedGoogleEvent.calendarName} · ${selectedGoogleEvent.accountEmail}` : planningEventEditor ? "Réunion, absence ou bloc horaire sans créer de prestation." : "Le créneau sélectionné est repris. Tout reste modifiable.";
   const showUnscheduled = unscheduled.length > 0 && (sourceFilter === "all" || sourceFilter === "adetailing");
   const preferredScrollTime = useMemo(() => {
     const selectedKey = dateKey(selectedDate);
@@ -542,8 +603,23 @@ export default function PlanningPage() {
     return () => window.cancelAnimationFrame(frame);
   }, [fullCalendarView, preferredScrollTime, selectedDate, showUnscheduled, view]);
 
+  useEffect(() => {
+    const container = calendarContainer.current;
+    if (!container) return;
+    let frame = 0;
+    let previousWidth = -1;
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry || entry.contentRect.width === previousWidth) return;
+      previousWidth = entry.contentRect.width;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => calendarRef.current?.getApi().updateSize());
+    });
+    observer.observe(container);
+    return () => { observer.disconnect(); cancelAnimationFrame(frame); };
+  }, []);
+
   return (
-    <div className="space-y-4">
+    <div className="planning-workspace space-y-4" data-panel-open={panelOpen}>
       <h1 className="text-lg font-extrabold tracking-tight text-slate-900">{teamPlanning ? "Planning de l’équipe" : "Mon planning"}</h1>
       <PlanningToolbar
         title={viewTitle(selectedDate, view)}
@@ -581,8 +657,8 @@ export default function PlanningPage() {
         }}
       />
 
-      <div className={cn("grid gap-5", showUnscheduled ? "xl:grid-cols-[250px_minmax(0,1fr)]" : "grid-cols-1")}>
-        {showUnscheduled && <aside ref={unscheduledRef} tabIndex={-1} aria-label="Prestations à planifier" className="scroll-mt-[calc(var(--app-header-height)+170px)] rounded-2xl">
+      <div className={cn("grid gap-5", showUnscheduled && !panelOpen ? "xl:grid-cols-[250px_minmax(0,1fr)]" : "grid-cols-1")}>
+        {showUnscheduled && <aside ref={unscheduledRef} tabIndex={-1} aria-label="Prestations à planifier" className={cn("scroll-mt-[calc(var(--app-header-height)+170px)] rounded-2xl", panelOpen && "xl:order-last")}>
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center gap-2"><CalendarPlus2 className="size-4 text-brand-500" /><h2 className="text-sm font-bold">{teamPlanning ? "Non planifiées" : "À planifier pour moi"}</h2></div>
@@ -593,7 +669,7 @@ export default function PlanningPage() {
                   return (
                     <button
                       key={item.id}
-                      draggable={view === "timeline"}
+                      draggable={view === "timeline" && !panelOpen}
                       type="button"
                       onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData(planningDragType, JSON.stringify({ interventionId: item.id } satisfies MovePayload)); }}
                       onClick={() => openIntervention(item)}
@@ -608,7 +684,7 @@ export default function PlanningPage() {
           </Card>
         </aside>}
 
-        <div className="relative z-0 min-w-0">
+        <div ref={calendarContainer} tabIndex={-1} aria-label="Calendrier" className="relative z-0 min-w-0">
           {view === "timeline" && (
             <TeamPlanningTimeline
               members={filteredMembers}
@@ -624,9 +700,11 @@ export default function PlanningPage() {
               dayWidth={1080}
               showDayLabels={false}
               onSelect={openIntervention}
-              onSelectGoogle={setSelectedGoogleEvent}
-              onSelectPlanningEvent={(event) => setPlanningEventEditor({ event, start: new Date(event.startAt) })}
+              onSelectGoogle={openGoogleEvent}
+              onSelectPlanningEvent={openPlanningEvent}
               onMove={moveIntervention}
+              canDrag={!panelOpen}
+              activeEventKey={panelOpen ? panelKey : undefined}
               onEmptySlot={chooseEmptySlot}
             />
           )}
@@ -644,9 +722,9 @@ export default function PlanningPage() {
                   weekends
                   allDaySlot
                   nowIndicator
-                  editable
-                  eventStartEditable
-                  eventDurationEditable
+                  editable={!panelOpen}
+                  eventStartEditable={!panelOpen}
+                  eventDurationEditable={!panelOpen}
                   selectable
                   selectMinDistance={5}
                   selectLongPressDelay={350}
@@ -660,17 +738,21 @@ export default function PlanningPage() {
                   height="auto"
                   dayMaxEvents={3}
                   events={events}
+                  eventClassNames={(info) => {
+                    const source = info.event.extendedProps.source === "adetailing" ? "intervention" : info.event.extendedProps.source;
+                    return panelOpen && panelKey === `${source}:${info.event.id}` ? ["planning-current-event"] : [];
+                  }}
                   eventTimeFormat={{ hour: "2-digit", minute: "2-digit", hour12: false }}
                   slotLabelFormat={{ hour: "2-digit", minute: "2-digit", hour12: false }}
                   eventClick={(info: EventClickArg) => {
                     if (info.event.extendedProps.source === "google") {
                       const googleEvent = googleEvents.find((event) => event.id === info.event.id);
-                      if (googleEvent) setSelectedGoogleEvent(googleEvent);
+                      if (googleEvent) openGoogleEvent(googleEvent);
                       return;
                     }
                     if (info.event.extendedProps.source === "planning") {
                       const planningEvent = visiblePlanningEvents.find((event) => event.id === info.event.id);
-                      if (planningEvent) setPlanningEventEditor({ event: planningEvent, start: new Date(planningEvent.startAt) });
+                      if (planningEvent) openPlanningEvent(planningEvent);
                       return;
                     }
                     const intervention = visibleInterventions.find((item) => item.id === info.event.id);
@@ -709,10 +791,23 @@ export default function PlanningPage() {
         />
       )}
 
+      {slot && <PlanningSlotMenu key={`${slot.start.toISOString()}-${slot.end.toISOString()}`} slot={slot} members={planningMembers} canAssignTeam={teamPlanning} unscheduled={unscheduled} clients={data.clients} onChange={setSlot} onCreate={createFromSlot} onSchedule={scheduleInSlot} onClose={closeSlot} />}
+
+      {panelOpen && <PlanningSidePanel
+        title={panelTitle}
+        description={panelDescription}
+        contentKey={`${panelKey}:${panelRevision}`}
+        dirty={panelDirty}
+        busy={panelBusy}
+        onClose={closePanel}
+        onPrevious={panelIndex > 0 ? panelItems[panelIndex - 1]?.open : undefined}
+        onNext={panelIndex >= 0 ? panelItems[panelIndex + 1]?.open : undefined}
+      >
       {planningEventEditor && currentUserId && (
         <PlanningEventEditor
-          key={planningEventEditor.event?.id ?? planningEventEditor.start.toISOString()}
-          event={planningEventEditor.event}
+          key={`${panelRevision}:${planningEventEditor.event?.id ?? planningEventEditor.start.toISOString()}`}
+          embedded
+          event={currentPlanningEvent ?? planningEventEditor.event}
           initialStart={planningEventEditor.start}
           initialEnd={planningEventEditor.end}
           initialAllDay={planningEventEditor.allDay}
@@ -722,29 +817,25 @@ export default function PlanningPage() {
           members={planningMembers}
           canAssignTeam={teamPlanning}
           canEdit={!planningEventEditor.event || teamPlanning || (planningEventEditor.event.memberIds.length === 1 && planningEventEditor.event.memberIds[0] === currentUserId)}
-          onSaved={() => { if (!planningEventEditor.event) { setSourceFilter("all"); setMemberFilter("all"); } }}
-          onClose={() => setPlanningEventEditor(null)}
+          onDirtyChange={setPanelDirty}
+          onSaved={(id) => {
+            if (!planningEventEditor.event) {
+              setSourceFilter("all");
+              setMemberFilter("all");
+              const event = useDemoStore.getState().planningEvents.find((item) => item.id === id);
+              if (event) { setPanelDirty(false); setPlanningEventEditor({ event, start: new Date(event.startAt) }); }
+            }
+          }}
+          onClose={closePanel}
+          onDeleted={clearPanel}
         />
       )}
 
-      {slot && <PlanningSlotMenu key={`${slot.start.toISOString()}-${slot.end.toISOString()}`} slot={slot} members={planningMembers} canAssignTeam={teamPlanning} unscheduled={unscheduled} clients={data.clients} onChange={setSlot} onCreate={createFromSlot} onSchedule={scheduleInSlot} onClose={closeSlot} />}
-
-      <Modal open={Boolean(appointmentSlot)} onClose={() => setAppointmentSlot(null)} title="Nouvelle prestation" description="Le créneau du planning est repris. Tout reste modifiable.">
-        {appointmentSlot && <AppointmentForm initialSlot={appointmentSlot} allowedMemberIds={planningMembers.map((member) => member.id)} close={() => setAppointmentSlot(null)} onCreated={openCreatedIntervention} />}
-      </Modal>
-
-      <Modal open={Boolean(selected)} onClose={() => setSelected(null)} title={selected?.title ?? "Dossier prestation"} description="Rendez-vous · réalisation · facture · paiement" className="sm:max-w-5xl">
-        {selected && <InterventionDetail key={`${selected.id}-${editOnOpen}`} interventionId={selected.id} startEditing={editOnOpen} />}
-      </Modal>
-
-      <Modal
-        open={Boolean(selectedGoogleEvent)}
-        onClose={() => setSelectedGoogleEvent(null)}
-        title={selectedGoogleEvent?.title ?? "Événement Google"}
-        description={selectedGoogleEvent ? `${selectedGoogleEvent.calendarName} · ${selectedGoogleEvent.accountEmail}` : undefined}
-      >
+      {appointmentSlot && <AppointmentForm key={panelRevision} initialSlot={appointmentSlot} allowedMemberIds={planningMembers.map((member) => member.id)} close={clearPanel} onCreated={openCreatedIntervention} onDirtyChange={setPanelDirty} onBusyChange={setPanelBusy} />}
+      {selected && <InterventionDetail key={`${selected.id}-${editOnOpen}`} interventionId={selected.id} startEditing={editOnOpen} onDirtyChange={setPanelDirty} />}
         {selectedGoogleEvent && (
           <div className="grid gap-4">
+            <p className="rounded-xl border border-sky-100 bg-white p-3 text-sm text-slate-600">Événement synchronisé en lecture seule. Modifiez-le dans Google Calendar, puis actualisez la synchronisation.</p>
             <div className="rounded-2xl border border-sky-100 bg-sky-50/80 p-4 text-sm text-sky-950">
               <p className="flex items-start gap-2"><Clock3 className="mt-0.5 size-4 shrink-0 text-sky-600" /><span>{selectedGoogleEvent.allDay ? "Toute la journée" : `${formatDate(selectedGoogleEvent.start, { weekday: "long", day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit" })} — ${formatDate(selectedGoogleEvent.end, { hour: "2-digit", minute: "2-digit" })}`}</span></p>
               {selectedGoogleEvent.location && <p className="mt-3 flex items-start gap-2"><MapPin className="mt-0.5 size-4 shrink-0 text-sky-600" /><span>{selectedGoogleEvent.location}</span></p>}
@@ -762,6 +853,18 @@ export default function PlanningPage() {
             )}
           </div>
         )}
+      </PlanningSidePanel>}
+
+      <Modal open={Boolean(pendingPanelAction)} onClose={() => setPendingPanelAction(null)} title="Modifications non enregistrées" description="Des champs ont été modifiés dans cette fiche. Voulez-vous quitter sans les enregistrer ?">
+        <div className="flex flex-wrap justify-end gap-3">
+          <Button variant="secondary" onClick={() => setPendingPanelAction(null)}>Continuer l’édition</Button>
+          <Button variant="danger" onClick={() => {
+            const action = pendingPanelAction;
+            setPendingPanelAction(null);
+            setPanelDirty(false);
+            action?.();
+          }}>Abandonner les modifications</Button>
+        </div>
       </Modal>
     </div>
   );

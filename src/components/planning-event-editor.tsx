@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
+import { useDraftChanges } from "@/components/use-draft-changes";
 import type { PlanningEvent, PlanningEventKind, TeamMember } from "@/lib/domain/types";
 import { useDemoStore } from "@/lib/demo/store";
 
@@ -53,6 +54,9 @@ export function PlanningEventEditor({
   canEdit,
   onSaved,
   onClose,
+  embedded = false,
+  onDirtyChange,
+  onDeleted,
 }: {
   event?: PlanningEvent;
   initialStart: Date;
@@ -64,8 +68,11 @@ export function PlanningEventEditor({
   members: TeamMember[];
   canAssignTeam: boolean;
   canEdit: boolean;
-  onSaved?: () => void;
+  onSaved?: (id: string) => void;
   onClose: () => void;
+  embedded?: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
+  onDeleted?: () => void;
 }) {
   const data = useDemoStore();
   const defaultEnd = initialEnd ?? new Date(initialStart.getTime() + 60 * 60_000);
@@ -78,6 +85,7 @@ export function PlanningEventEditor({
   const [memberIds, setMemberIds] = useState<string[]>(event?.memberIds ?? [canAssignTeam ? initialMemberId ?? currentUserId : currentUserId]);
   const [location, setLocation] = useState(event?.location ?? "");
   const [notes, setNotes] = useState(event?.notes ?? "");
+  const { markSaved } = useDraftChanges({ event: { kind, title, allDay, start, end, memberIds, location, notes } }, onDirtyChange);
 
   const changeAllDay = (checked: boolean) => {
     setAllDay(checked);
@@ -111,22 +119,23 @@ export function PlanningEventEditor({
     }
     if (new Date(endAt) <= new Date(startAt)) return toast.error("L’heure de fin doit être après le début.");
     const input = { kind, title, startAt, endAt, allDay, memberIds, location, notes, color: kindColors[kind] };
-    if (event) data.updatePlanningEvent(event.id, input);
-    else data.addPlanningEvent(input);
+    let id: string;
+    if (event) { data.updatePlanningEvent(event.id, input); id = event.id; }
+    else id = data.addPlanningEvent(input);
+    markSaved(["event"]);
     toast.success(event ? "Événement modifié" : "Événement ajouté au planning");
-    onSaved?.();
-    onClose();
+    onSaved?.(id);
+    if (!embedded) onClose();
   };
 
   const remove = () => {
     if (!event || !window.confirm(`Supprimer « ${event.title} » du planning ?`)) return;
     data.removePlanningEvent(event.id);
     toast.success("Événement supprimé");
-    onClose();
+    (onDeleted ?? onClose)();
   };
 
-  return (
-    <Modal open onClose={onClose} title={event ? (canEdit ? "Modifier l’événement" : "Détail de l’événement") : "Ajouter un événement"} description="Réunion, absence ou bloc horaire sans créer de prestation.">
+  const form = (
       <form onSubmit={submit} className="grid gap-4">
         <fieldset disabled={!canEdit} className="grid gap-4 disabled:opacity-70">
         <div className="grid gap-4 sm:grid-cols-2">
@@ -183,6 +192,6 @@ export function PlanningEventEditor({
           <div className="flex gap-2"><Button type="button" variant="ghost" onClick={onClose}>{canEdit ? "Annuler" : "Fermer"}</Button>{canEdit && <Button type="submit"><CalendarClock className="size-4" /> {event ? "Enregistrer" : "Ajouter"}</Button>}</div>
         </div>
       </form>
-    </Modal>
   );
+  return embedded ? form : <Modal open onClose={onClose} title={event ? (canEdit ? "Modifier l’événement" : "Détail de l’événement") : "Ajouter un événement"} description="Réunion, absence ou bloc horaire sans créer de prestation.">{form}</Modal>;
 }

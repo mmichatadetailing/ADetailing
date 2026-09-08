@@ -102,7 +102,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const displayName = workspace ? `${workspace.firstName} ${workspace.lastName}`.trim() : "Melvyn";
   const initials = workspace ? `${workspace.firstName[0] ?? ""}${workspace.lastName[0] ?? ""}`.toUpperCase() : "MM";
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[250px_minmax(0,1fr)]">
+    <div id="app-shell" className="min-h-screen lg:grid lg:grid-cols-[250px_minmax(0,1fr)]">
       <aside className="glass fixed inset-y-0 left-0 z-40 hidden w-[250px] border-r border-white/[0.06] shadow-[8px_0_35px_rgba(78,64,120,.04)] lg:flex lg:flex-col">
         <div className="flex h-[76px] items-center border-b border-white/[0.06] px-6"><Brand /></div>
         <Navigation />

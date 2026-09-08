@@ -106,6 +106,8 @@ export function TeamPlanningTimeline({
   onEmptySlot,
   dayWidth = DEFAULT_DAY_WIDTH,
   showDayLabels = true,
+  canDrag = true,
+  activeEventKey,
 }: {
   members: TeamMember[];
   interventions: Intervention[];
@@ -124,6 +126,8 @@ export function TeamPlanningTimeline({
   onEmptySlot: (memberId: string, start: Date, end?: Date) => void;
   dayWidth?: number;
   showDayLabels?: boolean;
+  canDrag?: boolean;
+  activeEventKey?: string;
 }) {
   const today = new Date();
   const timelineWidth = days.length * dayWidth;
@@ -256,7 +260,7 @@ export function TeamPlanningTimeline({
                         onEmptySlot(member.id, dateFromPointer(event, day));
                       }}
                       onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }}
-                      onDrop={(event) => { event.preventDefault(); const payload = readDrag(event); if (payload) onMove(payload, member.id, dateFromPointer(event, day)); }}
+                      onDrop={(event) => { event.preventDefault(); const payload = readDrag(event); if (canDrag && payload) onMove(payload, member.id, dateFromPointer(event, day)); }}
                     >
                       {HOURS.map((hour) => <span key={hour} className="pointer-events-none absolute inset-y-0 border-l border-zinc-100" style={{ left: `${(hour - PLANNING_START_HOUR) / (PLANNING_END_HOUR - PLANNING_START_HOUR) * 100}%` }} />)}
                       {selectedPosition && selectedRange && <div className="pointer-events-none absolute inset-y-1 z-30 overflow-hidden rounded-xl border-2 border-brand-500 bg-orange-100/85 p-2 text-xs font-bold text-orange-900" style={{ left: `${selectedPosition.left}%`, width: `${selectedPosition.width}%` }}>{formatDate(selectedRange.start.toISOString(), { hour: "2-digit", minute: "2-digit" })} – {formatDate(selectedRange.end.toISOString(), { hour: "2-digit", minute: "2-digit" })}</div>}
@@ -269,6 +273,7 @@ export function TeamPlanningTimeline({
                           return (
                             <button
                               key={`${member.id}-${googleEvent.id}`}
+                              data-selected={activeEventKey === `google:${googleEvent.id}`}
                               type="button"
                               title={`${googleEvent.title} · ${googleEvent.calendarName}${googleEvent.location ? ` · ${googleEvent.location}` : ""}`}
                               onClick={(event) => { event.stopPropagation(); onSelectGoogle(googleEvent); }}
@@ -287,6 +292,7 @@ export function TeamPlanningTimeline({
                           return (
                             <button
                               key={`${member.id}-${planningEvent.id}`}
+                              data-selected={activeEventKey === `planning:${planningEvent.id}`}
                               type="button"
                               title={`${planningEvent.title} · ${planningKindLabels[planningEvent.kind]}`}
                               onClick={(event) => { event.stopPropagation(); onSelectPlanningEvent(planningEvent); }}
@@ -306,7 +312,8 @@ export function TeamPlanningTimeline({
                         return (
                           <button
                             key={`${member.id}-${intervention.id}`}
-                            draggable
+                            data-selected={activeEventKey === `intervention:${intervention.id}`}
+                            draggable={canDrag}
                             type="button"
                             title={`${client?.company || `${client?.firstName ?? ""} ${client?.lastName ?? ""}`.trim()} · ${intervention.title} · ${formatDate(intervention.startAt, { hour: "2-digit", minute: "2-digit" })}`}
                             onClick={(event) => { event.stopPropagation(); onSelect(intervention); }}

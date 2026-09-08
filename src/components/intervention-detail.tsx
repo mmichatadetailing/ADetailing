@@ -29,6 +29,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { Progress } from "@/components/ui/progress";
+import { useDraftChanges } from "@/components/use-draft-changes";
 import { grossMargin, hourlyMargin, paymentStatusForInvoice } from "@/lib/domain/calculations";
 import { getInterventionWorkflow, type WorkflowStepId } from "@/lib/domain/intervention-workflow";
 import { interventionStatusLabels, paymentStatusLabels } from "@/lib/domain/labels";
@@ -62,10 +63,11 @@ function hours(minutes: number) {
 
 type EditableLine = { id?: string; serviceId: string; label: string; quantity: number; revenueAllocated: number; revenueEuros: number; pricingRuleLabel?: string };
 
-export function InterventionDetail({ interventionId, startEditing = false }: { interventionId: string; startEditing?: boolean }) {
+export function InterventionDetail({ interventionId, startEditing = false, onDirtyChange }: { interventionId: string; startEditing?: boolean; onDirtyChange?: (dirty: boolean) => void }) {
   const data = useDemoStore();
   const current = data.interventions.find((item) => item.id === interventionId);
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const editButtonRef = useRef<HTMLButtonElement>(null);
   const [editing, setEditing] = useState(startEditing);
   const [photos, setPhotos] = useState<Array<{ name: string; size: number }>>([]);
   const initialDate = localDateParts(current?.startAt);
@@ -99,6 +101,24 @@ export function InterventionDetail({ interventionId, startEditing = false }: { i
   const [editingPaymentMethod, setEditingPaymentMethod] = useState("Carte");
   const [editingPaymentDate, setEditingPaymentDate] = useState(todayDateValue);
   const [confirmingPaymentId, setConfirmingPaymentId] = useState<string | null>(null);
+  const { markSaved } = useDraftChanges({
+    details: { title, clientId, vehicleId, vehicleFormat, startDate, startTime, plannedHours, address, notes, workerHours, items },
+    status,
+    actuals: { actualHours, productEuros, travelEuros, otherEuros, actualWorkerHours },
+    invoice: invoiceChoice,
+    payment: { amount: paymentEuros, method: paymentMethod, date: paymentDate },
+    paymentEdit: editingPaymentId ? { id: editingPaymentId, amount: editingPaymentEuros, method: editingPaymentMethod, date: editingPaymentDate } : null,
+  }, onDirtyChange);
+  const closePaymentEdit = () => {
+    setEditingPaymentId(null);
+    markSaved(["paymentEdit"], { paymentEdit: null });
+  };
+  const updateWorkflowStatus = (nextStatus: InterventionStatus, message?: string) => {
+    data.setInterventionStatus(interventionId, nextStatus);
+    setStatusDraft(nextStatus);
+    markSaved(["status"], { status: nextStatus });
+    if (message) toast.success(message);
+  };
 
   if (!current) return <p className="rounded-2xl border border-dashed border-zinc-200 p-8 text-center text-sm text-zinc-500">Cette prestation n’existe plus ou n’est pas accessible.</p>;
 
@@ -185,6 +205,8 @@ export function InterventionDetail({ interventionId, startEditing = false }: { i
       items: items.map((item) => ({ id: item.id, serviceId: item.serviceId || undefined, label: item.label.trim(), quantity: item.quantity, revenueAllocated: Math.round(item.revenueEuros * 100) })),
     });
     setEditing(false);
+    markSaved(["details", "status"]);
+    requestAnimationFrame(() => editButtonRef.current?.focus());
     toast.success("Prestation mise à jour");
   };
 
@@ -197,6 +219,9 @@ export function InterventionDetail({ interventionId, startEditing = false }: { i
       otherDirectCosts: Math.round(otherEuros * 100),
       workerMinutes: Object.fromEntries(Object.entries(actualWorkerHours).map(([id, value]) => [id, Math.round(value * 60)])),
     });
+    setStatusDraft("completed");
+    markSaved(["status"], { status: "completed" });
+    markSaved(["actuals"]);
     toast.success(current.status === "completed" ? "Temps et coûts enregistrés" : "Prestation terminée — elle peut maintenant être facturée");
   };
 
@@ -204,7 +229,7 @@ export function InterventionDetail({ interventionId, startEditing = false }: { i
     const selectedInvoice = eligibleInvoices.find((item) => item.id === invoiceChoice);
     if (!selectedInvoice) return toast.error("Sélectionnez une facture");
     data.linkInvoiceToIntervention(current.id, selectedInvoice.id);
-    setPaymentEuros(Math.max(selectedInvoice.totalIncludingTax - data.payments.filter((payment) => payment.invoiceId === selectedInvoice.id).reduce((sum, payment) => sum + payment.amount, 0), 0) / 100);
+    markSaved(["invoice"]);
     toast.success("Facture associée à la prestation");
   };
 
@@ -214,6 +239,7 @@ export function InterventionDetail({ interventionId, startEditing = false }: { i
     if (Math.round(amount * 100) > workflow.outstanding) return toast.error("Le paiement dépasse le solde restant");
     data.addPayment(invoice.id, Math.round(amount * 100), paymentMethod);
     setPaymentEuros(0);
+    markSaved(["payment"], { payment: { amount: 0, method: paymentMethod, date: paymentDate } });
     toast.success("Paiement enregistré — le chiffre d’affaires encaissé est mis à jour");
   };
 
@@ -225,6 +251,7 @@ export function InterventionDetail({ interventionId, startEditing = false }: { i
     if (!paymentDate) return toast.error("Sélectionnez la date du paiement");
     data.addInterventionPayment(current.id, Math.round(amount * 100), paymentMethod, paymentTimestamp(paymentDate));
     setPaymentEuros(0);
+    markSaved(["payment"], { payment: { amount: 0, method: paymentMethod, date: paymentDate } });
     toast.success("Paiement manuel enregistré — aucune facture n’est requise");
   };
 
@@ -235,6 +262,7 @@ export function InterventionDetail({ interventionId, startEditing = false }: { i
     setEditingPaymentEuros(payment.amount / 100);
     setEditingPaymentMethod(payment.method);
     setEditingPaymentDate(localDateParts(payment.paidAt).date);
+    markSaved(["paymentEdit"], { paymentEdit: { id: payment.id, amount: payment.amount / 100, method: payment.method, date: localDateParts(payment.paidAt).date } });
   };
 
   const saveManualPayment = () => {
@@ -242,21 +270,21 @@ export function InterventionDetail({ interventionId, startEditing = false }: { i
     const otherPayments = directPayments.filter((payment) => payment.id !== editingPaymentId).reduce((sum, payment) => sum + payment.amount, 0);
     if (otherPayments + Math.round(editingPaymentEuros * 100) > interventionTotal) return toast.error("Le paiement dépasse le montant total de la prestation");
     data.updateInterventionPayment(editingPaymentId, { amount: Math.round(editingPaymentEuros * 100), method: editingPaymentMethod, paidAt: paymentTimestamp(editingPaymentDate) });
-    setEditingPaymentId(null);
+    closePaymentEdit();
     toast.success("Paiement mis à jour");
   };
 
   const cancelPayment = (paymentId: string) => {
     data.removePayment(paymentId);
-    if (editingPaymentId === paymentId) setEditingPaymentId(null);
+    if (editingPaymentId === paymentId) closePaymentEdit();
     setConfirmingPaymentId(null);
     toast.success("Paiement annulé — la prestation est de nouveau à encaisser");
   };
 
   return (
-    <div className="space-y-5 text-[#172033]">
+    <div className="intervention-detail space-y-5 text-[#172033]">
       <div className="overflow-x-auto pb-1">
-        <div className="grid min-w-[620px] grid-cols-4 gap-2">
+        <div className="intervention-workflow grid min-w-[620px] grid-cols-4 gap-2">
           {workflow.steps.map((step, index) => {
             const Icon = stepIcons[step.id];
             return <div key={step.id} className={`relative rounded-2xl border p-3 ${step.state === "done" ? "border-emerald-200 bg-emerald-50" : step.state === "current" ? "border-brand-200 bg-brand-50 shadow-sm" : "border-black/[0.08] bg-zinc-50"}`}><div className="flex items-center gap-2"><span className={`grid size-7 place-items-center rounded-xl ${step.state === "done" ? "bg-emerald-600 text-on-accent" : step.state === "current" ? "bg-brand-500 text-on-accent" : "bg-ink-900 text-zinc-400 shadow-sm"}`}>{step.state === "done" ? <CheckCircle2 className="size-4" /> : <Icon className="size-3.5" />}</span><span className="text-[10px] font-bold tracking-wider text-zinc-500">0{index + 1}</span></div><p className="mt-3 text-xs font-bold">{step.label}</p><p className="mt-1 text-[10px] text-zinc-500">{step.detail}</p></div>;
@@ -264,12 +292,12 @@ export function InterventionDetail({ interventionId, startEditing = false }: { i
         </div>
       </div>
 
-      {workflow.isCancelled ? <div className="flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700"><AlertTriangle className="size-5" /> Cette prestation est annulée. Vous pouvez corriger son statut depuis Modifier.</div> : workflow.isComplete ? <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-800"><CheckCircle2 className="size-5" /> {workflow.paymentMode === "manual" ? "Prestation entièrement encaissée manuellement, sans facture." : "Parcours terminé : prestation réalisée, facturée et entièrement encaissée."}</div> : <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand-200 bg-gradient-to-r from-brand-50 to-violet-50 p-4"><div><p className="text-[10px] font-bold tracking-wider text-brand-600 uppercase">Prochaine étape</p><p className="mt-1 text-sm font-bold">{workflow.currentStep === "appointment" ? "Planifier le rendez-vous" : workflow.currentStep === "service" ? current.status === "in_progress" ? "Terminer et saisir les coûts réels" : "Préparer puis réaliser la prestation" : workflow.currentStep === "invoice" ? "Associer une facture ou valider un paiement manuel" : "Enregistrer l’encaissement"}</p></div>{workflow.currentStep === "appointment" && <Link href="/planning"><Button size="sm"><CalendarCheck2 className="size-4" /> Ouvrir le planning</Button></Link>}{workflow.currentStep === "service" && current.status === "scheduled" && <Button size="sm" onClick={() => { data.setInterventionStatus(current.id, "confirmed"); toast.success("Rendez-vous confirmé"); }}><CheckCircle2 className="size-4" /> Confirmer le rendez-vous</Button>}{workflow.currentStep === "service" && current.status === "confirmed" && <Button size="sm" onClick={() => { data.setInterventionStatus(current.id, "in_progress"); toast.success("Prestation démarrée"); }}><Play className="size-4" /> Démarrer</Button>}{workflow.currentStep === "invoice" && <Link href="/documents?tab=imports"><Button size="sm" variant="secondary"><FileUp className="size-4" /> Importer une facture</Button></Link>}</div>}
+      {workflow.isCancelled ? <div className="flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700"><AlertTriangle className="size-5" /> Cette prestation est annulée. Vous pouvez corriger son statut depuis Modifier.</div> : workflow.isComplete ? <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-800"><CheckCircle2 className="size-5" /> {workflow.paymentMode === "manual" ? "Prestation entièrement encaissée manuellement, sans facture." : "Parcours terminé : prestation réalisée, facturée et entièrement encaissée."}</div> : <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand-200 bg-gradient-to-r from-brand-50 to-violet-50 p-4"><div><p className="text-[10px] font-bold tracking-wider text-brand-600 uppercase">Prochaine étape</p><p className="mt-1 text-sm font-bold">{workflow.currentStep === "appointment" ? "Planifier le rendez-vous" : workflow.currentStep === "service" ? current.status === "in_progress" ? "Terminer et saisir les coûts réels" : "Préparer puis réaliser la prestation" : workflow.currentStep === "invoice" ? "Associer une facture ou valider un paiement manuel" : "Enregistrer l’encaissement"}</p></div>{workflow.currentStep === "appointment" && <Link href="/planning"><Button size="sm"><CalendarCheck2 className="size-4" /> Ouvrir le planning</Button></Link>}{workflow.currentStep === "service" && current.status === "scheduled" && <Button size="sm" onClick={() => updateWorkflowStatus("confirmed", "Rendez-vous confirmé")}><CheckCircle2 className="size-4" /> Confirmer le rendez-vous</Button>}{workflow.currentStep === "service" && current.status === "confirmed" && <Button size="sm" onClick={() => updateWorkflowStatus("in_progress", "Prestation démarrée")}><Play className="size-4" /> Démarrer</Button>}{workflow.currentStep === "invoice" && <Link href="/documents?tab=imports"><Button size="sm" variant="secondary"><FileUp className="size-4" /> Importer une facture</Button></Link>}</div>}
 
       <section className="rounded-2xl border border-black/[0.08] bg-ink-900 p-4 shadow-[0_8px_28px_rgba(47,40,72,.07)] sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div><div className="flex flex-wrap items-center gap-2"><StatusBadge status={current.status}>{interventionStatusLabels[current.status]}</StatusBadge>{vehicle ? <Badge>{vehicle.make} {vehicle.model}</Badge> : current.vehicleFormat ? <Badge>{current.vehicleFormat}</Badge> : null}{vehicle?.registration && <Badge>{vehicle.registration}</Badge>}</div><h3 className="mt-3 text-base font-bold">Informations du rendez-vous</h3><p className="mt-1 text-xs text-zinc-500">Client, créneau, équipe, contenu et montant prévu.</p></div>
-          <Button size="sm" variant="secondary" onClick={() => setEditing((value) => !value)}><Pencil className="size-3.5" /> {editing ? "Fermer l’édition" : "Tout modifier"}</Button>
+          <Button ref={editButtonRef} size="sm" variant="secondary" onClick={() => setEditing((value) => !value)}><Pencil className="size-3.5" /> {editing ? "Fermer l’édition" : "Tout modifier"}</Button>
         </div>
 
         {editing ? (
@@ -305,7 +333,7 @@ export function InterventionDetail({ interventionId, startEditing = false }: { i
         )}
       </section>
 
-      {(current.status === "confirmed" || current.status === "in_progress" || current.status === "completed") && <section className="rounded-2xl border border-black/[0.08] bg-ink-900 p-4 shadow-[0_8px_28px_rgba(47,40,72,.07)] sm:p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-base font-bold">Réalisation de la prestation</h3><p className="mt-1 text-xs text-zinc-500">Checklist, temps réellement passé et coûts directs.</p></div>{current.status === "confirmed" && <Button size="sm" onClick={() => data.setInterventionStatus(current.id, "in_progress")}><Play className="size-4" /> Démarrer</Button>}</div><div className="mt-5 rounded-xl border border-black/[0.06] bg-zinc-50 p-4"><div className="flex items-center justify-between gap-3"><p className="text-xs font-semibold">Checklist opérationnelle</p><p className="text-xs font-bold">{current.checklistDone}/{current.checklistTotal}</p></div><Progress value={current.checklistTotal ? current.checklistDone / current.checklistTotal * 100 : 0} className="mt-3" />{current.checklistTotal > 0 && <Button className="mt-3" size="sm" variant="secondary" disabled={current.checklistDone >= current.checklistTotal} onClick={() => data.incrementChecklist(current.id)}><CheckCircle2 className="size-3.5" /> Étape suivante</Button>}{current.checklistTotal === 0 && <p className="mt-2 text-[10px] text-zinc-500">Aucune checklist n’est associée à cette prestation.</p>}</div>{(current.status === "in_progress" || current.status === "completed") && <div className="mt-5"><div className="grid gap-4 sm:grid-cols-2"><Field label="Durée réelle (h)"><Input min="0" step="0.25" type="number" value={actualHours} onChange={(event) => setActualHours(Number(event.target.value))} /></Field>{current.workers.map((worker) => { const member = data.team.find((item) => item.id === worker.memberId); return <Field key={worker.memberId} label={`Temps de ${member?.firstName ?? "collaborateur"} (h)`}><Input min="0" step="0.25" type="number" value={actualWorkerHours[worker.memberId] ?? 0} onChange={(event) => setActualWorkerHours((state) => ({ ...state, [worker.memberId]: Number(event.target.value) }))} /></Field>; })}<Field label="Produits (€)"><Input min="0" step="0.01" type="number" value={productEuros} onChange={(event) => setProductEuros(Number(event.target.value))} /></Field><Field label="Déplacement (€)"><Input min="0" step="0.01" type="number" value={travelEuros} onChange={(event) => setTravelEuros(Number(event.target.value))} /></Field><Field label="Autres coûts (€)"><Input min="0" step="0.01" type="number" value={otherEuros} onChange={(event) => setOtherEuros(Number(event.target.value))} /></Field></div><div className="mt-4 flex flex-wrap items-center justify-between gap-3"><div className="flex gap-4 text-xs"><span>Marge <strong>{formatMoney(margin)}</strong></span><span>Marge/h <strong>{hourly === null ? "—" : `${formatMoney(hourly)}/h`}</strong></span></div><Button onClick={finishService}>{current.status === "completed" ? <Save className="size-4" /> : <Square className="size-4" />} {current.status === "completed" ? "Mettre à jour les temps et coûts" : "Terminer la prestation"}</Button></div></div>}</section>}
+      {(current.status === "confirmed" || current.status === "in_progress" || current.status === "completed") && <section className="rounded-2xl border border-black/[0.08] bg-ink-900 p-4 shadow-[0_8px_28px_rgba(47,40,72,.07)] sm:p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-base font-bold">Réalisation de la prestation</h3><p className="mt-1 text-xs text-zinc-500">Checklist, temps réellement passé et coûts directs.</p></div>{current.status === "confirmed" && <Button size="sm" onClick={() => updateWorkflowStatus("in_progress")}><Play className="size-4" /> Démarrer</Button>}</div><div className="mt-5 rounded-xl border border-black/[0.06] bg-zinc-50 p-4"><div className="flex items-center justify-between gap-3"><p className="text-xs font-semibold">Checklist opérationnelle</p><p className="text-xs font-bold">{current.checklistDone}/{current.checklistTotal}</p></div><Progress value={current.checklistTotal ? current.checklistDone / current.checklistTotal * 100 : 0} className="mt-3" />{current.checklistTotal > 0 && <Button className="mt-3" size="sm" variant="secondary" disabled={current.checklistDone >= current.checklistTotal} onClick={() => data.incrementChecklist(current.id)}><CheckCircle2 className="size-3.5" /> Étape suivante</Button>}{current.checklistTotal === 0 && <p className="mt-2 text-[10px] text-zinc-500">Aucune checklist n’est associée à cette prestation.</p>}</div>{(current.status === "in_progress" || current.status === "completed") && <div className="mt-5"><div className="grid gap-4 sm:grid-cols-2"><Field label="Durée réelle (h)"><Input min="0" step="0.25" type="number" value={actualHours} onChange={(event) => setActualHours(Number(event.target.value))} /></Field>{current.workers.map((worker) => { const member = data.team.find((item) => item.id === worker.memberId); return <Field key={worker.memberId} label={`Temps de ${member?.firstName ?? "collaborateur"} (h)`}><Input min="0" step="0.25" type="number" value={actualWorkerHours[worker.memberId] ?? 0} onChange={(event) => setActualWorkerHours((state) => ({ ...state, [worker.memberId]: Number(event.target.value) }))} /></Field>; })}<Field label="Produits (€)"><Input min="0" step="0.01" type="number" value={productEuros} onChange={(event) => setProductEuros(Number(event.target.value))} /></Field><Field label="Déplacement (€)"><Input min="0" step="0.01" type="number" value={travelEuros} onChange={(event) => setTravelEuros(Number(event.target.value))} /></Field><Field label="Autres coûts (€)"><Input min="0" step="0.01" type="number" value={otherEuros} onChange={(event) => setOtherEuros(Number(event.target.value))} /></Field></div><div className="mt-4 flex flex-wrap items-center justify-between gap-3"><div className="flex gap-4 text-xs"><span>Marge <strong>{formatMoney(margin)}</strong></span><span>Marge/h <strong>{hourly === null ? "—" : `${formatMoney(hourly)}/h`}</strong></span></div><Button onClick={finishService}>{current.status === "completed" ? <Save className="size-4" /> : <Square className="size-4" />} {current.status === "completed" ? "Mettre à jour les temps et coûts" : "Terminer la prestation"}</Button></div></div>}</section>}
 
       <section className={`rounded-2xl border p-4 sm:p-5 ${current.status === "completed" || invoice ? "border-violet-200 bg-violet-50/40" : "border-zinc-200 bg-zinc-50"}`}>
         <div className="flex items-start gap-3">
@@ -375,7 +403,7 @@ export function InterventionDetail({ interventionId, startEditing = false }: { i
                           <Button size="sm" variant="ghost" className="text-red-600" aria-label={`Marquer non payé le paiement du ${formatDate(payment.paidAt)}`} onClick={() => setConfirmingPaymentId(payment.id)}><Trash2 className="size-3.5" /> Marquer non payée</Button>
                         </div>
                       </div>
-                      {editingPaymentId === payment.id && <div className="mt-3 grid gap-3 border-t border-black/[0.06] pt-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto_auto]"><Field label="Montant (€)"><Input min="0.01" step="0.01" type="number" value={editingPaymentEuros} onChange={(event) => setEditingPaymentEuros(Number(event.target.value))} /></Field><Field label="Moyen de paiement"><Select value={editingPaymentMethod} onChange={(event) => setEditingPaymentMethod(event.target.value)}><option>Carte</option><option>Virement</option><option>Espèces</option><option>Chèque</option></Select></Field><Field label="Date du paiement"><Input type="date" max={todayDateValue()} value={editingPaymentDate} onChange={(event) => setEditingPaymentDate(event.target.value)} /></Field><Button className="self-end" onClick={saveManualPayment}><Save className="size-4" /> Enregistrer</Button><Button className="self-end" variant="ghost" onClick={() => setEditingPaymentId(null)}>Annuler</Button></div>}
+                      {editingPaymentId === payment.id && <div className="mt-3 grid gap-3 border-t border-black/[0.06] pt-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto_auto]"><Field label="Montant (€)"><Input min="0.01" step="0.01" type="number" value={editingPaymentEuros} onChange={(event) => setEditingPaymentEuros(Number(event.target.value))} /></Field><Field label="Moyen de paiement"><Select value={editingPaymentMethod} onChange={(event) => setEditingPaymentMethod(event.target.value)}><option>Carte</option><option>Virement</option><option>Espèces</option><option>Chèque</option></Select></Field><Field label="Date du paiement"><Input type="date" max={todayDateValue()} value={editingPaymentDate} onChange={(event) => setEditingPaymentDate(event.target.value)} /></Field><Button className="self-end" onClick={saveManualPayment}><Save className="size-4" /> Enregistrer</Button><Button className="self-end" variant="ghost" onClick={closePaymentEdit}>Annuler</Button></div>}
                       {confirmingPaymentId === payment.id && (
                         <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-red-200 pt-3">
                           <p className="text-red-700">Retirer ce paiement et repasser la prestation en « à encaisser » ?</p>

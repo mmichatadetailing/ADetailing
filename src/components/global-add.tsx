@@ -15,6 +15,7 @@ import { useWorkspace } from "./workspace-provider";
 import { Button } from "./ui/button";
 import { Field, Input, Select } from "./ui/field";
 import { Modal } from "./ui/modal";
+import { useDraftChanges } from "./use-draft-changes";
 
 type AddKind = "appointment" | "lead" | "client" | "expense";
 
@@ -148,11 +149,13 @@ function ClientForm({ close }: { close: () => void }) {
   );
 }
 
-export function AppointmentForm({ close, initialSlot, allowedMemberIds, onCreated }: {
+export function AppointmentForm({ close, initialSlot, allowedMemberIds, onCreated, onDirtyChange, onBusyChange }: {
   close: () => void;
   initialSlot?: PlanningSlot;
   allowedMemberIds?: string[];
   onCreated?: (id: string) => void;
+  onDirtyChange?: (dirty: boolean) => void;
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const data = useDemoStore();
   const addAppointment = useDemoStore((state) => state.addAppointment);
@@ -181,6 +184,7 @@ export function AppointmentForm({ close, initialSlot, allowedMemberIds, onCreate
   const [address, setAddress] = useState(initialClient ? [initialClient.address, initialClient.postalCode, initialClient.city].filter(Boolean).join(" ") : "");
   const [workerId, setWorkerId] = useState(slotDefaults?.memberId ?? activeTeam[0]?.id ?? "");
   const [submitting, setSubmitting] = useState(false);
+  useDraftChanges({ appointment: { clientId, vehicleFormat, vehicleCount, customPricingLabel, serviceId, serviceLabel, date, time, completed, durationHours, priceEuros, address, workerId } }, onDirtyChange);
   const pricingFor = (nextServiceId: string, nextVehicleFormat: string, nextVehicleCount: number, nextPriceLabel = customPricingLabel) => {
     const service = activeServices.find((item) => item.id === nextServiceId);
     return suggestedServicePrice(service, { vehicleFormat: nextVehicleFormat, vehicleCount: nextVehicleCount, priceLabel: nextPriceLabel });
@@ -242,6 +246,7 @@ export function AppointmentForm({ close, initialSlot, allowedMemberIds, onCreate
     const startAt = new Date(`${date}T${time}`).toISOString();
     const input = { clientId, vehicleFormat: vehicleFormat || undefined, serviceId: serviceId || undefined, title, startAt, plannedDurationMinutes: Math.round(durationHours * 60), workerIds: [workerId], address, revenueAllocated: Math.round(priceEuros * 100), completed };
     setSubmitting(true);
+    onBusyChange?.(true);
     try {
       const id = mode === "supabase" ? await createRecord({ kind: "appointment", ...input }) : addAppointment(input);
       toast.success("Prestation créée — complétez les informations puis validez");
@@ -252,6 +257,7 @@ export function AppointmentForm({ close, initialSlot, allowedMemberIds, onCreate
       toast.error(error instanceof Error ? error.message : "Création du rendez-vous impossible");
     } finally {
       setSubmitting(false);
+      onBusyChange?.(false);
     }
   };
 

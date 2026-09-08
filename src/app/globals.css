@@ -441,6 +441,98 @@ table tbody tr {
   }
 }
 
+/* The planning drawer has its own scroll; resizing it never remounts the calendar. */
+:root {
+  --planning-panel-width: clamp(380px, 36vw, 560px);
+}
+
+.planning-side-panel {
+  position: fixed;
+  z-index: 35;
+  top: calc(var(--app-header-height) + 12px);
+  right: 16px;
+  bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  width: var(--planning-panel-width);
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  background: #f8fafc;
+  box-shadow: 0 12px 40px rgb(47 40 72 / 12%);
+  animation: planning-panel-enter 160ms ease-out;
+}
+
+.planning-panel-body {
+  container: planning-panel-content / inline-size;
+  overflow-wrap: anywhere;
+}
+
+.planning-panel-body :where(.grid[class*="grid-cols-"]) {
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+
+.planning-panel-body :where([class*="col-span-"]) {
+  grid-column: 1 / -1;
+}
+
+.planning-panel-body :where(.grid > *, fieldset, input, select, textarea) {
+  min-width: 0;
+}
+
+.planning-panel-body .intervention-workflow {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.planning-panel-body :where(.flex.justify-between, .flex.shrink-0) {
+  flex-wrap: wrap;
+}
+
+.planning-panel-body button {
+  max-width: 100%;
+  white-space: normal;
+}
+
+.planning-workspace button[data-selected="true"],
+.planning-workspace .planning-current-event {
+  outline: 2px solid #f9734f;
+  outline-offset: 2px;
+}
+
+.planning-workspace[data-panel-open="true"] button[draggable="false"] {
+  cursor: pointer;
+}
+
+@container planning-panel-content (min-width: 440px) {
+  .planning-panel-body :where(.grid[class*="sm:grid-cols-2"], .grid[class*="sm:grid-cols-3"], .grid[class*="sm:grid-cols-4"]) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .planning-workspace[data-panel-open="true"] {
+    padding-right: calc(var(--planning-panel-width) + 12px);
+  }
+}
+
+@media (max-width: 1023px) {
+  .planning-side-panel {
+    z-index: 40;
+    inset: 0;
+    width: 100%;
+    border: 0;
+    border-radius: 0;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+@keyframes planning-panel-enter {
+  from { opacity: 0; transform: translateX(12px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
