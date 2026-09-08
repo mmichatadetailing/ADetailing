@@ -8,6 +8,7 @@ const teamMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/2
 const preinviteMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/202608030008_preinvite_team_members.sql"), "utf8");
 const googleCalendarMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/202608040012_google_calendar_user_connections.sql"), "utf8");
 const planningEventsMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/202609040013_planning_events.sql"), "utf8");
+const sharedGoogleEventsMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/202609080014_shared_google_calendar_events.sql"), "utf8");
 
 describe("migration de sécurité", () => {
   it("active la RLS et isole les données par organisation", () => {
@@ -90,5 +91,19 @@ describe("événements internes du planning", () => {
     expect(planningEventsMigration).toContain("'meeting', 'unavailability', 'absence', 'personal'");
     expect(planningEventsMigration).toContain("check (ends_at > starts_at)");
     expect(planningEventsMigration).toContain("cardinality(member_ids) > 0");
+  });
+});
+
+describe("événements Google partagés", () => {
+  it("partage uniquement la projection des événements et jamais les jetons OAuth", () => {
+    expect(sharedGoogleEventsMigration).toContain("create table if not exists public.google_calendar_shared_events");
+    expect(sharedGoogleEventsMigration).not.toContain("encrypted_refresh_token");
+    expect(sharedGoogleEventsMigration).toContain("owner_profile_id = auth.uid()");
+  });
+
+  it("autorise la vue équipe aux associés et administrateurs sans l’ouvrir aux employés", () => {
+    expect(sharedGoogleEventsMigration).toContain("membership.role in ('admin', 'partner')");
+    expect(sharedGoogleEventsMigration).toContain("public.can_view_team_google_events(organization_id)");
+    expect(sharedGoogleEventsMigration).toContain("enable row level security");
   });
 });

@@ -27,6 +27,8 @@ Les prestations sans créneau sont regroupées dans un tiroir horizontal repliab
 
 Les déplacements sont appliqués immédiatement puis enregistrés en arrière-plan. Une action « Annuler » reste disponible pendant huit secondes. Avant tout chevauchement avec une prestation, un événement interne ou un créneau Google occupé, une confirmation liste précisément les éléments concernés. Sur écran tactile, l’action « Déplacer » de la fiche permet de choisir la date, l’heure, la durée et le collaborateur sans utiliser le glisser-déposer.
 
+Les événements Google synchronisés sont projetés sur la ligne de leur propriétaire. Les associés et administrateurs voient les créneaux Google de tous les membres connectés, alors que les employés restent limités à leur propre calendrier. Les jetons OAuth et les liens privés Google ne sont jamais partagés entre comptes.
+
 ## À configurer
 
 - Supabase pour remplacer la persistance navigateur par PostgreSQL/Storage/Realtime ;

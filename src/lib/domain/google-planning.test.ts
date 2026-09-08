@@ -43,6 +43,14 @@ describe("google planning", () => {
     expect(conflicts.count).toBe(0);
   });
 
+  it("détecte les conflits des autres collaborateurs dans la vue équipe", () => {
+    const otherIntervention = { ...intervention, id: "i-2", workers: [{ memberId: "member-2", plannedMinutes: 120 }] };
+    const otherGoogleEvent = { ...googleEvent, id: "google-2", memberId: "member-2" };
+    const conflicts = googlePlanningConflicts([intervention, otherIntervention], [googleEvent, otherGoogleEvent]);
+    expect([...conflicts.interventionIds]).toEqual(["i-1", "i-2"]);
+    expect([...conflicts.googleEventIds]).toEqual(["google-1", "google-2"]);
+  });
+
   it("précharge la période précédente et la suivante", () => {
     const visible = googlePlanningRange(new Date(2026, 8, 4, 12), "day");
     const prefetched = googlePlanningPrefetchRange(new Date(2026, 8, 4, 12), "day");

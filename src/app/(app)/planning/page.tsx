@@ -385,16 +385,20 @@ export default function PlanningPage() {
     ),
     [memberFilter, sourceFilter, visiblePlanningEvents],
   );
+  const accessibleGoogleEvents = useMemo(
+    () => googleEvents.filter((event) => teamPlanning || event.memberId === currentUserId),
+    [currentUserId, googleEvents, teamPlanning],
+  );
   const filteredGoogleEvents = useMemo(
-    () => googleEvents.filter((event) =>
+    () => accessibleGoogleEvents.filter((event) =>
       (sourceFilter === "all" || sourceFilter === "google")
       && (memberFilter === "all" || event.memberId === memberFilter),
     ),
-    [googleEvents, memberFilter, sourceFilter],
+    [accessibleGoogleEvents, memberFilter, sourceFilter],
   );
   const visibleGoogleEvents = useMemo(
-    () => googleEvents.filter((event) => eventOverlapsRange(event.start, event.end, googleRange)),
-    [googleEvents, googleRange],
+    () => accessibleGoogleEvents.filter((event) => eventOverlapsRange(event.start, event.end, googleRange)),
+    [accessibleGoogleEvents, googleRange],
   );
 
   const conflictScheduled = useMemo(
@@ -411,8 +415,8 @@ export default function PlanningPage() {
     return sameWorker && new Date(item.startAt) < new Date(other.endAt) && new Date(other.startAt) < new Date(item.endAt);
   }).map((other) => [item.id, other.id] as const)), [conflictScheduled]);
   const googleConflicts = useMemo(
-    () => googlePlanningConflicts(conflictScheduled, visibleGoogleEvents, currentUserId),
-    [conflictScheduled, currentUserId, visibleGoogleEvents],
+    () => googlePlanningConflicts(conflictScheduled, visibleGoogleEvents, teamPlanning ? undefined : currentUserId),
+    [conflictScheduled, currentUserId, teamPlanning, visibleGoogleEvents],
   );
   const internalPlanningConflicts = useMemo(
     () => planningEventConflicts(conflictScheduled, conflictPlanningEvents, visibleGoogleEvents),
@@ -456,7 +460,7 @@ export default function PlanningPage() {
     extendedProps: { source: "planning" },
   })), ...filteredGoogleEvents.map((event) => ({
     id: event.id,
-    title: `Google · ${event.title}`,
+    title: `Google · ${teamPlanning && event.ownerName && event.ownerName !== "Moi" ? `${event.ownerName} · ` : ""}${event.title}`,
     start: event.start,
     end: event.end,
     allDay: event.allDay,
@@ -528,7 +532,7 @@ export default function PlanningPage() {
       startAt: start.toISOString(),
       endAt: computedEnd.toISOString(),
       memberIds: workers.map((worker) => worker.memberId),
-    }, visibleInterventions, visiblePlanningEvents, googleEvents);
+    }, visibleInterventions, visiblePlanningEvents, accessibleGoogleEvents);
     runOrConfirmMove({
       label: "Rendez-vous",
       start,
@@ -571,7 +575,7 @@ export default function PlanningPage() {
       startAt: nextInput.startAt,
       endAt: nextInput.endAt,
       memberIds: nextMemberIds,
-    }, visibleInterventions, visiblePlanningEvents, googleEvents);
+    }, visibleInterventions, visiblePlanningEvents, accessibleGoogleEvents);
     runOrConfirmMove({
       label: "Événement",
       start,
@@ -688,7 +692,7 @@ export default function PlanningPage() {
   const movablePlanningEvent = moveEditor?.source === "planning" ? data.planningEvents?.find((item) => item.id === moveEditor.id) : undefined;
   const canMovePlanningEvent = Boolean(currentPlanningEvent && (teamPlanning || (currentPlanningEvent.memberIds.length === 1 && currentPlanningEvent.memberIds[0] === currentUserId)));
   const panelTitle = selected ? currentIntervention?.title ?? "Dossier prestation" : selectedGoogleEvent?.title ?? (planningEventEditor ? currentPlanningEvent?.title ?? "Nouvel événement" : "Nouvelle prestation");
-  const panelDescription = selected ? "Rendez-vous · réalisation · facture · paiement" : selectedGoogleEvent ? `${selectedGoogleEvent.calendarName} · ${selectedGoogleEvent.accountEmail}` : planningEventEditor ? "Réunion, absence ou bloc horaire sans créer de prestation." : "Le créneau sélectionné est repris. Tout reste modifiable.";
+  const panelDescription = selected ? "Rendez-vous · réalisation · facture · paiement" : selectedGoogleEvent ? `${selectedGoogleEvent.calendarName} · ${selectedGoogleEvent.ownedByCurrentUser ? selectedGoogleEvent.accountEmail ?? "Mon calendrier" : selectedGoogleEvent.ownerName ?? "Calendrier partagé"}` : planningEventEditor ? "Réunion, absence ou bloc horaire sans créer de prestation." : "Le créneau sélectionné est repris. Tout reste modifiable.";
   const showUnscheduled = unscheduled.length > 0 && (sourceFilter === "all" || sourceFilter === "adetailing");
   const revealUnscheduled = () => {
     pendingUnscheduledFocus.current = true;
@@ -946,13 +950,13 @@ export default function PlanningPage() {
       {selected && <InterventionDetail key={`${selected.id}-${editOnOpen}`} interventionId={selected.id} startEditing={editOnOpen} onDirtyChange={setPanelDirty} />}
         {selectedGoogleEvent && (
           <div className="grid gap-4">
-            <p className="rounded-xl border border-sky-100 bg-white p-3 text-sm text-slate-600">Événement synchronisé en lecture seule. Modifiez-le dans Google Calendar, puis actualisez la synchronisation.</p>
+            <p className="rounded-xl border border-sky-100 bg-white p-3 text-sm text-slate-600">{selectedGoogleEvent.ownedByCurrentUser ? "Événement synchronisé en lecture seule. Modifiez-le dans Google Calendar, puis actualisez la synchronisation." : `Événement partagé depuis le calendrier Google de ${selectedGoogleEvent.ownerName ?? "ce collaborateur"}. Seul son propriétaire peut le modifier.`}</p>
             <div className="rounded-2xl border border-sky-100 bg-sky-50/80 p-4 text-sm text-sky-950">
               <p className="flex items-start gap-2"><Clock3 className="mt-0.5 size-4 shrink-0 text-sky-600" /><span>{selectedGoogleEvent.allDay ? "Toute la journée" : `${formatDate(selectedGoogleEvent.start, { weekday: "long", day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit" })} — ${formatDate(selectedGoogleEvent.end, { hour: "2-digit", minute: "2-digit" })}`}</span></p>
               {selectedGoogleEvent.location && <p className="mt-3 flex items-start gap-2"><MapPin className="mt-0.5 size-4 shrink-0 text-sky-600" /><span>{selectedGoogleEvent.location}</span></p>}
               {!selectedGoogleEvent.busy && <p className="mt-3 text-xs font-semibold text-sky-700">Cet événement est marqué comme disponible dans Google Calendar.</p>}
             </div>
-            {selectedGoogleEvent.htmlLink && (
+            {selectedGoogleEvent.ownedByCurrentUser && selectedGoogleEvent.htmlLink && (
               <a
                 href={selectedGoogleEvent.htmlLink}
                 target="_blank"

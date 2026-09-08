@@ -119,12 +119,15 @@ export function GoogleCalendarSettings({ enabled }: { enabled: boolean }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ connectionId }),
       });
-      const payload = await response.json() as { created?: number; updated?: number; removed?: number; errors?: string[]; error?: string };
+      const payload = await response.json() as { created?: number; updated?: number; removed?: number; shared?: number; errors?: string[]; error?: string };
       if (!response.ok) throw new Error(payload.error || "Synchronisation impossible.");
       if (payload.errors?.length) throw new Error(payload.errors[0]);
       if (!quiet) {
         const changed = (payload.created ?? 0) + (payload.updated ?? 0) + (payload.removed ?? 0);
-        toast.success(changed > 0 ? `${changed} événement${changed > 1 ? "s" : ""} Google mis à jour` : "Google Calendar est déjà à jour");
+        const shared = payload.shared ?? 0;
+        toast.success(changed > 0 ? `${changed} événement${changed > 1 ? "s" : ""} Google mis à jour` : "Google Calendar est à jour", {
+          description: `${shared} événement${shared > 1 ? "s" : ""} rendu${shared > 1 ? "s" : ""} visible${shared > 1 ? "s" : ""} dans le planning partagé.`,
+        });
       }
       await load();
     } catch (cause) {
@@ -192,7 +195,7 @@ export function GoogleCalendarSettings({ enabled }: { enabled: boolean }) {
             <p className="text-sm font-bold text-zinc-200">Google Calendar</p>
             {loading ? <Badge>Chargement…</Badge> : connections.length > 0 ? <Badge variant="green">Connecté</Badge> : <Badge variant="yellow">Non connecté</Badge>}
           </div>
-          <p className="mt-1 text-xs leading-5 text-zinc-600">Vos prestations assignées sont ajoutées à votre calendrier personnel sans exposer les identifiants Google dans le navigateur.</p>
+          <p className="mt-1 text-xs leading-5 text-zinc-600">Vos prestations assignées sont ajoutées à votre calendrier personnel. Vos événements Google apparaissent aussi sur votre ligne du planning partagé, sans exposer vos identifiants Google.</p>
         </div>
       </div>
 
@@ -245,7 +248,7 @@ export function GoogleCalendarSettings({ enabled }: { enabled: boolean }) {
                 </label>
                 <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-black/[0.07] bg-zinc-50 p-3 transition-colors hover:border-sky-200 hover:bg-sky-50/60">
                   <input type="checkbox" checked={connection.syncEnabled} onChange={(event) => updateConnection(connection.id, { syncEnabled: event.target.checked })} className="mt-0.5 size-4 accent-sky-500" />
-                  <span><span className="block text-xs font-bold text-zinc-300">Synchronisation activée</span><span className="mt-1 block text-[11px] leading-4 text-zinc-500">Crée ou met à jour vos prestations planifiées dans le calendrier choisi.</span></span>
+                  <span><span className="block text-xs font-bold text-zinc-300">Synchronisation activée</span><span className="mt-1 block text-[11px] leading-4 text-zinc-500">Met à jour vos prestations dans Google et partage les créneaux Google sur votre ligne du planning d’équipe.</span></span>
                 </label>
               </div>
             )}
@@ -266,7 +269,7 @@ export function GoogleCalendarSettings({ enabled }: { enabled: boolean }) {
       )}
 
       <Modal open={Boolean(disconnectId)} onClose={() => !disconnecting && setDisconnectId(null)} title="Déconnecter Google Calendar ?" description="ADetailing ne pourra plus mettre à jour ce calendrier.">
-        <p className="rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-800">Les événements déjà créés restent visibles dans Google Calendar. Vous pourrez les supprimer manuellement ou reconnecter le compte.</p>
+        <p className="rounded-xl bg-amber-50 p-3 text-xs leading-5 text-amber-800">Les événements déjà créés restent dans Google Calendar, mais leurs créneaux disparaîtront du planning partagé. Vous pourrez reconnecter le compte plus tard.</p>
         <div className="mt-5 flex justify-end gap-2"><Button variant="ghost" onClick={() => setDisconnectId(null)} disabled={disconnecting}>Annuler</Button><Button variant="danger" onClick={() => void disconnect()} disabled={disconnecting}><Unplug className="size-4" /> {disconnecting ? "Déconnexion…" : "Déconnecter"}</Button></div>
       </Modal>
     </div>

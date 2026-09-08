@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { deleteGoogleEvent, refreshGoogleAccessToken, upsertGoogleEvent } from "@/lib/integrations/google-calendar";
+import { refreshOwnGoogleSharedEvents, rollingGoogleShareRange } from "@/lib/integrations/google-shared-events";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { requireAuthenticatedWorkspace } from "@/lib/supabase/workspace";
 
@@ -95,7 +96,7 @@ export async function POST(request: Request) {
       for (const client of data ?? []) clientsById.set(client.id, client);
     }
 
-    const totals = { created: 0, updated: 0, removed: 0, unchanged: 0, skippedConnections: 0, errors: [] as string[] };
+    const totals = { created: 0, updated: 0, removed: 0, unchanged: 0, shared: 0, skippedConnections: 0, errors: [] as string[] };
     for (const connection of connections) {
       const calendarIds = selectedCalendarIds(connection.selected_calendar_ids).slice(0, 1);
       if (!connection.sync_enabled || calendarIds.length === 0) {
@@ -190,6 +191,21 @@ export async function POST(request: Request) {
       } catch (cause) {
         totals.errors.push(cause instanceof Error ? cause.message : "Synchronisation Google impossible.");
       }
+    }
+
+    // Une synchronisation manuelle actualise également la projection partagée.
+    // Les synchronisations automatiques déclenchées par les mutations restent légères.
+    if (input.connectionId) {
+      const range = rollingGoogleShareRange();
+      const shared = await refreshOwnGoogleSharedEvents({
+        supabase,
+        organizationId: workspace.organizationId,
+        profileId: workspace.user.id,
+        connectionId: input.connectionId,
+        ...range,
+      });
+      totals.shared = shared.sharedCount;
+      totals.errors.push(...shared.errors);
     }
 
     return NextResponse.json({ success: totals.errors.length === 0, ...totals });

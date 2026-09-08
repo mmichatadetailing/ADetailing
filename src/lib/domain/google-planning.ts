@@ -52,19 +52,18 @@ function eventBoundary(value: string, allDay: boolean) {
 export function googlePlanningConflicts(
   interventions: Intervention[],
   googleEvents: GooglePlanningEvent[],
-  currentUserId?: string,
+  memberFilter?: string,
 ) {
   const interventionIds = new Set<string>();
   const googleEventIds = new Set<string>();
-  if (!currentUserId) return { interventionIds, googleEventIds, count: 0 };
 
   for (const intervention of interventions) {
-    if (!intervention.startAt || !intervention.endAt || !intervention.workers.some((worker) => worker.memberId === currentUserId)) continue;
+    if (!intervention.startAt || !intervention.endAt || (memberFilter && !intervention.workers.some((worker) => worker.memberId === memberFilter))) continue;
     const interventionStart = new Date(intervention.startAt).getTime();
     const interventionEnd = new Date(intervention.endAt).getTime();
 
     for (const googleEvent of googleEvents) {
-      if (!googleEvent.busy || googleEvent.memberId !== currentUserId) continue;
+      if (!googleEvent.busy || (memberFilter && googleEvent.memberId !== memberFilter) || !intervention.workers.some((worker) => worker.memberId === googleEvent.memberId)) continue;
       const googleStart = eventBoundary(googleEvent.start, googleEvent.allDay);
       const googleEnd = eventBoundary(googleEvent.end, googleEvent.allDay);
       if (interventionStart < googleEnd && googleStart < interventionEnd) {

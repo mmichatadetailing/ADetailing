@@ -63,7 +63,7 @@ export async function PATCH(request: Request) {
     const workspace = await requireAuthenticatedWorkspace(supabase);
     const { data: connection, error } = await supabase
       .from("google_calendar_connections")
-      .select("id,encrypted_refresh_token")
+      .select("id,encrypted_refresh_token,selected_calendar_ids,sync_enabled")
       .eq("id", input.connectionId)
       .eq("organization_id", workspace.organizationId)
       .eq("profile_id", workspace.user.id)
@@ -87,6 +87,16 @@ export async function PATCH(request: Request) {
       .eq("organization_id", workspace.organizationId)
       .eq("profile_id", workspace.user.id);
     if (updateError) throw updateError;
+    const previousCalendarId = Array.isArray(connection.selected_calendar_ids) && typeof connection.selected_calendar_ids[0] === "string" ? connection.selected_calendar_ids[0] : null;
+    if (previousCalendarId !== input.calendarId || connection.sync_enabled !== input.syncEnabled || !input.syncEnabled) {
+      const { error: sharedEventsError } = await supabase
+        .from("google_calendar_shared_events")
+        .delete()
+        .eq("organization_id", workspace.organizationId)
+        .eq("owner_profile_id", workspace.user.id)
+        .eq("connection_id", connection.id);
+      if (sharedEventsError) throw sharedEventsError;
+    }
     return NextResponse.json({ success: true });
   } catch (cause) {
     if (cause instanceof z.ZodError) return NextResponse.json({ error: "Réglages Google Calendar invalides." }, { status: 400 });

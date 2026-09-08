@@ -1,6 +1,6 @@
 # Connexion Google Calendar
 
-Chaque utilisateur ADetailing peut connecter son propre compte Google. Seules les prestations auxquelles cet utilisateur est affecté sont exportées vers le calendrier qu’il choisit. Les événements créés directement dans ce calendrier Google sont également affichés, en lecture seule, sur sa ligne du planning ADetailing.
+Chaque utilisateur ADetailing peut connecter son propre compte Google. Seules les prestations auxquelles cet utilisateur est affecté sont exportées vers le calendrier qu’il choisit. Les événements créés directement dans ce calendrier Google sont affichés, en lecture seule, sur sa ligne du planning ADetailing. Les associés et administrateurs voient ainsi les calendriers synchronisés de toute l’équipe ; un employé reste limité à son propre planning.
 
 ## 1. Configurer Google Cloud
 
@@ -45,7 +45,7 @@ Depuis le dossier du projet :
 npx supabase db push
 ```
 
-La migration `202608040012_google_calendar_user_connections.sql` ajoute les règles de suppression, isole chaque jeton à son propriétaire et empêche les doublons de synchronisation.
+Les migrations `202608040012_google_calendar_user_connections.sql` et `202609080014_shared_google_calendar_events.sql` isolent chaque jeton à son propriétaire, empêchent les doublons et créent la projection sécurisée des événements visible dans le planning d’équipe.
 
 ## 4. Connecter le compte
 
@@ -58,19 +58,21 @@ La migration `202608040012_google_calendar_user_connections.sql` ajoute les règ
 
 L’URL de retour OAuth est calculée depuis le domaine courant : `localhost` en développement et le domaine Vercel en production. Il ne faut donc pas définir `GOOGLE_REDIRECT_URI` dans Vercel. Pour une Preview Vercel, son URL exacte doit également être autorisée chez Google ; privilégier le domaine de production pour les tests courants.
 
-La création ou la modification d’une prestation déclenche ensuite une synchronisation en arrière-plan pour l’utilisateur connecté. Le bouton manuel permet de forcer une réconciliation.
+La création ou la modification d’une prestation déclenche ensuite une synchronisation en arrière-plan pour l’utilisateur connecté. Le bouton manuel force aussi l’actualisation des événements Google partagés des 60 derniers jours et des 305 jours suivants.
 
-Le planning relit la période Google affichée lors de son ouverture, à chaque changement de jour/semaine/mois, au retour sur l’onglet et toutes les 60 secondes tant que la page reste visible. Le bouton **Actualiser Google** force une lecture immédiate. Les événements ADetailing déjà exportés dans Google sont reconnus et ne sont pas affichés une seconde fois.
+Le planning relit la période Google affichée lors de son ouverture, à chaque changement de jour/semaine/mois, au retour sur l’onglet et toutes les 60 secondes tant que la page reste visible. Cette lecture actualise le cache partagé du membre connecté puis charge les caches autorisés des autres collaborateurs. Le bouton **Actualiser Google** force cette lecture. Les événements ADetailing déjà exportés dans Google sont reconnus et ne sont pas affichés une seconde fois.
 
 ## Comportement et sécurité
 
 - le jeton de renouvellement Google est chiffré en AES-256-GCM avant stockage ;
 - la clé de chiffrement reste uniquement dans les variables serveur ;
-- une connexion et ses correspondances d’événements sont lisibles uniquement par leur propriétaire grâce aux politiques RLS ;
+- une connexion, son jeton et ses correspondances techniques restent lisibles uniquement par leur propriétaire grâce aux politiques RLS ;
+- seule une projection sans jeton OAuth est partagée : titre, période, disponibilité, calendrier, couleur et lieu ;
+- les associés et administrateurs peuvent lire les projections de l’entreprise, tandis qu’un employé ne peut lire que les siennes ;
 - l’identifiant aléatoire OAuth est lié à l’utilisateur et à l’entreprise active pendant dix minutes ;
 - une prestation annulée, déplanifiée ou retirée de l’utilisateur est supprimée du calendrier à la synchronisation suivante ;
-- un événement créé dans Google reste géré dans Google : un clic dans le planning affiche ses détails et permet de l’ouvrir dans Google Calendar ;
-- les événements Google personnels ne sont jamais transformés en prestations ni recopiés dans la base métier ;
+- un événement créé dans Google reste géré dans Google : un clic affiche ses détails ; seul son propriétaire reçoit le lien permettant de l’ouvrir dans Google Calendar ;
+- les événements Google ne sont jamais transformés en prestations ; la base conserve uniquement leur projection de planning pour permettre le partage entre collaborateurs ;
 - déconnecter un compte révoque l’autorisation, mais conserve dans Google les événements déjà créés pour éviter une suppression surprise.
 
 Les routes utilisées sont `/api/integrations/google/start`, `/callback`, `/calendars`, `/events` et `/sync`.

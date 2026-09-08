@@ -1,11 +1,13 @@
 export interface GooglePlanningEvent {
   id: string;
-  googleEventId: string;
-  connectionId: string;
-  calendarId: string;
+  googleEventId?: string;
+  connectionId?: string;
+  calendarId?: string;
   calendarName: string;
-  accountEmail: string;
+  accountEmail?: string;
   memberId: string;
+  ownerName?: string;
+  ownedByCurrentUser?: boolean;
   title: string;
   start: string;
   end: string;
