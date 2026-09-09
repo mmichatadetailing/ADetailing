@@ -71,6 +71,9 @@ export async function POST(request: Request) {
 
     if (input.kind === "appointment") {
       const members = await resolveAppointmentMembers(supabase, organizationId, input.workerIds);
+      const { data: client, error: clientError } = await supabase.from("clients").select("id").eq("organization_id", organizationId).eq("id", input.clientId).is("archived_at", null).maybeSingle();
+      if (clientError) throw clientError;
+      if (!client) throw new Error("Ce contact a été supprimé. Sélectionnez un autre client.");
 
       let service: { id: string; target_product_cost_cents: number; target_travel_cost_cents: number } | null = null;
       if (input.serviceId) {

@@ -30,7 +30,7 @@ interface WorkspaceContextValue {
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
-const calendarMutationActions = new Set(["rescheduleIntervention", "setInterventionStatus", "updateIntervention", "completeIntervention"]);
+const calendarMutationActions = new Set(["rescheduleIntervention", "setInterventionStatus", "updateIntervention", "completeIntervention", "removeIntervention"]);
 
 function requestGoogleCalendarSync() {
   void fetch("/api/integrations/google/sync", {

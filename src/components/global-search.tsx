@@ -30,9 +30,11 @@ export function GlobalSearch() {
   const results = useMemo(() => {
     const needle = normalizeText(query);
     if (!needle) return [];
+    const activeClients = clients.filter((client) => !client.archivedAt);
+    const activeClientIds = new Set(activeClients.map((client) => client.id));
     return [
-      ...clients.map((client) => ({ type: "Client", title: client.company || `${client.firstName} ${client.lastName}`, detail: `${client.phone} · ${client.city}`, href: "/clients" })),
-      ...vehicles.map((vehicle) => ({ type: "Véhicule", title: `${vehicle.make} ${vehicle.model}`, detail: `${vehicle.registration} · ${vehicle.format}`, href: "/clients" })),
+      ...activeClients.map((client) => ({ type: "Client", title: client.company || `${client.firstName} ${client.lastName}`, detail: `${client.phone} · ${client.city}`, href: "/clients" })),
+      ...vehicles.filter((vehicle) => activeClientIds.has(vehicle.clientId)).map((vehicle) => ({ type: "Véhicule", title: `${vehicle.make} ${vehicle.model}`, detail: `${vehicle.registration} · ${vehicle.format}`, href: "/clients" })),
       ...quotes.map((quote) => ({ type: "Devis", title: quote.number, detail: formatMoney(quote.totalIncludingTax), href: "/documents" })),
       ...invoices.map((invoice) => ({ type: "Facture", title: invoice.number, detail: formatMoney(invoice.totalIncludingTax), href: "/documents" })),
     ].filter((item) => normalizeText(`${item.title} ${item.detail}`).includes(needle)).slice(0, 9);

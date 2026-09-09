@@ -3,10 +3,10 @@
 ## Fonctionnel dans la V1
 
 - dashboard avec huit KPI distincts, tâches, alertes, devis, factures et activité ;
-- clients séparés des véhicules, recherche globale et détection de doublons ;
+- clients séparés des véhicules, recherche globale, détection de doublons et suppression rapide sans perdre l’historique légal ;
 - pipeline commercial Kanban avec glisser-déposer et vue tableau ;
 - catalogue créé, dupliqué, archivé et réordonné depuis l’interface ;
-- interventions multi-lignes, heures individuelles, heures-personnes, coûts et marges ;
+- interventions multi-lignes, heures individuelles, heures-personnes, coûts, marges et suppression rapide avec nettoyage des paiements manuels ;
 - calendrier jour/semaine/mois/liste, glisser-déposer, redimensionnement et conflits ;
 - import PDF Henrri, scores de confiance, remises implicites et revue humaine ;
 - devis, factures, paiements partiels et rapprochement explicable ;

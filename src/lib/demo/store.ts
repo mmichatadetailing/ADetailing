@@ -141,6 +141,7 @@ interface DemoActions {
   hydrateFromSupabase: (data: AppData) => void;
   resetDemo: () => void;
   addClient: (input: NewClientInput) => string;
+  removeClient: (clientId: string) => void;
   mergeClients: (primaryId: string, duplicateId: string) => void;
   addLead: (input: NewLeadInput) => string;
   moveLead: (leadId: string, stage: LeadStage) => void;
@@ -156,6 +157,7 @@ interface DemoActions {
   linkInvoiceToQuote: (invoiceId: string, quoteId: string) => void;
   linkInvoiceToIntervention: (interventionId: string, invoiceId?: string) => void;
   updateIntervention: (interventionId: string, input: InterventionEditInput) => void;
+  removeIntervention: (interventionId: string) => void;
   setInterventionStatus: (interventionId: string, status: InterventionStatus) => void;
   updateInterventionActuals: (
     interventionId: string,
@@ -241,6 +243,19 @@ export const useDemoStore = create<DemoStore>()(
           ],
         }));
         return client.id;
+      },
+      removeClient: (clientId) => {
+        const client = get().clients.find((item) => item.id === clientId);
+        if (!client) return;
+        const archivedAt = nowIso();
+        set((state) => ({
+          clients: state.clients.map((item) => item.id === clientId ? { ...item, archivedAt, updatedAt: archivedAt } : item),
+          activities: [
+            activity("comment_added", "Contact supprimé", client.company || `${client.firstName} ${client.lastName}`, "client", clientId),
+            ...state.activities,
+          ],
+        }));
+        persistMutation({ action: "removeClient", clientId });
       },
       mergeClients: (primaryId, duplicateId) => {
         set((state) => {
@@ -621,6 +636,19 @@ export const useDemoStore = create<DemoStore>()(
           }),
         }));
         persistMutation({ action: "updateIntervention", interventionId, ...input });
+      },
+      removeIntervention: (interventionId) => {
+        const intervention = get().interventions.find((item) => item.id === interventionId);
+        if (!intervention) return;
+        set((state) => ({
+          interventions: state.interventions.filter((item) => item.id !== interventionId),
+          payments: state.payments.filter((payment) => payment.interventionId !== interventionId),
+          activities: [
+            activity("comment_added", "Prestation supprimée", intervention.title, "intervention", interventionId),
+            ...state.activities,
+          ],
+        }));
+        persistMutation({ action: "removeIntervention", interventionId });
       },
       setInterventionStatus: (interventionId, status) => {
         set((state) => ({

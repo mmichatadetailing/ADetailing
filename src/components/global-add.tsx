@@ -164,7 +164,8 @@ export function AppointmentForm({ close, initialSlot, allowedMemberIds, onCreate
   const activeTeam = data.team.filter((member) => member.active && (!allowedMemberIds || allowedMemberIds.includes(member.id)));
   const slotDefaults = initialSlot ? appointmentSlotDefaults(initialSlot) : undefined;
   const activeServices = data.services.filter((service) => service.active && !service.archivedAt);
-  const initialClient = data.clients[0];
+  const activeClients = data.clients.filter((client) => !client.archivedAt);
+  const initialClient = activeClients[0];
   const [clientId, setClientId] = useState(initialClient?.id ?? "");
   const [vehicleFormat, setVehicleFormat] = useState("");
   const [vehicleCount, setVehicleCount] = useState(1);
@@ -261,7 +262,7 @@ export function AppointmentForm({ close, initialSlot, allowedMemberIds, onCreate
     }
   };
 
-  if (data.clients.length === 0) return <div className="rounded-2xl border border-dashed border-zinc-200 p-8 text-center"><p className="text-sm font-bold">Créez d’abord un client</p><p className="mt-2 text-xs text-zinc-500">Un rendez-vous doit être rattaché à un client. Le véhicule reste facultatif.</p></div>;
+  if (activeClients.length === 0) return <div className="rounded-2xl border border-dashed border-zinc-200 p-8 text-center"><p className="text-sm font-bold">Créez d’abord un client</p><p className="mt-2 text-xs text-zinc-500">Un rendez-vous doit être rattaché à un client. Le véhicule reste facultatif.</p></div>;
 
   return (
     <div className="grid gap-4">
@@ -271,7 +272,7 @@ export function AppointmentForm({ close, initialSlot, allowedMemberIds, onCreate
       </div>
       <div className={`rounded-2xl border p-4 ${completed ? "border-emerald-200 bg-emerald-50/70" : "border-brand-200 bg-brand-50/70"}`}><p className={`flex items-center gap-2 text-sm font-bold ${completed ? "text-emerald-800" : "text-brand-700"}`}>{completed ? <CheckCircle2 className="size-4" /> : <CalendarPlus2 className="size-4" />} {completed ? "Ajouter une prestation terminée" : "Nouveau rendez-vous"}</p><p className={`mt-1 text-xs ${completed ? "text-emerald-700" : "text-brand-600"}`}>{completed ? "Le dossier commencera directement à l’étape Facture, avec les temps prévus repris comme temps réalisés." : "Les informations pourront être modifiées ensuite depuis la fiche prestation."}</p></div>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Client"><Select autoFocus value={clientId} onChange={(event) => chooseClient(event.target.value)}>{data.clients.map((client) => <option key={client.id} value={client.id}>{client.company || `${client.firstName} ${client.lastName}`}</option>)}</Select></Field>
+        <Field label="Client"><Select autoFocus value={clientId} onChange={(event) => chooseClient(event.target.value)}>{activeClients.map((client) => <option key={client.id} value={client.id}>{client.company || `${client.firstName} ${client.lastName}`}</option>)}</Select></Field>
         <Field label="Catégorie du véhicule" hint="Facultatif"><Select value={vehicleFormat} onChange={(event) => chooseVehicleFormat(event.target.value)}><option value="">Non renseignée</option>{appointmentVehicleFormats.map((format) => <option key={format} value={format}>{format}</option>)}</Select></Field>
       </div>
       {selectedPricingMode === "vehicle_count" && <Field label="Nombre de véhicules dans l’abonnement" hint="Le palier et le montant total sont recalculés automatiquement."><Input min="1" step="1" type="number" value={vehicleCount} onChange={(event) => chooseVehicleCount(Number(event.target.value))} /></Field>}

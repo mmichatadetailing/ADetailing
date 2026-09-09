@@ -1,8 +1,9 @@
 "use client";
 
-import { CalendarPlus2, CircleDollarSign, Clock3, Pencil, ReceiptText, Search, Sparkles } from "lucide-react";
+import { AlertTriangle, CalendarPlus2, CircleDollarSign, Clock3, Pencil, ReceiptText, Search, Sparkles, Trash2 } from "lucide-react";
 import { Suspense, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { toast } from "sonner";
 import { InterventionDetail } from "@/components/intervention-detail";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
@@ -38,6 +39,7 @@ function PrestationsPageContent() {
   const [selectedOverride, setSelectedOverride] = useState<string | null>(null);
   const [editOverride, setEditOverride] = useState(false);
   const [dismissedQueryId, setDismissedQueryId] = useState<string | null>(null);
+  const [deletingInterventionId, setDeletingInterventionId] = useState<string | null>(null);
   const selectedQueryId = queryInterventionId === dismissedQueryId ? null : queryInterventionId;
   const selectedId = selectedOverride ?? selectedQueryId;
   const editOnOpen = selectedOverride ? editOverride : queryEdit;
@@ -69,6 +71,23 @@ function PrestationsPageContent() {
   const toCollect = rows.reduce((sum, { workflow }) => sum + workflow.outstanding, 0);
   const inProgress = rows.filter(({ intervention }) => intervention.status === "in_progress").length;
   const selected = data.interventions.find((item) => item.id === selectedId);
+  const deletingIntervention = data.interventions.find((item) => item.id === deletingInterventionId);
+  const deletingClient = deletingIntervention ? data.clients.find((client) => client.id === deletingIntervention.clientId) : undefined;
+  const deletingInvoice = deletingIntervention ? data.invoices.find((invoice) => invoice.id === deletingIntervention.invoiceId) : undefined;
+  const deletingPayments = deletingIntervention ? data.payments.filter((payment) => payment.interventionId === deletingIntervention.id) : [];
+
+  const removeIntervention = () => {
+    if (!deletingIntervention) return;
+    data.removeIntervention(deletingIntervention.id);
+    if (selectedId === deletingIntervention.id) {
+      setSelectedOverride(null);
+      setEditOverride(false);
+      setDismissedQueryId(queryInterventionId);
+      router.replace("/prestations", { scroll: false });
+    }
+    setDeletingInterventionId(null);
+    toast.success("Prestation supprimée", { description: deletingInvoice ? "La facture liée a été conservée dans Documents." : "Elle a été retirée du planning et des statistiques." });
+  };
 
   return (
     <div className="space-y-7">
@@ -108,19 +127,23 @@ function PrestationsPageContent() {
                 <div><p className="text-[10px] font-bold tracking-wider text-zinc-500 uppercase">Prochaine étape</p><p className={`mt-1 text-xs font-bold ${workflow.isComplete ? "text-emerald-700" : "text-brand-700"}`}>{workflow.isComplete ? "Parcours terminé" : intervention.status === "cancelled" ? "Prestation annulée" : currentStep?.detail}</p></div>
                 <StatusBadge status={intervention.status}>{interventionStatusLabels[intervention.status]}</StatusBadge>
               </button>
-              <button
-                type="button"
-                onClick={() => { setEditOverride(true); setSelectedOverride(intervention.id); }}
-                aria-label={`Modifier ${intervention.title}`}
-                title="Modifier"
-                className="focus-ring m-3 grid size-9 place-items-center self-center rounded-xl border border-black/[0.08] bg-zinc-50 text-zinc-500 shadow-sm transition hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700"
-              >
-                <Pencil className="size-4" />
-              </button>
+              <div className="m-3 flex items-center gap-1 self-center">
+                <button type="button" onClick={() => { setEditOverride(true); setSelectedOverride(intervention.id); }} aria-label={`Modifier ${intervention.title}`} title="Modifier" className="focus-ring grid size-9 place-items-center rounded-xl border border-black/[0.08] bg-zinc-50 text-zinc-500 shadow-sm transition hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700"><Pencil className="size-4" /></button>
+                <button type="button" onClick={() => setDeletingInterventionId(intervention.id)} aria-label={`Supprimer ${intervention.title}`} title="Supprimer la prestation" className="focus-ring grid size-9 place-items-center rounded-xl border border-red-100 bg-red-50 text-red-600 shadow-sm transition hover:border-red-300 hover:bg-red-100"><Trash2 className="size-4" /></button>
+              </div>
             </div>
           );
         })}
       </div>
+
+      <Modal open={Boolean(deletingIntervention)} onClose={() => setDeletingInterventionId(null)} title="Supprimer cette prestation ?" description={deletingIntervention?.title}>
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-900">
+          <p className="flex items-center gap-2 text-sm font-bold"><AlertTriangle className="size-4" /> La prestation disparaîtra du planning et des statistiques</p>
+          <p className="mt-2 text-xs leading-5 text-red-800">Cette action retire également ses paiements manuels. Elle ne supprime jamais une facture Henrri déjà liée ni les éléments d’historique nécessaires.</p>
+        </div>
+        {deletingIntervention && <div className="mt-4 rounded-2xl border border-zinc-200 bg-zinc-50 p-4"><div className="flex items-start justify-between gap-4"><div><p className="text-sm font-bold text-zinc-900">{deletingClient?.company || `${deletingClient?.firstName ?? ""} ${deletingClient?.lastName ?? ""}`.trim() || "Client non renseigné"}</p><p className="mt-1 text-xs text-zinc-500">{deletingIntervention.startAt ? formatDate(deletingIntervention.startAt, { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "Sans date"}</p></div><p className="text-base font-extrabold text-zinc-900">{formatMoney(deletingIntervention.items.reduce((sum, item) => sum + item.revenueAllocated, 0))}</p></div><div className="mt-3 flex flex-wrap gap-2">{deletingInvoice && <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">Facture {deletingInvoice.number} conservée</span>}{deletingPayments.length > 0 && <span className="rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-bold text-red-700">{deletingPayments.length} paiement(s) manuel(s) supprimé(s)</span>}</div></div>}
+        <div className="mt-5 flex justify-end gap-2"><Button variant="ghost" onClick={() => setDeletingInterventionId(null)}>Annuler</Button><Button variant="danger" onClick={removeIntervention}><Trash2 className="size-4" /> Supprimer la prestation</Button></div>
+      </Modal>
 
       <Modal open={Boolean(selectedId)} onClose={() => { setSelectedOverride(null); setEditOverride(false); setDismissedQueryId(queryInterventionId); router.replace("/prestations", { scroll: false }); }} title={selected?.title ?? "Dossier prestation"} description="Rendez-vous · réalisation · facture · paiement" className="sm:max-w-5xl">
         {selectedId && <InterventionDetail key={`${selectedId}-${editOnOpen ? "edit" : "view"}`} interventionId={selectedId} startEditing={editOnOpen} />}

@@ -63,12 +63,14 @@ const henrriLineSchema = z.object({
 
 const mutationSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("moveLead"), leadId: z.uuid(), stage: z.enum(leadStages) }),
+  z.object({ action: z.literal("removeClient"), clientId: z.uuid() }),
   z.object({ action: z.literal("updateExpense"), ...expenseMutationFields }),
   z.object({ action: z.literal("removeExpense"), expenseId: z.uuid() }),
   z.object({ action: z.literal("rescheduleIntervention"), interventionId: z.uuid(), startAt: z.iso.datetime(), endAt: z.iso.datetime() }),
   z.object({ action: z.literal("addPlanningEvent"), eventId: z.uuid(), ...planningEventMutationFields }),
   z.object({ action: z.literal("updatePlanningEvent"), eventId: z.uuid(), ...planningEventMutationFields }),
   z.object({ action: z.literal("removePlanningEvent"), eventId: z.uuid() }),
+  z.object({ action: z.literal("removeIntervention"), interventionId: z.uuid() }),
   z.object({ action: z.literal("setInterventionStatus"), interventionId: z.uuid(), status: z.enum(interventionStatuses) }),
   z.object({
     action: z.literal("updateIntervention"), interventionId: z.uuid(), clientId: z.uuid(), vehicleId: z.uuid().optional(), vehicleFormat: z.enum(["Citadine", "Berline", "SUV", "Monospace", "4x4", "Fourgon", "Autre"]).optional(), title: z.string().trim().min(2).max(160), status: z.enum(interventionStatuses), startAt: z.iso.datetime().nullable().optional(), plannedDurationMinutes: z.number().int().min(15).max(1440), address: z.string().trim().max(300), notes: z.string().trim().max(3000).nullable().optional(),
@@ -145,6 +147,24 @@ export async function POST(request: Request) {
       ensureNoError(error);
     }
 
+    if (input.action === "removeClient") {
+      const archivedAt = new Date().toISOString();
+      const { data: client, error } = await supabase
+        .from("clients")
+        .update({ archived_at: archivedAt })
+        .eq("organization_id", organizationId)
+        .eq("id", input.clientId)
+        .is("archived_at", null)
+        .select("id,company,first_name,last_name")
+        .single();
+      ensureNoError(error);
+      if (!client) throw new Error("Contact introuvable.");
+      const clientName = client.company || [client.first_name, client.last_name].filter(Boolean).join(" ") || "Contact";
+      const { error: activityError } = await supabase.from("activity_logs").insert({ organization_id: organizationId, actor_id: userId, kind: "comment_added", title: "Contact supprimé", description: clientName, entity_type: "client", entity_id: client.id });
+      ensureNoError(activityError);
+      return NextResponse.json({ ok: true, id: client.id });
+    }
+
     if (input.action === "updateExpense") {
       const amountExcludingTax = Math.round(input.amountIncludingTax / (1 + input.vatRateBasisPoints / 10_000));
       const { data: expense, error } = await supabase.from("expenses").update({
@@ -171,6 +191,26 @@ export async function POST(request: Request) {
       const { data: expense, error } = await supabase.from("expenses").update({ archived_at: new Date().toISOString() }).eq("organization_id", organizationId).eq("id", input.expenseId).is("archived_at", null).select("id").single();
       ensureNoError(error);
       if (!expense) throw new Error("Charge introuvable.");
+    }
+
+    if (input.action === "removeIntervention") {
+      const archivedAt = new Date().toISOString();
+      const { data: intervention, error } = await supabase
+        .from("interventions")
+        .update({ archived_at: archivedAt })
+        .eq("organization_id", organizationId)
+        .eq("id", input.interventionId)
+        .is("archived_at", null)
+        .select("id,title")
+        .single();
+      ensureNoError(error);
+      if (!intervention) throw new Error("Prestation introuvable.");
+
+      const { error: paymentError } = await supabase.from("payments").delete().eq("organization_id", organizationId).eq("intervention_id", intervention.id);
+      ensureNoError(paymentError);
+      const { error: activityError } = await supabase.from("activity_logs").insert({ organization_id: organizationId, actor_id: userId, kind: "comment_added", title: "Prestation supprimée", description: intervention.title, entity_type: "intervention", entity_id: intervention.id });
+      ensureNoError(activityError);
+      return NextResponse.json({ ok: true, id: intervention.id });
     }
 
     if (input.action === "rescheduleIntervention") {
@@ -248,6 +288,9 @@ export async function POST(request: Request) {
       const { data: existingIntervention, error: existingError } = await supabase.from("interventions").select("client_id,quote_id,invoice_id").eq("organization_id", organizationId).eq("id", input.interventionId).single();
       ensureNoError(existingError);
       if (!existingIntervention) throw new Error("Prestation introuvable.");
+      const { data: selectedClient, error: selectedClientError } = await supabase.from("clients").select("id").eq("organization_id", organizationId).eq("id", input.clientId).is("archived_at", null).maybeSingle();
+      ensureNoError(selectedClientError);
+      if (!selectedClient && input.clientId !== existingIntervention.client_id) throw new Error("Ce contact a été supprimé. Sélectionnez un autre client.");
       if (input.vehicleId) {
         const { data: vehicle, error: vehicleError } = await supabase.from("vehicles").select("id,client_id").eq("organization_id", organizationId).eq("id", input.vehicleId).single();
         ensureNoError(vehicleError);

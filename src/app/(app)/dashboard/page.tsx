@@ -109,7 +109,7 @@ export default function DashboardPage() {
   const previousAverageBasket = previousCompleted.length ? Math.round(previousCompletedRevenue / previousCompleted.length) : 0;
   const unpaid = unpaidAmount(data.invoices, data.payments);
   const overdueCount = data.invoices.filter((invoice) => paymentStatusForInvoice(invoice, data.payments) === "overdue").length;
-  const dashboardSummary = data.clients.length === 0 && data.leads.length === 0
+  const dashboardSummary = data.clients.every((client) => Boolean(client.archivedAt)) && data.leads.length === 0
     ? "Votre espace est prêt. Ajoutez votre premier client ou une nouvelle demande pour commencer."
     : `${statisticsPeriod.label} · ${completed.length} prestation(s) réalisée(s), ${formatMoney(invoiced)} facturé et ${formatMoney(collected)} encaissé.`;
   const todayActions = [
@@ -117,7 +117,8 @@ export default function DashboardPage() {
     ...data.leads.filter((lead) => !["won", "lost"].includes(lead.stage)).map((lead) => ({ icon: lead.stage === "quote_to_prepare" ? FileCheck2 : Phone, title: lead.nextAction || `Suivre ${lead.prospectName}`, detail: `${lead.prospectName} · ${formatMoney(lead.estimatedAmount)}`, color: lead.stage === "quote_to_prepare" ? "text-sky-300" : "text-orange-300", href: "/commercial" })),
     ...upcoming.filter((item) => item.status === "scheduled").map((item) => { const client = data.clients.find((entry) => entry.id === item.clientId); return { icon: Sparkles, title: `Confirmer ${client?.company || `${client?.firstName ?? ""} ${client?.lastName ?? ""}`.trim() || item.title}`, detail: `${formatDate(item.startAt, { weekday: "long", hour: "2-digit", minute: "2-digit" })} · ${item.workers.length} collaborateur(s)`, color: "text-violet-300", href: "/prestations" }; }),
   ].slice(0, 4);
-  const receivedReviews = data.reviews.filter((review) => isDateInRange(review.receivedAt, periodRange)).length;
+  const activeInterventionIds = new Set(data.interventions.map((intervention) => intervention.id));
+  const receivedReviews = data.reviews.filter((review) => activeInterventionIds.has(review.interventionId) && isDateInRange(review.receivedAt, periodRange)).length;
   const dashboardYear = statisticsPeriod.year;
   const dashboardCharts = useMemo(() => buildDashboardChartData({
     year: dashboardYear,

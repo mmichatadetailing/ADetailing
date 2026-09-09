@@ -1,6 +1,6 @@
 "use client";
 
-import { Building2, Car, ChevronRight, Mail, Merge, Phone, Search, UserRound } from "lucide-react";
+import { AlertTriangle, Building2, Car, ChevronRight, Mail, Merge, Phone, Search, Trash2, UserRound } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
@@ -19,20 +19,22 @@ export default function ClientsPage() {
   const data = useDemoStore();
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Client | null>(null);
+  const [deletingClient, setDeletingClient] = useState<Client | null>(null);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
+  const activeClients = useMemo(() => data.clients.filter((client) => !client.archivedAt), [data.clients]);
   const filtered = useMemo(() => {
     const needle = normalizeText(query);
-    if (!needle) return data.clients;
-    return data.clients.filter((client) => {
+    if (!needle) return activeClients;
+    return activeClients.filter((client) => {
       const vehicles = data.vehicles.filter((vehicle) => vehicle.clientId === client.id);
       return normalizeText(`${client.company ?? ""} ${client.firstName} ${client.lastName} ${client.email} ${client.phone} ${vehicles.map((vehicle) => `${vehicle.make} ${vehicle.model} ${vehicle.registration}`).join(" ")}`).includes(needle);
     });
-  }, [data.clients, data.vehicles, query]);
+  }, [activeClients, data.vehicles, query]);
 
   const duplicateCandidates = useMemo(() => {
     const pairs: Array<[Client, Client, string]> = [];
-    data.clients.forEach((client, index) => {
-      data.clients.slice(index + 1).forEach((other) => {
+    activeClients.forEach((client, index) => {
+      activeClients.slice(index + 1).forEach((other) => {
         const sameEmail = client.email && client.email === other.email;
         const samePhone = normalizePhone(client.phone) === normalizePhone(other.phone);
         const sameName = normalizeText(`${client.firstName} ${client.lastName}`) === normalizeText(`${other.firstName} ${other.lastName}`);
@@ -40,7 +42,20 @@ export default function ClientsPage() {
       });
     });
     return pairs;
-  }, [data.clients]);
+  }, [activeClients]);
+
+  const activeClientIds = useMemo(() => new Set(activeClients.map((client) => client.id)), [activeClients]);
+  const deletingVehicles = deletingClient ? data.vehicles.filter((vehicle) => vehicle.clientId === deletingClient.id).length : 0;
+  const deletingInterventions = deletingClient ? data.interventions.filter((intervention) => intervention.clientId === deletingClient.id).length : 0;
+  const deletingDocuments = deletingClient ? data.invoices.filter((invoice) => invoice.clientId === deletingClient.id).length + data.quotes.filter((quote) => quote.clientId === deletingClient.id).length : 0;
+
+  const removeClient = () => {
+    if (!deletingClient) return;
+    data.removeClient(deletingClient.id);
+    if (selected?.id === deletingClient.id) setSelected(null);
+    setDeletingClient(null);
+    toast.success("Contact supprimé", { description: "Il a été retiré des contacts actifs. Son historique est conservé." });
+  };
 
   const clientMetrics = (clientId: string) => {
     return clientRevenueMetrics(clientId, data.invoices, data.interventions, data.payments);
@@ -53,7 +68,7 @@ export default function ClientsPage() {
         <CardContent className="p-4 sm:p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="relative max-w-md flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-600" /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nom, société, téléphone, immatriculation…" className="pl-10" /></div>
-            <div className="flex items-center gap-2 text-xs text-zinc-500"><Badge>{filtered.length} clients</Badge><Badge>{data.vehicles.length} véhicules</Badge></div>
+            <div className="flex items-center gap-2 text-xs text-zinc-500"><Badge>{filtered.length} clients</Badge><Badge>{data.vehicles.filter((vehicle) => activeClientIds.has(vehicle.clientId)).length} véhicules</Badge></div>
           </div>
         </CardContent>
       </Card>
@@ -64,17 +79,31 @@ export default function ClientsPage() {
           const vehicles = data.vehicles.filter((vehicle) => vehicle.clientId === client.id);
           const owner = data.team.find((member) => member.id === client.ownerId);
           return (
-            <button key={client.id} onClick={() => setSelected(client)} className="focus-ring group grid gap-4 rounded-2xl border border-white/[0.07] bg-ink-850/90 p-4 text-left transition hover:-translate-y-0.5 hover:border-white/[0.13] sm:grid-cols-[minmax(240px,1.2fr)_minmax(180px,1fr)_repeat(3,minmax(90px,.45fr))_24px] sm:items-center sm:p-5">
-              <div className="flex min-w-0 items-center gap-3"><Avatar label={initials(client.firstName, client.lastName)} color={client.kind === "business" ? "#38bdf8" : owner?.color} /><div className="min-w-0"><div className="flex items-center gap-2"><p className="truncate text-sm font-bold text-zinc-200">{client.company || `${client.firstName} ${client.lastName}`}</p>{client.kind === "business" && <Building2 className="size-3.5 text-sky-400" />}</div><p className="mt-1 truncate text-xs text-zinc-500">{client.email || client.phone} · {client.city}</p></div></div>
-              <div className="flex flex-wrap gap-1.5">{vehicles.length ? vehicles.map((vehicle) => <Badge key={vehicle.id}>{vehicle.make} {vehicle.model}</Badge>) : <span className="text-xs text-zinc-600">Aucun véhicule</span>}</div>
-              <div><p className="text-[10px] font-semibold tracking-wider text-zinc-600 uppercase">Facturé / réalisé</p><p className="mt-1 text-sm font-bold">{formatMoney(metrics.revenue)}</p></div>
-              <div><p className="text-[10px] font-semibold tracking-wider text-zinc-600 uppercase">Encaissé</p><p className="mt-1 text-sm font-bold text-emerald-300">{formatMoney(metrics.collected)}</p></div>
-              <div><p className="text-[10px] font-semibold tracking-wider text-zinc-600 uppercase">Prestations</p><p className="mt-1 text-sm font-bold">{metrics.interventions.length}</p></div>
-              <ChevronRight className="hidden size-4 text-zinc-700 transition group-hover:translate-x-0.5 group-hover:text-zinc-400 sm:block" />
-            </button>
+            <div key={client.id} className="surface-interactive grid grid-cols-[minmax(0,1fr)_auto] overflow-hidden rounded-2xl border border-black/[0.08] bg-white shadow-[0_6px_22px_rgba(47,40,72,.06)]">
+              <button onClick={() => setSelected(client)} className="focus-ring group grid min-w-0 gap-4 p-4 text-left transition-colors hover:bg-orange-50/50 sm:grid-cols-[minmax(240px,1.2fr)_minmax(180px,1fr)_repeat(3,minmax(90px,.45fr))_24px] sm:items-center sm:p-5">
+                <div className="flex min-w-0 items-center gap-3"><Avatar label={initials(client.firstName, client.lastName)} color={client.kind === "business" ? "#38bdf8" : owner?.color} /><div className="min-w-0"><div className="flex items-center gap-2"><p className="truncate text-sm font-bold text-zinc-900">{client.company || `${client.firstName} ${client.lastName}`}</p>{client.kind === "business" && <Building2 className="size-3.5 text-sky-600" />}</div><p className="mt-1 truncate text-xs text-zinc-500">{client.email || client.phone || "Aucune coordonnée"} · {client.city}</p></div></div>
+                <div className="flex flex-wrap gap-1.5">{vehicles.length ? vehicles.map((vehicle) => <Badge key={vehicle.id}>{vehicle.make} {vehicle.model}</Badge>) : <span className="text-xs text-zinc-500">Aucun véhicule</span>}</div>
+                <div><p className="text-[10px] font-semibold tracking-wider text-zinc-500 uppercase">Facturé / réalisé</p><p className="mt-1 text-sm font-bold text-zinc-900">{formatMoney(metrics.revenue)}</p></div>
+                <div><p className="text-[10px] font-semibold tracking-wider text-zinc-500 uppercase">Encaissé</p><p className="mt-1 text-sm font-bold text-emerald-700">{formatMoney(metrics.collected)}</p></div>
+                <div><p className="text-[10px] font-semibold tracking-wider text-zinc-500 uppercase">Prestations</p><p className="mt-1 text-sm font-bold text-zinc-900">{metrics.interventions.length}</p></div>
+                <ChevronRight className="hidden size-4 text-zinc-400 transition group-hover:translate-x-0.5 group-hover:text-orange-600 sm:block" />
+              </button>
+              <button type="button" onClick={() => setDeletingClient(client)} aria-label={`Supprimer ${client.company || `${client.firstName} ${client.lastName}`}`} title="Supprimer le contact" className="focus-ring m-3 grid size-9 place-items-center self-center rounded-xl border border-red-100 bg-red-50 text-red-600 shadow-sm transition hover:border-red-300 hover:bg-red-100"><Trash2 className="size-4" /></button>
+            </div>
           );
         })}
       </div>
+
+      <Modal open={Boolean(deletingClient)} onClose={() => setDeletingClient(null)} title="Supprimer ce contact ?" description={deletingClient?.company || `${deletingClient?.firstName ?? ""} ${deletingClient?.lastName ?? ""}`.trim()}>
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+          <p className="flex items-center gap-2 text-sm font-bold"><AlertTriangle className="size-4" /> Le contact sera retiré des listes actives</p>
+          <p className="mt-2 text-xs leading-5 text-amber-800">Ses anciennes prestations, factures et devis resteront conservés avec son nom pour préserver l’historique de l’entreprise.</p>
+        </div>
+        <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+          {[["Véhicules", deletingVehicles], ["Prestations", deletingInterventions], ["Documents", deletingDocuments]].map(([label, value]) => <div key={label} className="rounded-xl border border-zinc-200 bg-zinc-50 p-3"><p className="text-lg font-extrabold text-zinc-900">{value}</p><p className="mt-1 text-[10px] font-semibold text-zinc-500">{label}</p></div>)}
+        </div>
+        <div className="mt-5 flex justify-end gap-2"><Button variant="ghost" onClick={() => setDeletingClient(null)}>Annuler</Button><Button variant="danger" onClick={removeClient}><Trash2 className="size-4" /> Supprimer le contact</Button></div>
+      </Modal>
 
       <Modal open={Boolean(selected)} onClose={() => setSelected(null)} title={selected?.company || `${selected?.firstName ?? ""} ${selected?.lastName ?? ""}`} description={selected?.kind === "business" ? "Client professionnel" : "Client particulier"} className="sm:max-w-3xl">
         {selected && (() => {
