@@ -75,7 +75,7 @@ export default function DocumentsPage() {
 
   return (
     <div className="space-y-7">
-      <PageHeader eyebrow="Henrri reste la référence" title="Documents & paiements" description="Importez les PDF officiels, contrôlez les champs extraits, rapprochez les documents et confirmez séparément les encaissements." actions={<Button onClick={() => fileRef.current?.click()} disabled={loading}>{loading ? <LoaderCircle className="size-4 animate-spin" /> : <UploadCloud className="size-4" />} Importer un PDF</Button>} />
+      <PageHeader eyebrow="Justificatifs facultatifs" title="Documents" description="Ajoutez vos devis ou factures si vous en avez besoin. Les objectifs restent calculés depuis les encaissements des prestations, jamais depuis un PDF." actions={<Button variant="secondary" onClick={() => fileRef.current?.click()} disabled={loading}>{loading ? <LoaderCircle className="size-4 animate-spin" /> : <UploadCloud className="size-4" />} Importer un PDF</Button>} />
       <input ref={fileRef} type="file" accept="application/pdf,.pdf" multiple={false} className="hidden" onChange={(event) => importFile(event.target.files?.[0])} />
       <div className="flex flex-wrap gap-2">{([['invoices', 'Factures', data.invoices.length], ['quotes', 'Devis', data.quotes.length], ['imports', 'Rapprochements', matchCandidates.length]] as const).map(([id, label, count]) => <button key={id} onClick={() => setTab(id)} className={`focus-ring rounded-xl border px-4 py-2.5 text-xs font-semibold transition ${tab === id ? "border-brand-400/30 bg-brand-400/10 text-brand-300" : "border-white/[0.07] bg-white/[0.025] text-zinc-500 hover:text-zinc-300"}`}>{label} <span className="ml-1 opacity-60">{count}</span></button>)}</div>
 

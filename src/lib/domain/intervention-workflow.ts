@@ -1,7 +1,7 @@
-import { paymentStatusForInvoice, paymentsForIntervention, paymentsForInvoice } from "./calculations";
+import { paymentsForIntervention, paymentsForInvoice } from "./calculations";
 import type { Intervention, Invoice, Payment } from "./types";
 
-export type WorkflowStepId = "appointment" | "service" | "invoice" | "payment";
+export type WorkflowStepId = "appointment" | "service" | "payment";
 export type WorkflowStepState = "done" | "current" | "pending";
 
 export interface InterventionWorkflowStep {
@@ -19,21 +19,21 @@ export function getInterventionWorkflow(
   const appointmentDone = Boolean(intervention.startAt) && intervention.status !== "to_schedule";
   const serviceDone = intervention.status === "completed";
   const directPaidAmount = paymentsForIntervention(intervention.id, payments);
-  const invoiceDone = Boolean(invoice && invoice.status !== "cancelled") || directPaidAmount > 0;
-  const payableTotal = invoice?.totalIncludingTax ?? intervention.items.reduce((sum, item) => sum + item.revenueAllocated, 0);
-  const paidAmount = invoice ? paymentsForInvoice(invoice.id, payments) : directPaidAmount;
-  const paid = invoice ? paymentStatusForInvoice(invoice, payments) === "paid" : payableTotal > 0 && paidAmount >= payableTotal;
-  const outstanding = invoice || directPaidAmount > 0 ? Math.max(payableTotal - paidAmount, 0) : 0;
-  const completed = [appointmentDone, serviceDone, invoiceDone, paid];
+  const interventionTotal = intervention.items.reduce((sum, item) => sum + item.revenueAllocated, 0);
+  const payableTotal = interventionTotal > 0 ? interventionTotal : (invoice?.totalIncludingTax ?? 0);
+  const invoicePaidAmount = invoice ? paymentsForInvoice(invoice.id, payments) : 0;
+  const paidAmount = directPaidAmount + invoicePaidAmount;
+  const paid = payableTotal > 0 && paidAmount >= payableTotal;
+  const outstanding = Math.max(payableTotal - paidAmount, 0);
+  const completed = [appointmentDone, serviceDone, paid];
   const currentIndex = completed.findIndex((value) => !value);
   const details = [
     intervention.startAt ? "Créneau défini" : "À planifier",
     serviceDone ? "Terminée" : intervention.status === "in_progress" ? "En cours" : "À réaliser",
-    invoice ? invoice.number : directPaidAmount > 0 ? "Sans facture" : "Facture ou paiement manuel",
     paid ? "Encaissée" : paidAmount > 0 ? "Paiement partiel" : "À encaisser",
   ];
-  const labels = ["Rendez-vous", "Prestation", "Facture", "Paiement"];
-  const ids: WorkflowStepId[] = ["appointment", "service", "invoice", "payment"];
+  const labels = ["Rendez-vous", "Prestation", "Encaissement"];
+  const ids: WorkflowStepId[] = ["appointment", "service", "payment"];
   const steps: InterventionWorkflowStep[] = ids.map((id, index) => ({
     id,
     label: labels[index] ?? id,
@@ -48,6 +48,7 @@ export function getInterventionWorkflow(
     isCancelled: intervention.status === "cancelled",
     paidAmount,
     outstanding,
+    hasInvoice: Boolean(invoice),
     paymentMode: invoice ? "invoice" as const : directPaidAmount > 0 ? "manual" as const : null,
   };
 }

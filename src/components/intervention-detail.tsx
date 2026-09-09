@@ -38,7 +38,7 @@ import type { InterventionStatus } from "@/lib/domain/types";
 import { useDemoStore } from "@/lib/demo/store";
 import { formatDate, formatMoney } from "@/lib/utils";
 
-const stepIcons = { appointment: CalendarCheck2, service: Sparkles, invoice: ReceiptText, payment: CircleDollarSign } satisfies Record<WorkflowStepId, typeof CalendarCheck2>;
+const stepIcons = { appointment: CalendarCheck2, service: Sparkles, payment: CircleDollarSign } satisfies Record<WorkflowStepId, typeof CalendarCheck2>;
 const interventionVehicleFormats = ["Citadine", "Berline", "SUV", "Monospace", "4x4", "Fourgon", "Autre"] as const;
 
 function localDateParts(value?: string) {
@@ -222,7 +222,7 @@ export function InterventionDetail({ interventionId, startEditing = false, onDir
     setStatusDraft("completed");
     markSaved(["status"], { status: "completed" });
     markSaved(["actuals"]);
-    toast.success(current.status === "completed" ? "Temps et coûts enregistrés" : "Prestation terminée — elle peut maintenant être facturée");
+    toast.success(current.status === "completed" ? "Temps et coûts enregistrés" : "Prestation terminée — elle peut maintenant être encaissée");
   };
 
   const linkInvoice = () => {
@@ -281,10 +281,37 @@ export function InterventionDetail({ interventionId, startEditing = false, onDir
     toast.success("Paiement annulé — la prestation est de nouveau à encaisser");
   };
 
+  const directPaymentHistory = directPayments.length > 0 ? (
+    <div>
+      <p className="mb-2 text-xs font-bold">Historique des encaissements</p>
+      <div className="grid gap-2">
+        {directPayments.map((payment) => (
+          <div key={payment.id} className="rounded-xl border border-black/[0.06] bg-white p-3 text-xs">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0"><p className="truncate font-semibold">{formatDate(payment.paidAt)} · {payment.method}</p><p className="mt-1 text-[10px] text-zinc-500">Encaissement de la prestation</p></div>
+              <div className="flex shrink-0 items-center gap-2">
+                <strong className="text-sm">{formatMoney(payment.amount)}</strong>
+                <Button size="sm" variant="ghost" aria-label={`Modifier le paiement du ${formatDate(payment.paidAt)}`} onClick={() => editManualPayment(payment.id)}><Pencil className="size-3.5" /> Modifier</Button>
+                <Button size="sm" variant="ghost" className="text-red-600" aria-label={`Marquer non payé le paiement du ${formatDate(payment.paidAt)}`} onClick={() => setConfirmingPaymentId(payment.id)}><Trash2 className="size-3.5" /> Marquer non payée</Button>
+              </div>
+            </div>
+            {editingPaymentId === payment.id && <div className="mt-3 grid gap-3 border-t border-black/[0.06] pt-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto_auto]"><Field label="Montant (€)"><Input min="0.01" step="0.01" type="number" value={editingPaymentEuros} onChange={(event) => setEditingPaymentEuros(Number(event.target.value))} /></Field><Field label="Moyen de paiement"><Select value={editingPaymentMethod} onChange={(event) => setEditingPaymentMethod(event.target.value)}><option>Carte</option><option>Virement</option><option>Espèces</option><option>Chèque</option></Select></Field><Field label="Date du paiement"><Input type="date" max={todayDateValue()} value={editingPaymentDate} onChange={(event) => setEditingPaymentDate(event.target.value)} /></Field><Button className="self-end" onClick={saveManualPayment}><Save className="size-4" /> Enregistrer</Button><Button className="self-end" variant="ghost" onClick={closePaymentEdit}>Annuler</Button></div>}
+            {confirmingPaymentId === payment.id && (
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-red-200 pt-3">
+                <p className="text-red-700">Retirer ce paiement et repasser la prestation en « à encaisser » ?</p>
+                <div className="flex gap-2"><Button size="sm" variant="ghost" onClick={() => setConfirmingPaymentId(null)}>Garder</Button><Button size="sm" variant="danger" onClick={() => cancelPayment(payment.id)}>Confirmer</Button></div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  ) : null;
+
   return (
     <div className="intervention-detail space-y-5 text-[#172033]">
       <div className="overflow-x-auto pb-1">
-        <div className="intervention-workflow grid min-w-[620px] grid-cols-4 gap-2">
+        <div className="intervention-workflow grid min-w-[520px] grid-cols-3 gap-2">
           {workflow.steps.map((step, index) => {
             const Icon = stepIcons[step.id];
             return <div key={step.id} className={`relative rounded-2xl border p-3 ${step.state === "done" ? "border-emerald-200 bg-emerald-50" : step.state === "current" ? "border-brand-200 bg-brand-50 shadow-sm" : "border-black/[0.08] bg-zinc-50"}`}><div className="flex items-center gap-2"><span className={`grid size-7 place-items-center rounded-xl ${step.state === "done" ? "bg-emerald-600 text-on-accent" : step.state === "current" ? "bg-brand-500 text-on-accent" : "bg-ink-900 text-zinc-400 shadow-sm"}`}>{step.state === "done" ? <CheckCircle2 className="size-4" /> : <Icon className="size-3.5" />}</span><span className="text-[10px] font-bold tracking-wider text-zinc-500">0{index + 1}</span></div><p className="mt-3 text-xs font-bold">{step.label}</p><p className="mt-1 text-[10px] text-zinc-500">{step.detail}</p></div>;
@@ -292,7 +319,7 @@ export function InterventionDetail({ interventionId, startEditing = false, onDir
         </div>
       </div>
 
-      {workflow.isCancelled ? <div className="flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700"><AlertTriangle className="size-5" /> Cette prestation est annulée. Vous pouvez corriger son statut depuis Modifier.</div> : workflow.isComplete ? <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-800"><CheckCircle2 className="size-5" /> {workflow.paymentMode === "manual" ? "Prestation entièrement encaissée manuellement, sans facture." : "Parcours terminé : prestation réalisée, facturée et entièrement encaissée."}</div> : <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand-200 bg-gradient-to-r from-brand-50 to-violet-50 p-4"><div><p className="text-[10px] font-bold tracking-wider text-brand-600 uppercase">Prochaine étape</p><p className="mt-1 text-sm font-bold">{workflow.currentStep === "appointment" ? "Planifier le rendez-vous" : workflow.currentStep === "service" ? current.status === "in_progress" ? "Terminer et saisir les coûts réels" : "Préparer puis réaliser la prestation" : workflow.currentStep === "invoice" ? "Associer une facture ou valider un paiement manuel" : "Enregistrer l’encaissement"}</p></div>{workflow.currentStep === "appointment" && <Link href="/planning"><Button size="sm"><CalendarCheck2 className="size-4" /> Ouvrir le planning</Button></Link>}{workflow.currentStep === "service" && current.status === "scheduled" && <Button size="sm" onClick={() => updateWorkflowStatus("confirmed", "Rendez-vous confirmé")}><CheckCircle2 className="size-4" /> Confirmer le rendez-vous</Button>}{workflow.currentStep === "service" && current.status === "confirmed" && <Button size="sm" onClick={() => updateWorkflowStatus("in_progress", "Prestation démarrée")}><Play className="size-4" /> Démarrer</Button>}{workflow.currentStep === "invoice" && <Link href="/documents?tab=imports"><Button size="sm" variant="secondary"><FileUp className="size-4" /> Importer une facture</Button></Link>}</div>}
+      {workflow.isCancelled ? <div className="flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700"><AlertTriangle className="size-5" /> Cette prestation est annulée. Vous pouvez corriger son statut depuis Modifier.</div> : workflow.isComplete ? <div className="flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-800"><CheckCircle2 className="size-5" /> Prestation entièrement encaissée. Ce montant alimente maintenant le chiffre d’affaires et les objectifs.</div> : <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-brand-200 bg-gradient-to-r from-brand-50 to-violet-50 p-4"><div><p className="text-[10px] font-bold tracking-wider text-brand-600 uppercase">Prochaine étape</p><p className="mt-1 text-sm font-bold">{workflow.currentStep === "appointment" ? "Planifier le rendez-vous" : workflow.currentStep === "service" ? current.status === "in_progress" ? "Terminer et saisir les coûts réels" : "Préparer puis réaliser la prestation" : "Enregistrer l’encaissement"}</p></div>{workflow.currentStep === "appointment" && <Link href="/planning"><Button size="sm"><CalendarCheck2 className="size-4" /> Ouvrir le planning</Button></Link>}{workflow.currentStep === "service" && current.status === "scheduled" && <Button size="sm" onClick={() => updateWorkflowStatus("confirmed", "Rendez-vous confirmé")}><CheckCircle2 className="size-4" /> Confirmer le rendez-vous</Button>}{workflow.currentStep === "service" && current.status === "confirmed" && <Button size="sm" onClick={() => updateWorkflowStatus("in_progress", "Prestation démarrée")}><Play className="size-4" /> Démarrer</Button>}</div>}
 
       <section className="rounded-2xl border border-black/[0.08] bg-ink-900 p-4 shadow-[0_8px_28px_rgba(47,40,72,.07)] sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -335,30 +362,30 @@ export function InterventionDetail({ interventionId, startEditing = false, onDir
 
       {(current.status === "confirmed" || current.status === "in_progress" || current.status === "completed") && <section className="rounded-2xl border border-black/[0.08] bg-ink-900 p-4 shadow-[0_8px_28px_rgba(47,40,72,.07)] sm:p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-base font-bold">Réalisation de la prestation</h3><p className="mt-1 text-xs text-zinc-500">Checklist, temps réellement passé et coûts directs.</p></div>{current.status === "confirmed" && <Button size="sm" onClick={() => updateWorkflowStatus("in_progress")}><Play className="size-4" /> Démarrer</Button>}</div><div className="mt-5 rounded-xl border border-black/[0.06] bg-zinc-50 p-4"><div className="flex items-center justify-between gap-3"><p className="text-xs font-semibold">Checklist opérationnelle</p><p className="text-xs font-bold">{current.checklistDone}/{current.checklistTotal}</p></div><Progress value={current.checklistTotal ? current.checklistDone / current.checklistTotal * 100 : 0} className="mt-3" />{current.checklistTotal > 0 && <Button className="mt-3" size="sm" variant="secondary" disabled={current.checklistDone >= current.checklistTotal} onClick={() => data.incrementChecklist(current.id)}><CheckCircle2 className="size-3.5" /> Étape suivante</Button>}{current.checklistTotal === 0 && <p className="mt-2 text-[10px] text-zinc-500">Aucune checklist n’est associée à cette prestation.</p>}</div>{(current.status === "in_progress" || current.status === "completed") && <div className="mt-5"><div className="grid gap-4 sm:grid-cols-2"><Field label="Durée réelle (h)"><Input min="0" step="0.25" type="number" value={actualHours} onChange={(event) => setActualHours(Number(event.target.value))} /></Field>{current.workers.map((worker) => { const member = data.team.find((item) => item.id === worker.memberId); return <Field key={worker.memberId} label={`Temps de ${member?.firstName ?? "collaborateur"} (h)`}><Input min="0" step="0.25" type="number" value={actualWorkerHours[worker.memberId] ?? 0} onChange={(event) => setActualWorkerHours((state) => ({ ...state, [worker.memberId]: Number(event.target.value) }))} /></Field>; })}<Field label="Produits (€)"><Input min="0" step="0.01" type="number" value={productEuros} onChange={(event) => setProductEuros(Number(event.target.value))} /></Field><Field label="Déplacement (€)"><Input min="0" step="0.01" type="number" value={travelEuros} onChange={(event) => setTravelEuros(Number(event.target.value))} /></Field><Field label="Autres coûts (€)"><Input min="0" step="0.01" type="number" value={otherEuros} onChange={(event) => setOtherEuros(Number(event.target.value))} /></Field></div><div className="mt-4 flex flex-wrap items-center justify-between gap-3"><div className="flex gap-4 text-xs"><span>Marge <strong>{formatMoney(margin)}</strong></span><span>Marge/h <strong>{hourly === null ? "—" : `${formatMoney(hourly)}/h`}</strong></span></div><Button onClick={finishService}>{current.status === "completed" ? <Save className="size-4" /> : <Square className="size-4" />} {current.status === "completed" ? "Mettre à jour les temps et coûts" : "Terminer la prestation"}</Button></div></div>}</section>}
 
-      <section className={`rounded-2xl border p-4 sm:p-5 ${current.status === "completed" || invoice ? "border-violet-200 bg-violet-50/40" : "border-zinc-200 bg-zinc-50"}`}>
+      <section className={`rounded-2xl border p-4 sm:p-5 ${current.status === "completed" || invoice ? "border-emerald-200 bg-emerald-50/35" : "border-zinc-200 bg-zinc-50"}`}>
         <div className="flex items-start gap-3">
-          <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-violet-100 text-violet-700"><ReceiptText className="size-5" /></span>
-          <div><h3 className="text-base font-bold">Facture & encaissement</h3><p className="mt-1 text-xs text-zinc-500">Encaissez directement la prestation ou associez une facture Henrri.</p></div>
+          <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-emerald-100 text-emerald-700"><CircleDollarSign className="size-5" /></span>
+          <div><h3 className="text-base font-bold">Encaissement de la prestation</h3><p className="mt-1 text-xs text-zinc-500">Enregistrez le montant réellement reçu. Ajouter une facture reste entièrement facultatif.</p></div>
         </div>
 
         {current.status !== "completed" && !invoice ? (
           <p className="mt-5 rounded-xl border border-dashed border-zinc-300 p-5 text-center text-xs text-zinc-500">Cette zone sera disponible dès que la prestation sera terminée.</p>
         ) : invoice ? (
           <div className="mt-5 grid gap-4">
-            <div className="grid gap-3 rounded-2xl bg-ink-900 p-4 sm:grid-cols-4">
-              <div><p className="text-[10px] font-bold text-zinc-500 uppercase">Facture</p><p className="mt-1 text-sm font-bold">{invoice.number}</p></div>
+            <div className="grid gap-3 rounded-2xl border border-violet-100 bg-white p-4 sm:grid-cols-4">
+              <div><p className="text-[10px] font-bold text-zinc-500 uppercase">Justificatif facultatif</p><p className="mt-1 text-sm font-bold">{invoice.number}</p></div>
               <div><p className="text-[10px] font-bold text-zinc-500 uppercase">Total TTC</p><p className="mt-1 text-sm font-bold">{formatMoney(invoice.totalIncludingTax)}</p></div>
               <div><p className="text-[10px] font-bold text-zinc-500 uppercase">Encaissé</p><p className="mt-1 text-sm font-bold text-emerald-700">{formatMoney(workflow.paidAmount)}</p></div>
               <div><p className="text-[10px] font-bold text-zinc-500 uppercase">Reste</p><p className="mt-1 text-sm font-bold text-brand-700">{formatMoney(workflow.outstanding)}</p></div>
               <div className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-100 pt-3 sm:col-span-4"><StatusBadge status={paymentStatusForInvoice(invoice, data.payments)}>{paymentStatusLabels[paymentStatusForInvoice(invoice, data.payments)]}</StatusBadge><button className="text-[10px] font-semibold text-zinc-500 hover:text-red-600" onClick={() => { data.linkInvoiceToIntervention(current.id, undefined); setInvoiceChoice(""); toast.info("Facture dissociée"); }}>Changer de facture</button></div>
             </div>
-            {workflow.outstanding > 0 && <div className="grid gap-3 rounded-2xl border border-emerald-200 bg-ink-900 p-4 sm:grid-cols-[1fr_1fr_auto]"><Field label="Montant reçu (€)"><Input min="0.01" max={workflow.outstanding / 100} step="0.01" type="number" value={paymentEuros || workflow.outstanding / 100} onChange={(event) => setPaymentEuros(Number(event.target.value))} /></Field><Field label="Moyen de paiement"><Select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option>Carte</option><option>Virement</option><option>Espèces</option><option>Chèque</option></Select></Field><Button className="self-end" onClick={addPayment}><CircleDollarSign className="size-4" /> Encaisser</Button></div>}
+            {workflow.outstanding > 0 && <div className="grid gap-3 rounded-2xl border border-emerald-200 bg-white p-4 sm:grid-cols-[1fr_1fr_auto]"><Field label="Montant reçu (€)"><Input min="0.01" max={workflow.outstanding / 100} step="0.01" type="number" value={paymentEuros || workflow.outstanding / 100} onChange={(event) => setPaymentEuros(Number(event.target.value))} /></Field><Field label="Moyen de paiement"><Select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option>Carte</option><option>Virement</option><option>Espèces</option><option>Chèque</option></Select></Field><Button className="self-end" onClick={addPayment}><CircleDollarSign className="size-4" /> Encaisser</Button></div>}
             {data.payments.some((payment) => payment.invoiceId === invoice.id) && (
               <div>
                 <p className="mb-2 text-xs font-bold">Historique des paiements</p>
                 <div className="grid gap-2">
                   {data.payments.filter((payment) => payment.invoiceId === invoice.id).map((payment) => (
-                    <div key={payment.id} className="rounded-xl border border-black/[0.06] bg-ink-900 px-4 py-3 text-xs">
+                    <div key={payment.id} className="rounded-xl border border-black/[0.06] bg-white px-4 py-3 text-xs">
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <span>{formatDate(payment.paidAt)} · {payment.method}</span>
                         <div className="flex items-center gap-2">
@@ -382,41 +409,17 @@ export function InterventionDetail({ interventionId, startEditing = false, onDir
                 </div>
               </div>
             )}
+            {directPaymentHistory}
           </div>
         ) : (
           <div className="mt-5 grid gap-4">
             {directPayments.length > 0 && <div className="grid gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 sm:grid-cols-3"><div><p className="text-[10px] font-bold text-emerald-700 uppercase">Mode</p><p className="mt-1 text-sm font-bold">Paiement manuel</p></div><div><p className="text-[10px] font-bold text-emerald-700 uppercase">Encaissé</p><p className="mt-1 text-sm font-bold text-emerald-800">{formatMoney(workflow.paidAmount)}</p></div><div><p className="text-[10px] font-bold text-emerald-700 uppercase">Reste</p><p className="mt-1 text-sm font-bold">{formatMoney(workflow.outstanding)}</p></div></div>}
 
-            {(directPayments.length === 0 || workflow.outstanding > 0) && <div className="rounded-2xl border border-emerald-200 bg-ink-900 p-4"><div className="mb-4"><p className="flex items-center gap-2 text-sm font-bold text-emerald-800"><CircleDollarSign className="size-4" /> Valider un paiement sans facture</p><p className="mt-1 text-xs text-zinc-500">Le montant sera comptabilisé dans le chiffre d’affaires encaissé et la trésorerie.</p></div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto]"><Field label="Montant reçu (€)"><Input min="0.01" max={(directPayments.length > 0 ? workflow.outstanding : interventionTotal) / 100} step="0.01" type="number" value={paymentEuros || (directPayments.length > 0 ? workflow.outstanding : interventionTotal) / 100} onChange={(event) => setPaymentEuros(Number(event.target.value))} /></Field><Field label="Moyen de paiement"><Select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option>Carte</option><option>Virement</option><option>Espèces</option><option>Chèque</option></Select></Field><Field label="Date du paiement"><Input type="date" max={todayDateValue()} value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} /></Field><Button className="self-end" disabled={interventionTotal <= 0} onClick={addManualPayment}><CheckCircle2 className="size-4" /> Valider le paiement</Button></div>{interventionTotal <= 0 && <p className="mt-3 text-xs font-semibold text-red-600">Renseignez d’abord un montant prévu dans la prestation.</p>}</div>}
+            {(directPayments.length === 0 || workflow.outstanding > 0) && <div className="rounded-2xl border border-emerald-200 bg-white p-4"><div className="mb-4"><p className="flex items-center gap-2 text-sm font-bold text-emerald-800"><CircleDollarSign className="size-4" /> Enregistrer un encaissement</p><p className="mt-1 text-xs text-zinc-500">Le montant reçu sera utilisé pour le chiffre d’affaires encaissé, les objectifs et la trésorerie.</p></div><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto]"><Field label="Montant reçu (€)"><Input min="0.01" max={(directPayments.length > 0 ? workflow.outstanding : interventionTotal) / 100} step="0.01" type="number" value={paymentEuros || (directPayments.length > 0 ? workflow.outstanding : interventionTotal) / 100} onChange={(event) => setPaymentEuros(Number(event.target.value))} /></Field><Field label="Moyen de paiement"><Select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option>Carte</option><option>Virement</option><option>Espèces</option><option>Chèque</option></Select></Field><Field label="Date du paiement"><Input type="date" max={todayDateValue()} value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} /></Field><Button className="self-end" disabled={interventionTotal <= 0} onClick={addManualPayment}><CheckCircle2 className="size-4" /> Valider le paiement</Button></div>{interventionTotal <= 0 && <p className="mt-3 text-xs font-semibold text-red-600">Renseignez d’abord un montant prévu dans la prestation.</p>}</div>}
 
-            {directPayments.length > 0 && (
-              <div>
-                <p className="mb-2 text-xs font-bold">Historique des paiements manuels</p>
-                <div className="grid gap-2">
-                  {directPayments.map((payment) => (
-                    <div key={payment.id} className="rounded-xl border border-black/[0.06] bg-ink-900 p-3 text-xs">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0"><p className="truncate font-semibold">{formatDate(payment.paidAt)} · {payment.method}</p><p className="mt-1 text-[10px] text-zinc-500">Paiement manuel</p></div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          <strong className="text-sm">{formatMoney(payment.amount)}</strong>
-                          <Button size="sm" variant="ghost" aria-label={`Modifier le paiement du ${formatDate(payment.paidAt)}`} onClick={() => editManualPayment(payment.id)}><Pencil className="size-3.5" /> Modifier</Button>
-                          <Button size="sm" variant="ghost" className="text-red-600" aria-label={`Marquer non payé le paiement du ${formatDate(payment.paidAt)}`} onClick={() => setConfirmingPaymentId(payment.id)}><Trash2 className="size-3.5" /> Marquer non payée</Button>
-                        </div>
-                      </div>
-                      {editingPaymentId === payment.id && <div className="mt-3 grid gap-3 border-t border-black/[0.06] pt-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto_auto]"><Field label="Montant (€)"><Input min="0.01" step="0.01" type="number" value={editingPaymentEuros} onChange={(event) => setEditingPaymentEuros(Number(event.target.value))} /></Field><Field label="Moyen de paiement"><Select value={editingPaymentMethod} onChange={(event) => setEditingPaymentMethod(event.target.value)}><option>Carte</option><option>Virement</option><option>Espèces</option><option>Chèque</option></Select></Field><Field label="Date du paiement"><Input type="date" max={todayDateValue()} value={editingPaymentDate} onChange={(event) => setEditingPaymentDate(event.target.value)} /></Field><Button className="self-end" onClick={saveManualPayment}><Save className="size-4" /> Enregistrer</Button><Button className="self-end" variant="ghost" onClick={closePaymentEdit}>Annuler</Button></div>}
-                      {confirmingPaymentId === payment.id && (
-                        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-red-200 pt-3">
-                          <p className="text-red-700">Retirer ce paiement et repasser la prestation en « à encaisser » ?</p>
-                          <div className="flex gap-2"><Button size="sm" variant="ghost" onClick={() => setConfirmingPaymentId(null)}>Garder</Button><Button size="sm" variant="danger" onClick={() => cancelPayment(payment.id)}>Confirmer</Button></div>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            {directPaymentHistory}
 
-            {directPayments.length === 0 && <div className="rounded-2xl border border-dashed border-violet-200 p-4"><p className="mb-3 text-xs font-bold text-violet-700">Ou associer une facture Henrri</p><div className="grid gap-3 sm:grid-cols-[1fr_auto]"><Field label="Facture du client"><Select value={invoiceChoice} onChange={(event) => setInvoiceChoice(event.target.value)}><option value="">Sélectionner une facture importée…</option>{eligibleInvoices.map((item) => <option key={item.id} value={item.id}>{item.number} · {formatMoney(item.totalIncludingTax)} · {formatDate(item.issuedAt)}</option>)}</Select></Field><Button className="self-end" disabled={!invoiceChoice} onClick={linkInvoice}><ReceiptText className="size-4" /> Associer</Button></div><div className="mt-3 flex justify-end"><Link href="/documents?tab=imports"><Button size="sm" variant="ghost"><FileUp className="size-3.5" /> Importer une facture</Button></Link></div></div>}
+            <div className="rounded-2xl border border-dashed border-violet-200 bg-violet-50/40 p-4"><p className="text-[10px] font-bold tracking-wider text-violet-700 uppercase">Document facultatif</p><p className="mb-3 mt-1 text-xs text-zinc-500">Vous pouvez associer une facture comme justificatif, maintenant ou plus tard.</p><div className="grid gap-3 sm:grid-cols-[1fr_auto]"><Field label="Facture du client"><Select value={invoiceChoice} onChange={(event) => setInvoiceChoice(event.target.value)}><option value="">Sélectionner une facture importée…</option>{eligibleInvoices.map((item) => <option key={item.id} value={item.id}>{item.number} · {formatMoney(item.totalIncludingTax)} · {formatDate(item.issuedAt)}</option>)}</Select></Field><Button className="self-end" disabled={!invoiceChoice} onClick={linkInvoice}><ReceiptText className="size-4" /> Associer</Button></div><div className="mt-3 flex justify-end"><Link href="/documents?tab=imports"><Button size="sm" variant="ghost"><FileUp className="size-3.5" /> Importer un justificatif</Button></Link></div></div>
           </div>
         )}
       </section>

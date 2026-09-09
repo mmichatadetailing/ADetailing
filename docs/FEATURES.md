@@ -2,14 +2,14 @@
 
 ## Fonctionnel dans la V1
 
-- dashboard avec huit KPI distincts, tâches, alertes, devis, factures et activité ;
+- dashboard avec huit KPI distincts, objectifs fondés sur les encaissements, tâches, alertes et activité ;
 - clients séparés des véhicules, recherche globale, détection de doublons et suppression rapide sans perdre l’historique légal ;
 - pipeline commercial Kanban avec glisser-déposer et vue tableau ;
 - catalogue créé, dupliqué, archivé et réordonné depuis l’interface ;
 - interventions multi-lignes, heures individuelles, heures-personnes, coûts, marges et suppression rapide avec nettoyage des paiements manuels ;
 - calendrier jour/semaine/mois/liste, glisser-déposer, redimensionnement et conflits ;
 - import PDF Henrri, scores de confiance, remises implicites et revue humaine ;
-- devis, factures, paiements partiels et rapprochement explicable ;
+- encaissement direct des prestations, paiements partiels et factures facultatives avec rapprochement explicable ;
 - charges ponctuelles, mensuelles et annuelles projetées à leurs échéances, calendrier mensuel, prévision glissante sur douze mois, investissements liés, objectifs, analyses et simulation de recrutement ;
 - comptes Supabase, invitations sécurisées par e-mail, rôles et espaces entreprise partagés ;
 - canal général d’équipe et conversations de prestations privées par participants ;

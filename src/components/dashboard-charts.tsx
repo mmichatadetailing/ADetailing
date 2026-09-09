@@ -54,7 +54,7 @@ export function DashboardCharts({
 }) {
   const periodRevenue = focusMonth ? revenue.filter((item) => item.key === focusMonth) : revenue;
   const periodCashFlow = focusMonth ? cashFlow.filter((item) => item.key === focusMonth) : cashFlow;
-  const annualRealized = periodRevenue.reduce((sum, item) => sum + item.realized, 0);
+  const annualCollected = periodRevenue.reduce((sum, item) => sum + item.collected, 0);
   const annualObjective = periodRevenue.reduce((sum, item) => sum + (item.objective ?? 0), 0);
   const annualCashFlow = periodCashFlow.reduce((sum, item) => sum + item.cashFlow, 0);
   const periodExpenses = periodCashFlow.reduce((sum, item) => sum + item.expenses, 0);
@@ -69,8 +69,8 @@ export function DashboardCharts({
           <div className="flex items-start gap-3">
             <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-orange-100 text-brand-600 shadow-sm"><Target className="size-[18px]" /></span>
             <div>
-              <h2 className="font-bold">Objectif & chiffre d’affaires</h2>
-              <p className="mt-1 text-xs text-zinc-500">Exercice {year} complet ; la période analysée est mise en avant.</p>
+              <h2 className="font-bold">Objectif & encaissements</h2>
+              <p className="mt-1 text-xs text-zinc-500">Exercice {year} · seuls les paiements reçus pour des prestations font progresser l’objectif.</p>
             </div>
           </div>
           <Badge variant="orange">{periodLabel}</Badge>
@@ -78,8 +78,8 @@ export function DashboardCharts({
         <CardContent className="pt-1">
           <div className="mb-5 grid gap-3 rounded-2xl border border-orange-100 bg-white/85 p-4 shadow-sm sm:grid-cols-2">
             <div>
-              <p className="text-[10px] font-bold tracking-[.12em] text-zinc-600 uppercase">CA facturé · période</p>
-              <p className="mt-1 text-xl font-extrabold tracking-tight text-brand-600">{formatMoney(annualRealized)}</p>
+              <p className="text-[10px] font-bold tracking-[.12em] text-zinc-600 uppercase">CA encaissé · période</p>
+              <p className="mt-1 text-xl font-extrabold tracking-tight text-brand-600">{formatMoney(annualCollected)}</p>
             </div>
             <div className="sm:border-l sm:border-zinc-200 sm:pl-4">
               <p className="text-[10px] font-bold tracking-[.12em] text-zinc-600 uppercase">Objectif · période</p>
@@ -87,7 +87,7 @@ export function DashboardCharts({
             </div>
           </div>
           <div className="mb-3 flex flex-wrap items-center gap-4 text-[11px] font-semibold text-zinc-500">
-            <span className="flex items-center gap-2"><span className="size-2.5 rounded-sm bg-gradient-to-b from-brand-400 to-brand-600" /> CA réalisé</span>
+            <span className="flex items-center gap-2"><span className="size-2.5 rounded-sm bg-gradient-to-b from-brand-400 to-brand-600" /> Encaissements</span>
             <span className="flex items-center gap-2"><span className="h-0.5 w-5 rounded-full bg-violet-500" /> Objectif</span>
           </div>
           <div className="overflow-x-auto pb-2">
@@ -107,9 +107,9 @@ export function DashboardCharts({
                     cursor={{ fill: "rgba(249,115,79,.045)" }}
                     contentStyle={tooltipStyle}
                     labelStyle={{ color: "#172033", fontWeight: 800, marginBottom: 6 }}
-                    formatter={(value, name) => [tooltipMoney(value), name === "realized" ? "CA réalisé" : "Objectif"]}
+                    formatter={(value, name) => [tooltipMoney(value), name === "collected" ? "CA encaissé" : "Objectif"]}
                   />
-                  <Bar dataKey="realized" name="CA réalisé" fill="url(#dashboardRevenueBar)" radius={[7, 7, 3, 3]} maxBarSize={30} animationDuration={700}>
+                  <Bar dataKey="collected" name="CA encaissé" fill="url(#dashboardRevenueBar)" radius={[7, 7, 3, 3]} maxBarSize={30} animationDuration={700}>
                     {revenue.map((item) => <Cell key={item.key} fill="url(#dashboardRevenueBar)" opacity={!focusMonth || item.key === focusMonth ? 1 : 0.22} />)}
                   </Bar>
                   <Line dataKey="objective" name="Objectif" type="monotone" stroke="#7653c6" strokeWidth={2.5} strokeDasharray="6 5" connectNulls={false} dot={{ r: 4, fill: "#ffffff", stroke: "#7653c6", strokeWidth: 2 }} activeDot={{ r: 6, fill: "#7653c6", stroke: "#ffffff", strokeWidth: 3 }} animationDuration={700} />

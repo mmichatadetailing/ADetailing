@@ -2,21 +2,24 @@ import { describe, expect, it } from "vitest";
 import { buildDashboardChartData } from "./dashboard-charts";
 
 describe("données des graphiques du dashboard", () => {
-  it("agrège le CA facturé et conserve uniquement les objectifs renseignés", () => {
+  it("agrège uniquement les encaissements liés aux prestations", () => {
     const result = buildDashboardChartData({
       year: 2026,
       objectives: [{ month: "2026-07", revenueTarget: 150_000 }],
-      invoices: [
-        { issuedAt: "2026-07-03T08:00:00.000Z", status: "issued", totalIncludingTax: 50_000 },
-        { issuedAt: "2026-07-18T08:00:00.000Z", status: "issued", totalIncludingTax: 25_000 },
-        { issuedAt: "2026-07-22T08:00:00.000Z", status: "cancelled", totalIncludingTax: 99_000 },
+      interventions: [
+        { id: "job-direct" },
+        { id: "job-invoiced", invoiceId: "invoice-linked" },
       ],
-      payments: [],
+      payments: [
+        { interventionId: "job-direct", paidAt: "2026-07-03T08:00:00.000Z", amount: 50_000 },
+        { invoiceId: "invoice-linked", paidAt: "2026-07-18T08:00:00.000Z", amount: 25_000 },
+        { invoiceId: "invoice-not-linked", paidAt: "2026-07-22T08:00:00.000Z", amount: 99_000 },
+      ],
       expenses: [],
     });
 
     expect(result.revenue).toHaveLength(12);
-    expect(result.revenue[6]).toMatchObject({ key: "2026-07", objective: 150_000, realized: 75_000 });
+    expect(result.revenue[6]).toMatchObject({ key: "2026-07", objective: 150_000, collected: 75_000 });
     expect(result.revenue[5]?.objective).toBeNull();
   });
 
@@ -24,7 +27,7 @@ describe("données des graphiques du dashboard", () => {
     const result = buildDashboardChartData({
       year: 2026,
       objectives: [],
-      invoices: [],
+      interventions: [],
       payments: [{ paidAt: "2026-03-05T08:00:00.000Z", amount: 120_000 }],
       expenses: [
         { date: "2026-03-02T08:00:00.000Z", paidAt: "2026-03-07T08:00:00.000Z", paid: true, recurrence: "one_off", amountIncludingTax: 45_000 },
@@ -40,7 +43,7 @@ describe("données des graphiques du dashboard", () => {
     const result = buildDashboardChartData({
       year: 2026,
       objectives: [],
-      invoices: [],
+      interventions: [],
       payments: [],
       expenses: [
         { date: "2026-01-05T12:00:00.000Z", paid: true, recurrence: "monthly", amountIncludingTax: 10_000 },

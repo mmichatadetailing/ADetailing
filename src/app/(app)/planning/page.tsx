@@ -692,7 +692,7 @@ export default function PlanningPage() {
   const movablePlanningEvent = moveEditor?.source === "planning" ? data.planningEvents?.find((item) => item.id === moveEditor.id) : undefined;
   const canMovePlanningEvent = Boolean(currentPlanningEvent && (teamPlanning || (currentPlanningEvent.memberIds.length === 1 && currentPlanningEvent.memberIds[0] === currentUserId)));
   const panelTitle = selected ? currentIntervention?.title ?? "Dossier prestation" : selectedGoogleEvent?.title ?? (planningEventEditor ? currentPlanningEvent?.title ?? "Nouvel événement" : "Nouvelle prestation");
-  const panelDescription = selected ? "Rendez-vous · réalisation · facture · paiement" : selectedGoogleEvent ? `${selectedGoogleEvent.calendarName} · ${selectedGoogleEvent.ownedByCurrentUser ? selectedGoogleEvent.accountEmail ?? "Mon calendrier" : selectedGoogleEvent.ownerName ?? "Calendrier partagé"}` : planningEventEditor ? "Réunion, absence ou bloc horaire sans créer de prestation." : "Le créneau sélectionné est repris. Tout reste modifiable.";
+  const panelDescription = selected ? "Rendez-vous · réalisation · encaissement · justificatif facultatif" : selectedGoogleEvent ? `${selectedGoogleEvent.calendarName} · ${selectedGoogleEvent.ownedByCurrentUser ? selectedGoogleEvent.accountEmail ?? "Mon calendrier" : selectedGoogleEvent.ownerName ?? "Calendrier partagé"}` : planningEventEditor ? "Réunion, absence ou bloc horaire sans créer de prestation." : "Le créneau sélectionné est repris. Tout reste modifiable.";
   const showUnscheduled = unscheduled.length > 0 && (sourceFilter === "all" || sourceFilter === "adetailing");
   const revealUnscheduled = () => {
     pendingUnscheduledFocus.current = true;

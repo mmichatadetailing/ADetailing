@@ -1,6 +1,6 @@
 # ADetailing Pilotage
 
-Application interne de pilotage opérationnel et financier pour ADetailing Orange. Henrri reste la source légale des devis, factures et numéros de documents ; l’application centralise la relation client, le planning, les coûts, les paiements et la rentabilité.
+Application interne de pilotage opérationnel et financier pour ADetailing Orange. L’application centralise la relation client, le planning, les coûts, les encaissements et la rentabilité. Les factures Henrri peuvent être associées comme justificatifs facultatifs ; les objectifs reposent sur les paiements réellement rattachés aux prestations.
 
 ## Démarrage rapide
 

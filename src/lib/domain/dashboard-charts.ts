@@ -1,11 +1,11 @@
-import type { Expense, Invoice, MonthlyObjective, Payment } from "./types";
-import { paidExpenseAmountForMonth, projectedExpenseAmountForMonth } from "./calculations";
+import type { Expense, Intervention, MonthlyObjective, Payment } from "./types";
+import { collectedInterventionRevenue, paidExpenseAmountForMonth, projectedExpenseAmountForMonth } from "./calculations";
 
 export interface RevenueChartPoint {
   key: string;
   month: string;
   objective: number | null;
-  realized: number;
+  collected: number;
 }
 
 export interface CashFlowChartPoint {
@@ -26,15 +26,15 @@ function monthLabel(year: number, monthIndex: number) {
 export function buildDashboardChartData({
   year,
   objectives,
-  invoices,
+  interventions,
   payments,
   expenses,
   reference = new Date(),
 }: {
   year: number;
   objectives: Array<Pick<MonthlyObjective, "month" | "revenueTarget">>;
-  invoices: Array<Pick<Invoice, "issuedAt" | "status" | "totalIncludingTax">>;
-  payments: Array<Pick<Payment, "paidAt" | "amount">>;
+  interventions: Array<Pick<Intervention, "id" | "invoiceId"> & Partial<Pick<Intervention, "status">>>;
+  payments: Array<Pick<Payment, "invoiceId" | "interventionId" | "paidAt" | "amount">>;
   expenses: Array<Pick<Expense, "date" | "paidAt" | "paid" | "recurrence" | "amountIncludingTax">>;
   reference?: Date;
 }) {
@@ -45,16 +45,13 @@ export function buildDashboardChartData({
     const key = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
     const label = monthLabel(year, monthIndex);
     const objective = objectives.find((item) => item.month === key)?.revenueTarget ?? null;
-    const realized = invoices
-      .filter((invoice) => invoice.status === "issued" && invoice.issuedAt.slice(0, 7) === key)
-      .reduce((sum, invoice) => sum + invoice.totalIncludingTax, 0);
-    const receipts = payments
-      .filter((payment) => payment.paidAt.slice(0, 7) === key)
-      .reduce((sum, payment) => sum + payment.amount, 0);
+    const monthPayments = payments.filter((payment) => payment.paidAt.slice(0, 7) === key);
+    const collected = collectedInterventionRevenue(interventions.filter((intervention) => intervention.status !== "cancelled"), monthPayments);
+    const receipts = monthPayments.reduce((sum, payment) => sum + payment.amount, 0);
     const paidExpenses = paidExpenseAmountForMonth(expenses, key, reference);
     const scheduledExpenses = projectedExpenseAmountForMonth(expenses, key);
 
-    revenue.push({ key, month: label, objective, realized });
+    revenue.push({ key, month: label, objective, collected });
     cashFlow.push({
       key,
       month: label,

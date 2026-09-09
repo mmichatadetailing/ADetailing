@@ -565,12 +565,12 @@ export async function POST(request: Request) {
       ensureNoError(interventionError);
       if (!intervention) throw new Error("Prestation introuvable.");
       if (input.invoiceId) {
-        const { data: directPayment, error: directPaymentError } = await supabase.from("payments").select("id").eq("organization_id", organizationId).eq("intervention_id", input.interventionId).limit(1).maybeSingle();
-        ensureNoError(directPaymentError);
-        if (directPayment) throw new Error("Cette prestation possède déjà un paiement manuel et ne peut plus être liée à une facture.");
         const { data: invoice, error: invoiceError } = await supabase.from("invoices").select("id,client_id").eq("organization_id", organizationId).eq("id", input.invoiceId).single();
         ensureNoError(invoiceError);
         if (!invoice || invoice.client_id !== intervention.client_id) throw new Error("Cette facture ne correspond pas au client de la prestation.");
+        const { data: existingLink, error: existingLinkError } = await supabase.from("interventions").select("id").eq("organization_id", organizationId).eq("invoice_id", input.invoiceId).neq("id", input.interventionId).limit(1).maybeSingle();
+        ensureNoError(existingLinkError);
+        if (existingLink) throw new Error("Cette facture est déjà associée à une autre prestation.");
       }
       const { error } = await supabase.from("interventions").update({ invoice_id: input.invoiceId }).eq("organization_id", organizationId).eq("id", input.interventionId);
       ensureNoError(error);

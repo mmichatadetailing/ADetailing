@@ -16,8 +16,8 @@ import {
   expenseMonthSummary,
   paidExpenseAmountForMonth,
   recurringExpenseMetrics,
-  unpaidAmount,
 } from "@/lib/domain/calculations";
+import { getInterventionWorkflow } from "@/lib/domain/intervention-workflow";
 import { monthKey } from "@/lib/domain/periods";
 import type { Expense } from "@/lib/domain/types";
 import { useDemoStore, type NewExpenseInput } from "@/lib/demo/store";
@@ -126,7 +126,12 @@ export default function FinancesPage() {
   const paidExpenses = paidExpenseAmountForMonth(data.expenses, selectedMonth);
   const collected = collectedRevenue(data.payments.filter((payment) => payment.paidAt.slice(0, 7) === selectedMonth));
   const cash = cashBalance(data.settings.initialCash, data.payments, data.expenses);
-  const unpaid = unpaidAmount(data.invoices, data.payments);
+  const toCollect = data.interventions
+    .filter((intervention) => intervention.status === "completed")
+    .reduce((sum, intervention) => {
+      const invoice = data.invoices.find((item) => item.id === intervention.invoiceId);
+      return sum + getInterventionWorkflow(intervention, invoice, data.payments).outstanding;
+    }, 0);
   const recoverableVat = selectedExpenses.filter((expense) => expense.vatRecoverable).reduce((sum, expense) => sum + expense.vatAmount, 0);
   const recurring = recurringExpenseMetrics(data.expenses, selectedMonth);
   const oneOff = monthSummary.oneOff;
@@ -184,7 +189,7 @@ export default function FinancesPage() {
           { icon: CheckCircle2, label: "Déjà décaissé", value: formatMoney(paidExpenses), detail: `${formatMoney(monthSummary.paid)} rattaché aux échéances du mois`, color: "text-emerald-700" },
           { icon: Clock3, label: "Reste à décaisser", value: formatMoney(remainingExpenses), detail: `${formatMoney(monthSummary.due)} arrivé à échéance · ${formatMoney(monthSummary.upcoming)} à venir`, color: monthSummary.due > 0 ? "text-red-600" : "text-amber-600" },
           { icon: Banknote, label: "Solde prévisionnel du mois", value: formatMoney(collected - projectedExpenses), detail: `${formatMoney(collected)} encaissé − toutes les charges prévues`, color: collected - projectedExpenses >= 0 ? "text-emerald-700" : "text-red-600" },
-          { icon: WalletCards, label: "Trésorerie disponible", value: formatMoney(cash), detail: `${formatMoney(unpaid)} d’impayés clients à récupérer`, color: "text-violet-700" },
+          { icon: WalletCards, label: "Trésorerie disponible", value: formatMoney(cash), detail: `${formatMoney(toCollect)} de prestations à encaisser`, color: "text-violet-700" },
         ].map((item) => (
           <Card key={item.label}>
             <CardContent className="p-5">
