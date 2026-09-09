@@ -11,6 +11,9 @@ import {
   occupancyRate,
   paymentStatusForInvoice,
   expenseOccursInMonth,
+  expenseForecast,
+  expenseMonthSummary,
+  expenseOccurrenceDateKey,
   paidExpenseAmountForMonth,
   projectedExpenseAmountForMonth,
   recurringExpenseMetrics,
@@ -82,6 +85,36 @@ describe("charges récurrentes", () => {
   it("ne compte un prélèvement automatique qu’une fois son échéance passée", () => {
     expect(paidExpenseAmountForMonth([monthly], "2026-03", new Date("2026-03-15T12:00:00"))).toBe(0);
     expect(paidExpenseAmountForMonth([monthly], "2026-03", new Date("2026-03-31T12:00:00"))).toBe(12_000);
+  });
+
+  it("inclut toutes les échéances du mois dans le total, même avant leur prélèvement", () => {
+    const largeMonthlyCharge = { ...monthly, date: "2026-09-25", amountIncludingTax: 36_000 };
+    const currentCosts = { ...oneOff, date: "2026-09-03", amountIncludingTax: 25_100, paid: true, paidAt: "2026-09-03" };
+    const summary = expenseMonthSummary([largeMonthlyCharge, currentCosts], "2026-09", new Date("2026-09-09T08:00:00"));
+
+    expect(summary.total).toBe(61_100);
+    expect(summary.paid).toBe(25_100);
+    expect(summary.upcoming).toBe(36_000);
+    expect(summary.occurrences.map((occurrence) => occurrence.dueDate)).toEqual(["2026-09-03", "2026-09-25"]);
+  });
+
+  it("considère l’échéance comme atteinte dès le début du jour concerné", () => {
+    const dueToday = { ...monthly, date: "2026-09-09", amountIncludingTax: 36_000 };
+    expect(paidExpenseAmountForMonth([dueToday], "2026-09", new Date("2026-09-09T08:00:00"))).toBe(36_000);
+  });
+
+  it("reporte une échéance du 31 au dernier jour des mois plus courts", () => {
+    const endOfMonth = { ...monthly, date: "2026-01-31" };
+    expect(expenseOccurrenceDateKey(endOfMonth, "2026-02")).toBe("2026-02-28");
+  });
+
+  it("construit une prévision sur douze mois en séparant les fréquences", () => {
+    const forecast = expenseForecast([monthly, annual, oneOff], "2026-02", 12);
+    expect(forecast).toHaveLength(12);
+    expect(forecast[0]).toMatchObject({ month: "2026-02", total: 12_000, monthly: 12_000, annual: 0, oneOff: 0 });
+    expect(forecast[1]).toMatchObject({ month: "2026-03", total: 36_000, monthly: 12_000, annual: 24_000, oneOff: 0 });
+    expect(forecast[2]).toMatchObject({ month: "2026-04", total: 17_000, monthly: 12_000, annual: 0, oneOff: 5_000 });
+    expect(forecast[11]?.month).toBe("2027-01");
   });
 
   it("calcule l’équivalent mensuel et l’engagement annuel", () => {

@@ -326,7 +326,7 @@ function ExpenseForm({ close }: { close: () => void }) {
         <Field label={recurrence === "one_off" ? "Date de la dépense" : "Première échéance"}><Input type="date" {...register("date")} /></Field>
       </div>
       <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-xs text-violet-800">
-        {recurrence === "monthly" ? "Le montant sera compté chaque mois à partir de cette date." : recurrence === "annual" ? "Le montant sera compté chaque année, au mois de la première échéance." : "Le montant sera compté une seule fois, à la date indiquée."}
+        {recurrence === "monthly" ? "Le montant sera ajouté automatiquement au total de chaque mois à cette date, dès la première échéance." : recurrence === "annual" ? "Le montant sera ajouté automatiquement au total du mois de cette échéance, chaque année." : "Le montant sera compté une seule fois, à la date indiquée."}
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Famille"><Select {...register("family")}><option value="fixed">Fixe</option><option value="variable">Variable</option><option value="investment">Investissement</option><option value="personal">Personnel</option></Select></Field>
@@ -340,7 +340,8 @@ function ExpenseForm({ close }: { close: () => void }) {
         <Field label="Montant TTC (€)" error={errors.amountEuros?.message}><Input type="number" step="0.01" {...register("amountEuros", { valueAsNumber: true })} /></Field>
         <Field label="TVA (%)"><Input type="number" step="0.1" {...register("vatRate", { valueAsNumber: true })} /></Field>
       </div>
-      <label className="flex items-center gap-3 rounded-xl border border-white/[0.07] p-3 text-sm text-zinc-300"><input type="checkbox" className="accent-brand-500" {...register("paid")} /> {recurrence === "one_off" ? "Dépense déjà payée" : "Prélèvement automatique à chaque échéance"}</label>
+      <label className="flex items-center gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-sm font-semibold text-zinc-700"><input type="checkbox" className="accent-brand-500" {...register("paid")} /> {recurrence === "one_off" ? "Dépense déjà payée" : "Prélèvement automatique à chaque échéance"}</label>
+      {recurrence !== "one_off" && <p className="-mt-2 text-[11px] leading-5 text-zinc-500">La charge figurera toujours dans le prévisionnel. Cochez cette option uniquement si elle doit aussi être considérée comme décaissée automatiquement le jour de l’échéance.</p>}
       <Button type="submit" className="mt-2" disabled={isSubmitting}>{isSubmitting ? "Enregistrement…" : "Enregistrer la dépense"}</Button>
     </form>
   );

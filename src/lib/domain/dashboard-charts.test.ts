@@ -20,7 +20,7 @@ describe("données des graphiques du dashboard", () => {
     expect(result.revenue[5]?.objective).toBeNull();
   });
 
-  it("calcule le cash-flow mensuel depuis les encaissements et dépenses payées", () => {
+  it("calcule le solde prévisionnel avec toutes les charges du mois et conserve le décaissé", () => {
     const result = buildDashboardChartData({
       year: 2026,
       objectives: [],
@@ -33,7 +33,7 @@ describe("données des graphiques du dashboard", () => {
       reference: new Date("2026-03-31T23:59:59.000Z"),
     });
 
-    expect(result.cashFlow[2]).toMatchObject({ receipts: 120_000, expenses: 45_000, cashFlow: 75_000 });
+    expect(result.cashFlow[2]).toMatchObject({ receipts: 120_000, expenses: 135_000, paidExpenses: 45_000, cashFlow: -15_000, actualCashFlow: 75_000 });
   });
 
   it("répète les prélèvements mensuels et annuels aux bonnes échéances", () => {
@@ -52,6 +52,6 @@ describe("données des graphiques du dashboard", () => {
     expect(result.cashFlow[0]?.expenses).toBe(10_000);
     expect(result.cashFlow[2]?.expenses).toBe(34_000);
     expect(result.cashFlow[3]?.expenses).toBe(10_000);
-    expect(result.cashFlow[4]?.expenses).toBe(0);
+    expect(result.cashFlow[4]).toMatchObject({ expenses: 10_000, paidExpenses: 0, cashFlow: -10_000 });
   });
 });

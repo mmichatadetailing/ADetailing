@@ -1,6 +1,6 @@
 "use client";
 
-import { Banknote, CalendarClock, CircleDollarSign, Landmark, PackageSearch, Pencil, Plus, ReceiptText, Repeat2, Save, ShieldCheck, Trash2, TriangleAlert, WalletCards } from "lucide-react";
+import { AlertCircle, Banknote, CalendarClock, CheckCircle2, CircleDollarSign, Clock3, Landmark, PackageSearch, Pencil, Plus, ReceiptText, Repeat2, Save, ShieldCheck, Trash2, TriangleAlert, WalletCards } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
@@ -12,9 +12,9 @@ import { Modal } from "@/components/ui/modal";
 import {
   cashBalance,
   collectedRevenue,
+  expenseForecast,
+  expenseMonthSummary,
   paidExpenseAmountForMonth,
-  projectedExpenseAmountForMonth,
-  projectedExpensesForMonth,
   recurringExpenseMetrics,
   unpaidAmount,
 } from "@/lib/domain/calculations";
@@ -35,6 +35,17 @@ const familyLabels: Record<Expense["family"], string> = {
   investment: "Investissement",
   personal: "Personnel",
 };
+
+const occurrenceLabels = {
+  paid: "Décaissée",
+  due: "À régler",
+  upcoming: "À venir",
+} as const;
+
+function formatMonth(month: string, style: "long" | "short" = "long") {
+  const label = new Intl.DateTimeFormat("fr-FR", { month: style, year: "numeric" }).format(new Date(`${month}-01T12:00:00`));
+  return `${label.charAt(0).toUpperCase()}${label.slice(1)}`;
+}
 
 function vatRateForExpense(expense: Expense) {
   if (expense.amountExcludingTax <= 0) return 0;
@@ -79,7 +90,7 @@ function ExpenseEditor({ expense, onCancel, onSave }: { expense: Expense; onCanc
         <Field label={recurrence === "one_off" ? "Date de la dépense" : "Première échéance"}><Input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></Field>
       </div>
       <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-xs text-violet-800">
-        {recurrence === "monthly" ? "Cette charge sera recalculée tous les mois à partir de cette date." : recurrence === "annual" ? "Cette charge sera recalculée chaque année au mois de cette échéance." : "Cette charge ne sera comptée qu’une seule fois."}
+        {recurrence === "monthly" ? "Cette charge sera ajoutée automatiquement au total de chaque mois à cette date." : recurrence === "annual" ? "Cette charge sera ajoutée automatiquement au total du mois de cette échéance, chaque année." : "Cette charge ne sera comptée qu’une seule fois."}
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Famille"><Select value={family} onChange={(event) => setFamily(event.target.value as Expense["family"])}><option value="fixed">Fixe</option><option value="variable">Variable</option><option value="investment">Investissement</option><option value="personal">Personnel</option></Select></Field>
@@ -94,6 +105,7 @@ function ExpenseEditor({ expense, onCancel, onSave }: { expense: Expense; onCanc
         <Field label="TVA (%)"><Input min="0" max="100" step="0.1" type="number" value={vatRate} onChange={(event) => setVatRate(Number(event.target.value))} /></Field>
       </div>
       <label className="flex items-center gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-sm font-semibold text-zinc-700"><input type="checkbox" className="accent-brand-500" checked={paid} onChange={(event) => setPaid(event.target.checked)} /> {recurrence === "one_off" ? "Dépense déjà payée" : "Prélèvement automatique à chaque échéance"}</label>
+      {recurrence !== "one_off" && <p className="-mt-2 text-[11px] leading-5 text-zinc-500">Même décochée, la charge reste incluse dans le total prévu. Cochez uniquement si elle doit être déduite automatiquement de la trésorerie le jour prévu.</p>}
       <div className="flex justify-end gap-2 pt-2"><Button variant="ghost" onClick={onCancel}>Annuler</Button><Button type="submit"><Save className="size-4" /> Enregistrer les modifications</Button></div>
     </form>
   );
@@ -107,16 +119,21 @@ export default function FinancesPage() {
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [deletingExpense, setDeletingExpense] = useState<Expense | null>(null);
 
-  const monthLabel = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" }).format(new Date(`${selectedMonth}-01T12:00:00`));
-  const selectedExpenses = projectedExpensesForMonth(data.expenses, selectedMonth);
-  const projectedExpenses = projectedExpenseAmountForMonth(data.expenses, selectedMonth);
+  const monthLabel = formatMonth(selectedMonth);
+  const monthSummary = expenseMonthSummary(data.expenses, selectedMonth);
+  const selectedExpenses = monthSummary.occurrences.map((occurrence) => occurrence.expense);
+  const projectedExpenses = monthSummary.total;
   const paidExpenses = paidExpenseAmountForMonth(data.expenses, selectedMonth);
   const collected = collectedRevenue(data.payments.filter((payment) => payment.paidAt.slice(0, 7) === selectedMonth));
   const cash = cashBalance(data.settings.initialCash, data.payments, data.expenses);
   const unpaid = unpaidAmount(data.invoices, data.payments);
   const recoverableVat = selectedExpenses.filter((expense) => expense.vatRecoverable).reduce((sum, expense) => sum + expense.vatAmount, 0);
   const recurring = recurringExpenseMetrics(data.expenses, selectedMonth);
-  const oneOff = selectedExpenses.filter((expense) => expense.recurrence === "one_off").reduce((sum, expense) => sum + expense.amountIncludingTax, 0);
+  const oneOff = monthSummary.oneOff;
+  const remainingExpenses = monthSummary.due + monthSummary.upcoming;
+  const forecast = expenseForecast(data.expenses, selectedMonth, 12);
+  const forecastTotal = forecast.reduce((sum, month) => sum + month.total, 0);
+  const forecastMaximum = Math.max(...forecast.map((month) => month.total), 1);
   const visibleExpenses = [...data.expenses]
     .filter((expense) => recurrenceFilter === "all" || expense.recurrence === recurrenceFilter)
     .sort((a, b) => b.date.localeCompare(a.date));
@@ -161,12 +178,13 @@ export default function FinancesPage() {
         <div className="mt-5 flex justify-end gap-2"><Button variant="ghost" onClick={() => setDeletingExpense(null)}>Annuler</Button><Button variant="danger" onClick={deleteExpense}><Trash2 className="size-4" /> Supprimer définitivement</Button></div>
       </Modal>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         {[
-          { icon: WalletCards, label: "Trésorerie disponible", value: formatMoney(cash), detail: "Solde réel, prélèvements automatiques inclus", color: "text-orange-300" },
-          { icon: Banknote, label: `Cash-flow · ${monthLabel}`, value: formatMoney(collected - paidExpenses), detail: `${formatMoney(collected)} encaissé − ${formatMoney(paidExpenses)} décaissé`, color: collected - paidExpenses >= 0 ? "text-emerald-300" : "text-red-300" },
-          { icon: ReceiptText, label: "Impayés clients", value: formatMoney(unpaid), detail: "Factures émises non soldées", color: "text-red-300" },
-          { icon: CalendarClock, label: `Charges prévues · ${monthLabel}`, value: formatMoney(projectedExpenses), detail: `${formatMoney(paidExpenses)} décaissé · ${formatMoney(recoverableVat)} de TVA récupérable`, color: "text-sky-300" },
+          { icon: CalendarClock, label: `Total charges · ${monthLabel}`, value: formatMoney(projectedExpenses), detail: `${formatMoney(monthSummary.recurring)} récurrent · ${formatMoney(oneOff)} ponctuel`, color: "text-orange-600" },
+          { icon: CheckCircle2, label: "Déjà décaissé", value: formatMoney(paidExpenses), detail: `${formatMoney(monthSummary.paid)} rattaché aux échéances du mois`, color: "text-emerald-700" },
+          { icon: Clock3, label: "Reste à décaisser", value: formatMoney(remainingExpenses), detail: `${formatMoney(monthSummary.due)} arrivé à échéance · ${formatMoney(monthSummary.upcoming)} à venir`, color: monthSummary.due > 0 ? "text-red-600" : "text-amber-600" },
+          { icon: Banknote, label: "Solde prévisionnel du mois", value: formatMoney(collected - projectedExpenses), detail: `${formatMoney(collected)} encaissé − toutes les charges prévues`, color: collected - projectedExpenses >= 0 ? "text-emerald-700" : "text-red-600" },
+          { icon: WalletCards, label: "Trésorerie disponible", value: formatMoney(cash), detail: `${formatMoney(unpaid)} d’impayés clients à récupérer`, color: "text-violet-700" },
         ].map((item) => (
           <Card key={item.label}>
             <CardContent className="p-5">
@@ -185,18 +203,63 @@ export default function FinancesPage() {
         </div>
       )}
 
+      {monthSummary.due > 0 && (
+        <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
+          <AlertCircle className="mt-0.5 size-5 shrink-0 text-amber-600" />
+          <div><p className="text-sm font-bold">{formatMoney(monthSummary.due)} arrivé à échéance</p><p className="mt-1 text-xs text-amber-800">Ces charges sont bien incluses dans le total de {monthLabel}, mais leur paiement reste à confirmer.</p></div>
+        </div>
+      )}
+
       <Card>
         <CardHeader>
-          <div><h2 className="flex items-center gap-2 font-bold"><Repeat2 className="size-4 text-violet-300" /> Structure des charges</h2><p className="mt-1 text-xs text-zinc-500">Les charges récurrentes sont automatiquement projetées à partir de leur première échéance.</p></div>
+          <div><h2 className="flex items-center gap-2 font-bold"><CalendarClock className="size-4 text-orange-600" /> Échéances de {monthLabel}</h2><p className="mt-1 text-xs text-zinc-500">Le total additionne automatiquement les charges mensuelles, les annuelles dues ce mois-ci et les dépenses ponctuelles.</p></div>
+          <Badge variant="orange">{monthSummary.occurrences.length} échéance(s) · {formatMoney(projectedExpenses)}</Badge>
+        </CardHeader>
+        <CardContent className="grid gap-2">
+          {monthSummary.occurrences.map((occurrence) => (
+            <div key={occurrence.expense.id} className="grid gap-3 rounded-2xl border border-zinc-200 bg-zinc-50/80 p-4 transition hover:border-orange-200 hover:bg-orange-50/60 sm:grid-cols-[110px_minmax(0,1fr)_auto_auto] sm:items-center">
+              <div><p className="text-xs font-bold text-zinc-900">{formatDate(occurrence.dueDate, { day: "2-digit", month: "long" })}</p><p className="mt-1 text-[10px] text-zinc-500">{recurrenceLabels[occurrence.expense.recurrence]}</p></div>
+              <div className="min-w-0"><p className="truncate text-sm font-bold text-zinc-900">{occurrence.expense.description}</p><p className="mt-1 truncate text-xs text-zinc-500">{occurrence.expense.category}{occurrence.expense.supplier ? ` · ${occurrence.expense.supplier}` : ""}</p></div>
+              <div className="flex items-center gap-2 sm:justify-end"><Badge variant={occurrence.status === "paid" ? "green" : occurrence.status === "due" ? "yellow" : "blue"}>{occurrenceLabels[occurrence.status]}</Badge><p className="min-w-20 text-right text-sm font-extrabold text-zinc-900">{formatMoney(occurrence.amount)}</p></div>
+              <Button size="sm" variant="secondary" onClick={() => setEditingExpense(occurrence.expense)}><Pencil className="size-3.5" /> Modifier</Button>
+            </div>
+          ))}
+          {monthSummary.occurrences.length === 0 && <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 p-8 text-center"><ReceiptText className="mx-auto size-6 text-zinc-400" /><p className="mt-2 text-sm font-bold text-zinc-700">Aucune charge prévue</p><p className="mt-1 text-xs text-zinc-500">Ajoutez une dépense ponctuelle ou une première échéance pour ce mois.</p></div>}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div><h2 className="flex items-center gap-2 font-bold"><Banknote className="size-4 text-violet-600" /> Prévision des 12 prochains mois</h2><p className="mt-1 text-xs text-zinc-500">Projection glissante à partir de {monthLabel}, recalculée dès qu’une charge est ajoutée ou modifiée.</p></div>
+          <div className="text-right"><p className="text-[10px] font-bold tracking-wider text-zinc-500 uppercase">Total prévu</p><p className="mt-1 text-lg font-extrabold text-zinc-900">{formatMoney(forecastTotal)}</p></div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            {forecast.map((month) => (
+              <button key={month.month} type="button" onClick={() => setSelectedMonth(month.month)} className={`focus-ring rounded-2xl border p-3 text-left transition hover:-translate-y-0.5 hover:border-orange-300 hover:shadow-md ${month.month === selectedMonth ? "border-orange-300 bg-orange-50 shadow-sm" : "border-zinc-200 bg-white"}`}>
+                <div className="flex items-center justify-between gap-2"><p className="text-[11px] font-bold capitalize text-zinc-600">{formatMonth(month.month, "short")}</p>{month.annual > 0 && <Badge variant="blue">annuelle</Badge>}</div>
+                <p className="mt-3 text-lg font-extrabold text-zinc-900">{formatMoney(month.total)}</p>
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-zinc-100"><div className="h-full rounded-full bg-gradient-to-r from-orange-400 to-violet-500" style={{ width: `${Math.max(month.total > 0 ? 8 : 0, Math.round(month.total / forecastMaximum * 100))}%` }} /></div>
+                <p className="mt-2 text-[10px] leading-4 text-zinc-500">{formatMoney(month.monthly)} mensuel{month.annual > 0 ? ` · ${formatMoney(month.annual)} annuel` : ""}{month.oneOff > 0 ? ` · ${formatMoney(month.oneOff)} ponctuel` : ""}</p>
+              </button>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div><h2 className="flex items-center gap-2 font-bold"><Repeat2 className="size-4 text-violet-600" /> Structure des charges</h2><p className="mt-1 text-xs text-zinc-500">Les charges récurrentes sont automatiquement projetées à partir de leur première échéance.</p></div>
           <Badge>{data.expenses.filter((expense) => expense.recurrence !== "one_off").length} récurrentes</Badge>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4"><p className="text-[10px] font-bold text-zinc-600 uppercase">Équivalent mensuel récurrent</p><p className="mt-2 text-xl font-bold">{formatMoney(recurring.monthlyEquivalent)}</p><p className="mt-1 text-[10px] text-zinc-600">Mensuel + annuel réparti sur 12 mois</p></div>
-            <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4"><p className="text-[10px] font-bold text-zinc-600 uppercase">Engagement annuel récurrent</p><p className="mt-2 text-xl font-bold">{formatMoney(recurring.annualCommitment)}</p><p className="mt-1 text-[10px] text-zinc-600">12 mensualités + échéances annuelles</p></div>
-            <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4"><p className="text-[10px] font-bold text-zinc-600 uppercase">Ponctuel · {monthLabel}</p><p className="mt-2 text-xl font-bold">{formatMoney(oneOff)}</p><p className="mt-1 text-[10px] text-zinc-600">Compté uniquement sur le mois choisi</p></div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-xl border border-violet-100 bg-violet-50/70 p-4"><p className="text-[10px] font-bold text-violet-700 uppercase">Équivalent mensuel récurrent</p><p className="mt-2 text-xl font-bold text-zinc-900">{formatMoney(recurring.monthlyEquivalent)}</p><p className="mt-1 text-[10px] text-zinc-500">Mensuel + annuel réparti sur 12 mois</p></div>
+            <div className="rounded-xl border border-orange-100 bg-orange-50/70 p-4"><p className="text-[10px] font-bold text-orange-700 uppercase">Engagement annuel récurrent</p><p className="mt-2 text-xl font-bold text-zinc-900">{formatMoney(recurring.annualCommitment)}</p><p className="mt-1 text-[10px] text-zinc-500">12 mensualités + échéances annuelles</p></div>
+            <div className="rounded-xl border border-sky-100 bg-sky-50/70 p-4"><p className="text-[10px] font-bold text-sky-700 uppercase">Ponctuel · {monthLabel}</p><p className="mt-2 text-xl font-bold text-zinc-900">{formatMoney(oneOff)}</p><p className="mt-1 text-[10px] text-zinc-500">Compté uniquement sur le mois choisi</p></div>
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-4"><p className="text-[10px] font-bold text-emerald-700 uppercase">TVA récupérable · {monthLabel}</p><p className="mt-2 text-xl font-bold text-zinc-900">{formatMoney(recoverableVat)}</p><p className="mt-1 text-[10px] text-zinc-500">Calculée sur toutes les échéances du mois</p></div>
           </div>
-          <p className="mt-4 rounded-xl border border-sky-400/15 bg-sky-400/[0.045] px-4 py-3 text-xs leading-5 text-zinc-500">Une charge récurrente cochée « prélèvement automatique » est intégrée à la trésorerie à chaque échéance. Sans cette option, elle reste visible dans les charges prévues sans être considérée comme décaissée.</p>
+          <p className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs leading-5 text-sky-800">Le total prévu inclut toujours les échéances. L’option « prélèvement automatique » détermine seulement si elles sont aussi déduites automatiquement de la trésorerie à leur date.</p>
         </CardContent>
       </Card>
 
@@ -214,7 +277,7 @@ export default function FinancesPage() {
           <CardContent className="overflow-x-auto px-0 pb-1">
             <table className="w-full min-w-[1120px] text-left text-xs">
               <thead className="text-[10px] tracking-wider text-zinc-600 uppercase"><tr>{["Début / date", "Fréquence", "Famille", "Catégorie", "Fournisseur", "Description", "TTC / échéance", "TVA", "Paiement", "Actions"].map((head) => <th key={head} className="px-4 py-3 font-semibold first:pl-5 last:pr-5">{head}</th>)}</tr></thead>
-              <tbody className="divide-y divide-white/[0.055]">
+              <tbody className="divide-y divide-zinc-100">
                 {visibleExpenses.map((expense) => (
                   <tr key={expense.id} className="hover:bg-white/[0.02]">
                     <td className="px-4 py-4 pl-5 text-zinc-500">{formatDate(expense.date)}</td>
@@ -244,8 +307,8 @@ export default function FinancesPage() {
               <Card key={asset.id}>
                 <CardContent className="p-5">
                   <div className="flex items-start justify-between gap-3"><div><p className="text-sm font-bold">{asset.name}</p><p className="mt-1 text-xs text-zinc-600">{asset.category} · {asset.supplier || "Fournisseur à définir"}</p></div><Badge variant={asset.status === "in_service" ? "green" : "yellow"}>{asset.status}</Badge></div>
-                  <div className="mt-5 grid grid-cols-3 gap-3"><div><p className="text-[10px] text-zinc-600">Prix TTC</p><p className="mt-1 text-sm font-bold">{formatMoney(asset.priceIncludingTax)}</p></div><div><p className="text-[10px] text-zinc-600">Gain temps</p><p className="mt-1 text-sm font-bold">{asset.expectedTimeGainMinutes} min</p></div><div><p className="text-[10px] text-zinc-600">ROI estimé</p><p className="mt-1 text-sm font-bold text-emerald-300">{payback ? `${payback.toFixed(1)} mois` : "À compléter"}</p></div></div>
-                  <div className="mt-5 rounded-xl border border-white/[0.07] bg-white/[0.02] p-3"><p className="flex items-center gap-2 text-xs font-semibold text-zinc-300"><Landmark className="size-3.5 text-sky-300" /> Hypothèses du ROI</p><p className="mt-2 text-[11px] leading-5 text-zinc-600">Revenu mensuel additionnel {formatMoney(asset.expectedMonthlyRevenue)} + valeur de 4 gains de temps mensuels {formatMoney(monthlyTimeValue)}, au taux cible de {formatMoney(data.settings.hourlyMarginTarget)}/h.</p></div>
+                  <div className="mt-5 grid grid-cols-3 gap-3"><div><p className="text-[10px] text-zinc-600">Prix TTC</p><p className="mt-1 text-sm font-bold">{formatMoney(asset.priceIncludingTax)}</p></div><div><p className="text-[10px] text-zinc-600">Gain temps</p><p className="mt-1 text-sm font-bold">{asset.expectedTimeGainMinutes} min</p></div><div><p className="text-[10px] text-zinc-600">ROI estimé</p><p className="mt-1 text-sm font-bold text-emerald-700">{payback ? `${payback.toFixed(1)} mois` : "À compléter"}</p></div></div>
+                  <div className="mt-5 rounded-xl border border-sky-100 bg-sky-50 p-3"><p className="flex items-center gap-2 text-xs font-semibold text-sky-800"><Landmark className="size-3.5 text-sky-600" /> Hypothèses du ROI</p><p className="mt-2 text-[11px] leading-5 text-zinc-600">Revenu mensuel additionnel {formatMoney(asset.expectedMonthlyRevenue)} + valeur de 4 gains de temps mensuels {formatMoney(monthlyTimeValue)}, au taux cible de {formatMoney(data.settings.hourlyMarginTarget)}/h.</p></div>
                 </CardContent>
               </Card>
             );

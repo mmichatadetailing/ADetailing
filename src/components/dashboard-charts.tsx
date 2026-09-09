@@ -57,6 +57,8 @@ export function DashboardCharts({
   const annualRealized = periodRevenue.reduce((sum, item) => sum + item.realized, 0);
   const annualObjective = periodRevenue.reduce((sum, item) => sum + (item.objective ?? 0), 0);
   const annualCashFlow = periodCashFlow.reduce((sum, item) => sum + item.cashFlow, 0);
+  const periodExpenses = periodCashFlow.reduce((sum, item) => sum + item.expenses, 0);
+  const periodPaidExpenses = periodCashFlow.reduce((sum, item) => sum + item.paidExpenses, 0);
   const positiveMonths = periodCashFlow.filter((item) => item.cashFlow > 0).length;
   const negativeMonths = periodCashFlow.filter((item) => item.cashFlow < 0).length;
 
@@ -74,12 +76,12 @@ export function DashboardCharts({
           <Badge variant="orange">{periodLabel}</Badge>
         </CardHeader>
         <CardContent className="pt-1">
-          <div className="mb-5 grid gap-3 rounded-2xl border border-white/8 bg-ink-900/70 p-4 sm:grid-cols-2">
+          <div className="mb-5 grid gap-3 rounded-2xl border border-orange-100 bg-white/85 p-4 shadow-sm sm:grid-cols-2">
             <div>
               <p className="text-[10px] font-bold tracking-[.12em] text-zinc-600 uppercase">CA facturé · période</p>
               <p className="mt-1 text-xl font-extrabold tracking-tight text-brand-600">{formatMoney(annualRealized)}</p>
             </div>
-            <div className="sm:border-l sm:border-white/8 sm:pl-4">
+            <div className="sm:border-l sm:border-zinc-200 sm:pl-4">
               <p className="text-[10px] font-bold tracking-[.12em] text-zinc-600 uppercase">Objectif · période</p>
               <p className="mt-1 text-xl font-extrabold tracking-tight">{formatMoney(annualObjective)}</p>
             </div>
@@ -123,28 +125,30 @@ export function DashboardCharts({
           <div className="flex items-start gap-3">
             <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-emerald-100 text-emerald-700 shadow-sm"><WalletCards className="size-[18px]" /></span>
             <div>
-              <h2 className="font-bold">Cash-flow mensuel</h2>
-              <p className="mt-1 text-xs text-zinc-500">Contexte annuel {year}, avec la période analysée mise en avant.</p>
+              <h2 className="font-bold">Encaissements & charges</h2>
+              <p className="mt-1 text-xs text-zinc-500">Toutes les échéances mensuelles et annuelles sont comptées dans leur mois.</p>
             </div>
           </div>
           <Badge variant={annualCashFlow >= 0 ? "green" : "red"}>{annualCashFlow >= 0 ? "Positif" : "Négatif"}</Badge>
         </CardHeader>
         <CardContent className="pt-1">
-          <div className="mb-5 rounded-2xl border border-white/8 bg-ink-900/70 p-4">
-            <div className="flex flex-wrap items-end justify-between gap-3">
+          <div className="mb-5 rounded-2xl border border-emerald-100 bg-white/85 p-4 shadow-sm">
+            <div className="grid gap-3 sm:grid-cols-3">
               <div>
-                <p className="text-[10px] font-bold tracking-[.12em] text-zinc-600 uppercase">Solde net · période</p>
+                <p className="text-[10px] font-bold tracking-[.12em] text-zinc-500 uppercase">Solde après charges prévues</p>
                 <p className={`mt-1 flex items-center gap-1.5 text-xl font-extrabold tracking-tight ${annualCashFlow >= 0 ? "text-emerald-700" : "text-red-600"}`}>
                   {annualCashFlow >= 0 ? <ArrowUpRight className="size-5" /> : <ArrowDownRight className="size-5" />}
                   {formatMoney(annualCashFlow)}
                 </p>
               </div>
-              <p className="text-[11px] font-semibold text-zinc-500"><span className="text-emerald-700">{positiveMonths} positif(s)</span> · <span className="text-red-600">{negativeMonths} négatif(s)</span></p>
+              <div className="sm:border-l sm:border-zinc-200 sm:pl-4"><p className="text-[10px] font-bold tracking-[.12em] text-zinc-500 uppercase">Charges prévues</p><p className="mt-1 text-lg font-extrabold text-orange-600">{formatMoney(periodExpenses)}</p></div>
+              <div className="sm:border-l sm:border-zinc-200 sm:pl-4"><p className="text-[10px] font-bold tracking-[.12em] text-zinc-500 uppercase">Déjà décaissé</p><p className="mt-1 text-lg font-extrabold text-zinc-800">{formatMoney(periodPaidExpenses)}</p></div>
             </div>
           </div>
           <div className="mb-3 flex flex-wrap items-center gap-4 text-[11px] font-semibold text-zinc-500">
-            <span className="flex items-center gap-2"><span className="size-2.5 rounded-sm bg-emerald-500" /> Positif</span>
-            <span className="flex items-center gap-2"><span className="size-2.5 rounded-sm bg-red-500" /> Négatif</span>
+            <span className="flex items-center gap-2"><span className="size-2.5 rounded-sm bg-emerald-500" /> Solde positif</span>
+            <span className="flex items-center gap-2"><span className="size-2.5 rounded-sm bg-red-500" /> Solde négatif</span>
+            <span className="ml-auto">{positiveMonths} mois positif(s) · {negativeMonths} négatif(s)</span>
           </div>
           <div className="overflow-x-auto pb-2">
             <div className="h-[285px] min-w-[620px]">
@@ -168,9 +172,9 @@ export function DashboardCharts({
                     cursor={{ fill: "rgba(78,64,120,.04)" }}
                     contentStyle={tooltipStyle}
                     labelStyle={{ color: "#172033", fontWeight: 800, marginBottom: 6 }}
-                    formatter={(value) => [tooltipMoney(value), "Cash-flow net"]}
+                    formatter={(value) => [tooltipMoney(value), "Encaissements − charges prévues"]}
                   />
-                  <Bar dataKey="cashFlow" name="Cash-flow net" radius={[7, 7, 7, 7]} maxBarSize={28} animationDuration={700}>
+                  <Bar dataKey="cashFlow" name="Solde après charges prévues" radius={[7, 7, 7, 7]} maxBarSize={28} animationDuration={700}>
                     {cashFlow.map((item) => <Cell key={item.key} fill={item.cashFlow >= 0 ? "url(#dashboardCashPositive)" : "url(#dashboardCashNegative)"} opacity={!focusMonth || item.key === focusMonth ? 1 : 0.2} />)}
                   </Bar>
                 </BarChart>

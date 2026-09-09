@@ -1,5 +1,5 @@
 import type { Expense, Invoice, MonthlyObjective, Payment } from "./types";
-import { paidExpenseAmountForMonth } from "./calculations";
+import { paidExpenseAmountForMonth, projectedExpenseAmountForMonth } from "./calculations";
 
 export interface RevenueChartPoint {
   key: string;
@@ -13,7 +13,9 @@ export interface CashFlowChartPoint {
   month: string;
   receipts: number;
   expenses: number;
+  paidExpenses: number;
   cashFlow: number;
+  actualCashFlow: number;
 }
 
 function monthLabel(year: number, monthIndex: number) {
@@ -50,9 +52,18 @@ export function buildDashboardChartData({
       .filter((payment) => payment.paidAt.slice(0, 7) === key)
       .reduce((sum, payment) => sum + payment.amount, 0);
     const paidExpenses = paidExpenseAmountForMonth(expenses, key, reference);
+    const scheduledExpenses = projectedExpenseAmountForMonth(expenses, key);
 
     revenue.push({ key, month: label, objective, realized });
-    cashFlow.push({ key, month: label, receipts, expenses: paidExpenses, cashFlow: receipts - paidExpenses });
+    cashFlow.push({
+      key,
+      month: label,
+      receipts,
+      expenses: scheduledExpenses,
+      paidExpenses,
+      cashFlow: receipts - scheduledExpenses,
+      actualCashFlow: receipts - paidExpenses,
+    });
   }
 
   return { revenue, cashFlow };

@@ -16,7 +16,7 @@ export type QuickCreateInput =
   | ({ kind: "lead" } & NewLeadInput)
   | ({ kind: "client"; clientKind: NewClientInput["kind"] } & Omit<NewClientInput, "kind">)
   | ({ kind: "appointment" } & NewAppointmentInput)
-  | { kind: "expense"; date: string; family: Expense["family"]; category: string; supplier: string; description: string; amountIncludingTax: number; vatRateBasisPoints: number; paid: boolean };
+  | { kind: "expense"; date: string; recurrence: Expense["recurrence"]; family: Expense["family"]; category: string; supplier: string; description: string; amountIncludingTax: number; vatRateBasisPoints: number; paid: boolean };
 
 interface WorkspaceContextValue {
   mode: "demo" | "supabase";
