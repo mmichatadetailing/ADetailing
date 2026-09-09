@@ -18,6 +18,10 @@ export interface CashFlowChartPoint {
   actualCashFlow: number;
 }
 
+export function totalRevenueObjective(points: RevenueChartPoint[]) {
+  return points.reduce((sum, point) => sum + (point.objective ?? 0), 0);
+}
+
 function monthLabel(year: number, monthIndex: number) {
   const label = new Intl.DateTimeFormat("fr-FR", { month: "short" }).format(new Date(year, monthIndex, 1));
   return `${label.charAt(0).toUpperCase()}${label.slice(1)}`;

@@ -174,6 +174,7 @@ interface DemoActions {
   archiveService: (serviceId: string) => void;
   reorderService: (serviceId: string, direction: -1 | 1) => void;
   updateObjective: (month: string, patch: Partial<MonthlyObjective>) => void;
+  updateAnnualObjectives: (year: number, revenueTargets: number[]) => void;
   updateSettings: (patch: Partial<AppSettings>) => void;
   addMessage: (body: string, entityType?: AppData["messages"][number]["entityType"], entityId?: string) => string;
   addTeamMember: (input: { firstName: string; lastName: string; email: string; role: "partner" | "employee"; weeklyCapacityMinutes: number }) => string;
@@ -854,6 +855,34 @@ export const useDemoStore = create<DemoStore>()(
           };
         });
         if (patch.revenueTarget !== undefined) persistMutation({ action: "updateObjective", month, revenueTarget: patch.revenueTarget });
+      },
+      updateAnnualObjectives: (year, revenueTargets) => {
+        if (revenueTargets.length !== 12) return;
+        const months = revenueTargets.map((_, index) => `${year}-${String(index + 1).padStart(2, "0")}`);
+        set((state) => {
+          const updatedObjectives = months.map((month, index) => {
+            const existing = state.objectives.find((objective) => objective.month === month);
+            return existing
+              ? { ...existing, revenueTarget: revenueTargets[index] ?? 0, updatedAt: nowIso() }
+              : {
+                  ...entityBase(),
+                  month,
+                  revenueTarget: revenueTargets[index] ?? 0,
+                  interventionTarget: 0,
+                  averageBasketTarget: state.settings.averageBasketTarget,
+                  hourlyMarginTarget: state.settings.hourlyMarginTarget,
+                  reviewTarget: state.settings.monthlyReviewTarget,
+                };
+          });
+          return {
+            objectives: [...state.objectives.filter((objective) => !months.includes(objective.month)), ...updatedObjectives],
+            activities: [
+              activity("objective_updated", "Objectifs annuels mis à jour", String(year), "monthly_objective"),
+              ...state.activities,
+            ],
+          };
+        });
+        persistMutation({ action: "updateAnnualObjectives", year, revenueTargets });
       },
       updateSettings: (patch) =>
         set((state) => ({ settings: { ...state.settings, ...patch } })),

@@ -14,7 +14,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { CashFlowChartPoint, RevenueChartPoint } from "@/lib/domain/dashboard-charts";
+import { totalRevenueObjective, type CashFlowChartPoint, type RevenueChartPoint } from "@/lib/domain/dashboard-charts";
 import { formatMoney } from "@/lib/utils";
 import { Badge } from "./ui/badge";
 import { Card, CardContent, CardHeader } from "./ui/card";
@@ -54,8 +54,9 @@ export function DashboardCharts({
 }) {
   const periodRevenue = focusMonth ? revenue.filter((item) => item.key === focusMonth) : revenue;
   const periodCashFlow = focusMonth ? cashFlow.filter((item) => item.key === focusMonth) : cashFlow;
-  const annualCollected = periodRevenue.reduce((sum, item) => sum + item.collected, 0);
-  const annualObjective = periodRevenue.reduce((sum, item) => sum + (item.objective ?? 0), 0);
+  const isAnnualView = !focusMonth;
+  const periodCollected = periodRevenue.reduce((sum, item) => sum + item.collected, 0);
+  const periodObjective = totalRevenueObjective(periodRevenue);
   const annualCashFlow = periodCashFlow.reduce((sum, item) => sum + item.cashFlow, 0);
   const periodExpenses = periodCashFlow.reduce((sum, item) => sum + item.expenses, 0);
   const periodPaidExpenses = periodCashFlow.reduce((sum, item) => sum + item.paidExpenses, 0);
@@ -78,12 +79,13 @@ export function DashboardCharts({
         <CardContent className="pt-1">
           <div className="mb-5 grid gap-3 rounded-2xl border border-orange-100 bg-white/85 p-4 shadow-sm sm:grid-cols-2">
             <div>
-              <p className="text-[10px] font-bold tracking-[.12em] text-zinc-600 uppercase">CA encaissé · période</p>
-              <p className="mt-1 text-xl font-extrabold tracking-tight text-brand-600">{formatMoney(annualCollected)}</p>
+              <p className="text-[10px] font-bold tracking-[.12em] text-zinc-600 uppercase">CA encaissé · {isAnnualView ? "année" : "mois"}</p>
+              <p className="mt-1 text-xl font-extrabold tracking-tight text-brand-600">{formatMoney(periodCollected)}</p>
             </div>
             <div className="sm:border-l sm:border-zinc-200 sm:pl-4">
-              <p className="text-[10px] font-bold tracking-[.12em] text-zinc-600 uppercase">Objectif · période</p>
-              <p className="mt-1 text-xl font-extrabold tracking-tight">{formatMoney(annualObjective)}</p>
+              <p className="text-[10px] font-bold tracking-[.12em] text-zinc-600 uppercase">{isAnnualView ? "Objectif annuel" : "Objectif du mois"}</p>
+              <p className="mt-1 text-xl font-extrabold tracking-tight">{formatMoney(periodObjective)}</p>
+              {isAnnualView && <p className="mt-1 text-[10px] text-zinc-500">Somme des 12 objectifs mensuels</p>}
             </div>
           </div>
           <div className="mb-3 flex flex-wrap items-center gap-4 text-[11px] font-semibold text-zinc-500">

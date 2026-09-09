@@ -10,7 +10,7 @@
 - calendrier jour/semaine/mois/liste, glisser-déposer, redimensionnement et conflits ;
 - import PDF Henrri, scores de confiance, remises implicites et revue humaine ;
 - encaissement direct des prestations, paiements partiels et factures facultatives avec rapprochement explicable ;
-- charges ponctuelles, mensuelles et annuelles projetées à leurs échéances, calendrier mensuel, prévision glissante sur douze mois, investissements liés, objectifs, analyses et simulation de recrutement ;
+- charges ponctuelles, mensuelles et annuelles projetées à leurs échéances, calendrier mensuel, prévision glissante sur douze mois, investissements liés, objectifs mensuels avec total annuel automatique, analyses et simulation de recrutement ;
 - comptes Supabase, invitations sécurisées par e-mail, rôles et espaces entreprise partagés ;
 - canal général d’équipe et conversations de prestations privées par participants ;
 - import XLSX avec prévisualisation, erreurs, doublons, rapport et idempotence `legacy_row` ;

@@ -85,6 +85,7 @@ const mutationSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("archiveService"), serviceId: z.uuid() }),
   z.object({ action: z.literal("reorderService"), serviceId: z.uuid(), direction: z.union([z.literal(-1), z.literal(1)]) }),
   z.object({ action: z.literal("updateObjective"), month: z.string().regex(/^\d{4}-\d{2}$/), revenueTarget: z.number().int().min(0) }),
+  z.object({ action: z.literal("updateAnnualObjectives"), year: z.number().int().min(2000).max(2100), revenueTargets: z.array(z.number().int().min(0).max(100_000_000_000)).length(12) }),
   z.object({ action: z.literal("mergeClients"), primaryId: z.uuid(), duplicateId: z.uuid() }),
   z.object({ action: z.literal("addPayment"), invoiceId: z.uuid(), amount: z.number().int().positive(), method: z.string().trim().min(2).max(80) }),
   z.object({ action: z.literal("addInterventionPayment"), interventionId: z.uuid(), amount: z.number().int().positive(), method: z.string().trim().min(2).max(80), paidAt: z.iso.datetime() }),
@@ -478,6 +479,18 @@ export async function POST(request: Request) {
     if (input.action === "updateObjective") {
       const month = `${input.month}-01`;
       const { error } = await supabase.from("monthly_objectives").upsert({ organization_id: organizationId, location_id: locationId, month, revenue_target_cents: input.revenueTarget, created_by: userId }, { onConflict: "organization_id,location_id,month" });
+      ensureNoError(error);
+    }
+
+    if (input.action === "updateAnnualObjectives") {
+      const rows = input.revenueTargets.map((revenueTarget, index) => ({
+        organization_id: organizationId,
+        location_id: locationId,
+        month: `${input.year}-${String(index + 1).padStart(2, "0")}-01`,
+        revenue_target_cents: revenueTarget,
+        created_by: userId,
+      }));
+      const { error } = await supabase.from("monthly_objectives").upsert(rows, { onConflict: "organization_id,location_id,month" });
       ensureNoError(error);
     }
 

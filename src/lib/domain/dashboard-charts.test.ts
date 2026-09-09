@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildDashboardChartData } from "./dashboard-charts";
+import { buildDashboardChartData, totalRevenueObjective } from "./dashboard-charts";
 
 describe("données des graphiques du dashboard", () => {
   it("agrège uniquement les encaissements liés aux prestations", () => {
@@ -21,6 +21,22 @@ describe("données des graphiques du dashboard", () => {
     expect(result.revenue).toHaveLength(12);
     expect(result.revenue[6]).toMatchObject({ key: "2026-07", objective: 150_000, collected: 75_000 });
     expect(result.revenue[5]?.objective).toBeNull();
+  });
+
+  it("calcule l’objectif annuel comme la somme des objectifs mensuels", () => {
+    const result = buildDashboardChartData({
+      year: 2026,
+      objectives: [
+        { month: "2026-01", revenueTarget: 100_000 },
+        { month: "2026-02", revenueTarget: 125_000 },
+        { month: "2026-03", revenueTarget: 150_000 },
+      ],
+      interventions: [],
+      payments: [],
+      expenses: [],
+    });
+
+    expect(totalRevenueObjective(result.revenue)).toBe(375_000);
   });
 
   it("calcule le solde prévisionnel avec toutes les charges du mois et conserve le décaissé", () => {
