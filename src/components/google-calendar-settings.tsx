@@ -195,7 +195,7 @@ export function GoogleCalendarSettings({ enabled }: { enabled: boolean }) {
             <p className="text-sm font-bold text-zinc-200">Google Calendar</p>
             {loading ? <Badge>Chargement…</Badge> : connections.length > 0 ? <Badge variant="green">Connecté</Badge> : <Badge variant="yellow">Non connecté</Badge>}
           </div>
-          <p className="mt-1 text-xs leading-5 text-zinc-600">Vos prestations assignées sont ajoutées à votre calendrier personnel. Vos événements Google apparaissent aussi sur votre ligne du planning partagé, sans exposer vos identifiants Google.</p>
+          <p className="mt-1 text-xs leading-5 text-zinc-600">Vos prestations assignées sont ajoutées à votre calendrier personnel. Le compte Google peut être personnel ou appartenir à un autre domaine que votre compte ADetailing, si l’audience OAuth Google Cloud est configurée sur « Externe ».</p>
         </div>
       </div>
 

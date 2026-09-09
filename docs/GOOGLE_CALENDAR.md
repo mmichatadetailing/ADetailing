@@ -6,13 +6,17 @@ Chaque utilisateur ADetailing peut connecter son propre compte Google. Seules le
 
 1. Créer ou ouvrir un projet dans Google Cloud Console.
 2. Activer **Google Calendar API** dans « API et services ».
-3. Configurer l’écran de consentement OAuth. En mode test, ajouter chaque adresse Google autorisée dans les utilisateurs de test.
-4. Créer un identifiant **ID client OAuth 2.0** de type **Application Web**.
-5. Ajouter ces URI de redirection autorisées, à l’identique :
+3. Ouvrir **Google Auth Platform > Audience** et choisir le type d’utilisateur **Externe**. Le mode **Interne** limite Google OAuth au domaine Google Workspace propriétaire du projet et provoque l’erreur `403: org_internal` pour tous les autres comptes.
+4. Pour tester sans publier l’application, conserver le statut **Test** puis ajouter chaque adresse Google autorisée dans **Utilisateurs de test**. Le compte Google peut être une adresse Gmail personnelle ou appartenir à un autre domaine Workspace.
+5. Pour une utilisation durable par tous les futurs collaborateurs, passer ensuite l’application **En production** et suivre la procédure de validation Google demandée pour les autorisations Calendar.
+6. Créer un identifiant **ID client OAuth 2.0** de type **Application Web**.
+7. Ajouter ces URI de redirection autorisées, à l’identique :
    - local : `http://localhost:3000/api/integrations/google/callback` ;
    - production : `https://VOTRE-DOMAINE.vercel.app/api/integrations/google/callback`.
 
 Google peut refuser la redirection si le protocole, le domaine, le port ou le chemin diffèrent, même légèrement.
+
+En mode **Externe + Test**, Google limite l’accès aux utilisateurs de test déclarés et les autorisations Calendar expirent après sept jours. Ce mode convient aux essais. Pour éviter les reconnexions hebdomadaires en exploitation, utiliser **Externe + En production** et terminer la validation éventuellement demandée par Google.
 
 ## 2. Configurer les variables
 
