@@ -153,9 +153,9 @@ export default function DashboardPage() {
         </label>
       } />
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {kpis.map((kpi) => (
-          <Link href={kpi.href} key={kpi.label} className="focus-ring group rounded-2xl">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-12">
+        {kpis.map((kpi, index) => (
+          <Link href={kpi.href} key={kpi.label} className={`focus-ring group rounded-2xl sm:last:col-span-2 ${kpis.length % 4 === 3 && index >= kpis.length - 3 ? "xl:col-span-4" : "xl:col-span-3"}`}>
             <Card className={`h-full bg-gradient-to-br ${kpi.tone} transition duration-200 group-hover:-translate-y-1 group-hover:border-brand-400/20 group-hover:shadow-[0_18px_48px_rgba(78,64,120,.12)]`}>
               <CardContent className="p-4 sm:p-5">
                 <div className="flex items-start justify-between"><span className="text-xs font-semibold text-zinc-500">{kpi.label}</span><kpi.icon className={`size-[17px] ${kpi.color}`} /></div>
