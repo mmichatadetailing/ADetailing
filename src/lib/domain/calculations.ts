@@ -35,6 +35,14 @@ export interface ExpenseMonthSummary<T extends ExpenseSchedule = ExpenseSchedule
   oneOff: Money;
 }
 
+export interface RankedExpense<T extends ExpenseSchedule & { id: string } = ExpenseSchedule & { id: string }> {
+  expense: T;
+  total: Money;
+  paid: Money;
+  remaining: Money;
+  occurrenceCount: number;
+}
+
 export interface ExpenseForecastPoint {
   month: string;
   total: Money;
@@ -119,6 +127,33 @@ export function expenseMonthSummary<T extends ExpenseSchedule>(expenses: T[], mo
     else summary.recurring += occurrence.amount;
     return summary;
   }, { month, occurrences, total: 0, paid: 0, due: 0, upcoming: 0, recurring: 0, oneOff: 0 });
+}
+
+export function rankExpensesForMonths<T extends ExpenseSchedule & { id: string }>(
+  expenses: T[],
+  months: string[],
+  reference = new Date(),
+): RankedExpense<T>[] {
+  const ranking = new Map<string, RankedExpense<T>>();
+
+  for (const month of new Set(months)) {
+    for (const occurrence of expenseOccurrencesForMonth(expenses, month, reference)) {
+      const current = ranking.get(occurrence.expense.id) ?? {
+        expense: occurrence.expense,
+        total: 0,
+        paid: 0,
+        remaining: 0,
+        occurrenceCount: 0,
+      };
+      current.total += occurrence.amount;
+      current.occurrenceCount += 1;
+      if (occurrence.status === "paid") current.paid += occurrence.amount;
+      else current.remaining += occurrence.amount;
+      ranking.set(occurrence.expense.id, current);
+    }
+  }
+
+  return [...ranking.values()].sort((a, b) => b.total - a.total || a.expense.id.localeCompare(b.expense.id));
 }
 
 export function expenseForecast(expenses: ExpenseSchedule[], startMonth: string, monthCount = 12): ExpenseForecastPoint[] {

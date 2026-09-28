@@ -10,6 +10,7 @@ import {
   Gauge,
   MapPin,
   Phone,
+  ReceiptText,
   Sparkles,
   Target,
   TrendingDown,
@@ -28,15 +29,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import {
-  cashBalance,
   collectedInterventionRevenue,
   collectedRevenue,
-  conversionRate,
   grossMargin,
   hourlyMargin,
   occupancyRate,
   paidExpenseAmountForMonth,
   projectedExpenseAmountForMonth,
+  rankExpensesForMonths,
 } from "@/lib/domain/calculations";
 import { interventionStatusLabels } from "@/lib/domain/labels";
 import { buildDashboardChartData } from "@/lib/domain/dashboard-charts";
@@ -75,10 +75,8 @@ export default function DashboardPage() {
   );
   const periodPayments = data.payments.filter((item) => isDateInRange(item.paidAt, periodRange));
   const revenueInterventions = data.interventions.filter((intervention) => intervention.status !== "cancelled");
-  const periodLeads = data.leads.filter((item) => isDateInRange(item.requestedAt, periodRange));
   const completed = data.interventions.filter((item) => item.status === "completed" && isDateInRange(item.startAt, periodRange));
   const previousPayments = data.payments.filter((item) => isDateInRange(item.paidAt, previousPeriodRange));
-  const previousLeads = data.leads.filter((item) => isDateInRange(item.requestedAt, previousPeriodRange));
   const previousCompleted = data.interventions.filter((item) => item.status === "completed" && isDateInRange(item.startAt, previousPeriodRange));
   const averageHourly = completed.length
     ? Math.round(completed.reduce((sum, item) => sum + (hourlyMargin(item) ?? 0), 0) / completed.length)
@@ -93,7 +91,6 @@ export default function DashboardPage() {
   const previousPaidExpenses = previousStatisticsPeriod.monthKeys.reduce((sum, month) => sum + paidExpenseAmountForMonth(data.expenses, month, previousPeriodReference), 0);
   const cashFlow = cashReceipts - paidExpenses;
   const previousCashFlow = previousCashReceipts - previousPaidExpenses;
-  const cash = cashBalance(data.settings.initialCash, data.payments, data.expenses);
   const objective = data.objectives.filter((item) => statisticsPeriod.monthKeys.includes(item.month)).reduce((sum, item) => sum + item.revenueTarget, 0);
   const plannedMinutes = upcoming.reduce((sum, item) => sum + item.workers.reduce((workerSum, worker) => workerSum + worker.plannedMinutes, 0), 0);
   const fillRate = occupancyRate(plannedMinutes, data.team.length * data.settings.dailyAvailableMinutes * 5);
@@ -108,14 +105,10 @@ export default function DashboardPage() {
     return { intervention, workflow: getInterventionWorkflow(intervention, invoice, data.payments) };
   });
   const toCollect = interventionWorkflows.filter(({ intervention, workflow }) => intervention.status === "completed" && !workflow.isComplete && workflow.outstanding > 0);
-  const amountToCollect = toCollect.reduce((sum, { workflow }) => sum + workflow.outstanding, 0);
   const recentInterventionPayments = periodPayments
     .filter((payment) => payment.interventionId || data.interventions.some((intervention) => intervention.invoiceId === payment.invoiceId))
     .sort((a, b) => b.paidAt.localeCompare(a.paidAt))
     .slice(0, 8);
-  const dashboardSummary = data.clients.every((client) => Boolean(client.archivedAt)) && data.leads.length === 0
-    ? "Votre espace est prêt. Ajoutez votre premier client ou une nouvelle demande pour commencer."
-    : `${statisticsPeriod.label} · ${completed.length} prestation(s) réalisée(s) et ${formatMoney(collected)} réellement encaissé.`;
   const todayActions = [
     ...toCollect.map(({ intervention, workflow }) => { const client = data.clients.find((entry) => entry.id === intervention.clientId); return { icon: Banknote, title: `Encaisser ${client?.company || `${client?.firstName ?? ""} ${client?.lastName ?? ""}`.trim() || intervention.title}`, detail: `${intervention.title} · ${formatMoney(workflow.outstanding)} restant`, color: "text-emerald-600", href: `/prestations?intervention=${intervention.id}` }; }),
     ...data.leads.filter((lead) => !["won", "lost"].includes(lead.stage)).map((lead) => ({ icon: lead.stage === "quote_to_prepare" ? FileCheck2 : Phone, title: lead.nextAction || `Suivre ${lead.prospectName}`, detail: `${lead.prospectName} · ${formatMoney(lead.estimatedAmount)}`, color: lead.stage === "quote_to_prepare" ? "text-sky-300" : "text-orange-300", href: "/commercial" })),
@@ -132,6 +125,9 @@ export default function DashboardPage() {
     expenses: data.expenses,
   }), [dashboardYear, data.expenses, data.interventions, data.objectives, data.payments]);
   const previousLabel = previousStatisticsPeriod.label;
+  const expenseRanking = rankExpensesForMonths(data.expenses, statisticsPeriod.monthKeys, periodReference).slice(0, 8);
+  const largestExpense = expenseRanking[0]?.total ?? 0;
+  const recurrenceLabels = { monthly: "Mensuelle", annual: "Annuelle", one_off: "Ponctuelle" } as const;
   const kpis = [
     { label: "CA encaissé", value: formatMoney(collected), detail: statisticsPeriod.label, comparison: evolutionLabel(collected, previousCollected, previousLabel), icon: Banknote, color: "text-emerald-600", tone: "from-emerald-50/90 to-white", href: "/finances" },
     { label: statisticsPeriod.kind === "year" ? "Objectif annuel" : "Objectif du mois", value: objective > 0 ? `${Math.round(collected / objective * 100)} %` : "À définir", detail: objective > 0 ? `${formatMoney(Math.max(objective - collected, 0))} restant sur ${formatMoney(objective)}` : "Renseignez vos objectifs dans Paramètres", comparison: evolutionLabel(collected, previousCollected, previousLabel), icon: Target, color: "text-sky-600", tone: "from-sky-50/90 to-white", href: "/parametres#objectifs-chiffre-affaires" },
@@ -140,12 +136,11 @@ export default function DashboardPage() {
     { label: "Prestations réalisées", value: String(completed.length), detail: statisticsPeriod.label, comparison: evolutionLabel(completed.length, previousCompleted.length, previousLabel), icon: Sparkles, color: "text-violet-600", tone: "from-violet-50/90 to-white", href: "/prestations" },
     { label: "Panier moyen", value: formatMoney(averageBasket), detail: `${completed.length} prestation(s) terminée(s)`, comparison: evolutionLabel(averageBasket, previousAverageBasket, previousLabel), icon: Gauge, color: "text-amber-600", tone: "from-amber-50/90 to-white", href: "/pilotage" },
     { label: "Marge brute", value: formatMoney(margin), detail: `${formatMoney(averageHourly)}/h en moyenne`, comparison: evolutionLabel(margin, previousMargin, previousLabel), icon: TrendingUp, color: "text-fuchsia-600", tone: "from-fuchsia-50/90 to-white", href: "/pilotage" },
-    { label: "Conversion", value: `${Math.round(conversionRate(periodLeads) * 100)} %`, detail: `${periodLeads.length} demande(s) reçue(s)`, comparison: evolutionLabel(conversionRate(periodLeads), conversionRate(previousLeads), previousLabel), icon: ArrowRight, color: "text-cyan-600", tone: "from-cyan-50/90 to-white", href: "/prestations" },
   ];
 
   return (
     <div className="space-y-7">
-      <PageHeader eyebrow={`${data.settings.locationCity || "Votre activité"} · ${todayLabel}`} title={`Bonjour ${workspace?.firstName || "Melvyn"}, voici l’essentiel.`} description={dashboardSummary} actions={
+      <PageHeader eyebrow={`${data.settings.locationCity || "Votre activité"} · ${todayLabel}`} title={`Bonjour ${workspace?.firstName || "Melvyn"}, voici l’essentiel.`} actions={
         <label className="grid gap-1 text-left">
           <span className="text-[10px] font-bold tracking-[.12em] text-zinc-500 uppercase">Période analysée</span>
           <select value={periodKey} onChange={(event) => setPeriodKey(event.target.value as CompanyStatsPeriodKey)} className="focus-ring min-h-11 min-w-52 rounded-xl border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 shadow-sm">
@@ -175,35 +170,38 @@ export default function DashboardPage() {
 
       <DashboardCharts year={dashboardYear} revenue={dashboardCharts.revenue} cashFlow={dashboardCharts.cashFlow} focusMonth={statisticsPeriod.month} periodLabel={statisticsPeriod.label} />
 
-      <Card className="overflow-hidden border-violet-100 bg-[linear-gradient(120deg,rgba(255,255,255,.98),rgba(245,243,255,.72),rgba(240,253,250,.76))]">
+      <Card className="overflow-hidden border-orange-100 bg-[linear-gradient(120deg,rgba(255,255,255,.98),rgba(255,247,237,.7),rgba(240,253,250,.72))]">
         <CardHeader>
-          <div>
-            <h2 className="font-bold text-zinc-900">Situation actuelle</h2>
-            <p className="mt-1 text-xs text-zinc-500">Quatre repères en temps réel, indépendants de la période historique sélectionnée.</p>
+          <div className="flex items-start gap-3">
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-orange-100 text-orange-700"><ReceiptText className="size-5" /></span>
+            <div>
+              <h2 className="font-bold text-zinc-900">Plus grosses dépenses · {statisticsPeriod.label}</h2>
+              <p className="mt-1 text-xs text-zinc-500">Cumul des échéances ponctuelles, mensuelles et annuelles prévues sur la période.</p>
+            </div>
           </div>
-          <Badge variant="blue">Aujourd’hui</Badge>
+          <Link href="/finances" className="focus-ring inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-brand-600 transition hover:bg-brand-50 hover:text-brand-700">Gérer les charges <ArrowRight className="size-3.5" /></Link>
         </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-2xl border border-emerald-100 bg-white/90 p-4 shadow-sm">
-            <p className="text-[10px] font-bold tracking-[.12em] text-zinc-500 uppercase">Trésorerie disponible</p>
-            <p className={`mt-2 text-xl font-extrabold ${cash >= 0 ? "text-emerald-700" : "text-red-600"}`}>{formatMoney(cash)}</p>
-            <p className="mt-1 text-[11px] text-zinc-500">Solde après encaissements et dépenses</p>
-          </div>
-          <div className="rounded-2xl border border-rose-100 bg-white/90 p-4 shadow-sm">
-            <p className="text-[10px] font-bold tracking-[.12em] text-zinc-500 uppercase">À encaisser</p>
-            <p className="mt-2 text-xl font-extrabold text-zinc-900">{formatMoney(amountToCollect)}</p>
-            <p className="mt-1 text-[11px] text-zinc-500">{toCollect.length} prestation(s) terminée(s)</p>
-          </div>
-          <div className="rounded-2xl border border-sky-100 bg-white/90 p-4 shadow-sm">
-            <p className="text-[10px] font-bold tracking-[.12em] text-zinc-500 uppercase">Remplissage à venir</p>
-            <p className="mt-2 text-xl font-extrabold text-sky-700">{Math.round(fillRate * 100)} %</p>
-            <p className="mt-1 text-[11px] text-zinc-500">Capacité planifiée sur 5 jours</p>
-          </div>
-          <div className="rounded-2xl border border-violet-100 bg-white/90 p-4 shadow-sm">
-            <p className="text-[10px] font-bold tracking-[.12em] text-zinc-500 uppercase">Avis reçus</p>
-            <p className="mt-2 text-xl font-extrabold text-violet-700">{receivedReviews}</p>
-            <p className="mt-1 text-[11px] text-zinc-500">Sur {statisticsPeriod.label.toLocaleLowerCase("fr-FR")}</p>
-          </div>
+        <CardContent className="grid gap-2">
+          {expenseRanking.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-orange-200 bg-white/75 px-5 py-9 text-center">
+              <ReceiptText className="mx-auto size-6 text-orange-400" />
+              <p className="mt-2 text-sm font-bold text-zinc-800">Aucune dépense sur cette période</p>
+              <p className="mt-1 text-xs text-zinc-500">Les charges ajoutées dans Finances apparaîtront ici automatiquement.</p>
+            </div>
+          ) : expenseRanking.map((entry, index) => (
+            <Link href="/finances" key={entry.expense.id} className="focus-ring group grid gap-3 rounded-2xl border border-zinc-100 bg-white/90 p-3.5 transition hover:-translate-y-0.5 hover:border-orange-200 hover:shadow-md sm:grid-cols-[40px_minmax(0,1fr)_minmax(150px,.55fr)_120px] sm:items-center">
+              <span className={`grid size-9 place-items-center rounded-xl text-sm font-extrabold ${index < 3 ? "bg-orange-100 text-orange-700" : "bg-zinc-100 text-zinc-600"}`}>#{index + 1}</span>
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-bold text-zinc-900">{entry.expense.description || entry.expense.supplier || "Dépense sans libellé"}</span>
+                <span className="mt-1 block truncate text-[11px] text-zinc-500">{entry.expense.category || "Sans catégorie"} · {recurrenceLabels[entry.expense.recurrence]} · {entry.occurrenceCount} échéance(s)</span>
+              </span>
+              <span className="min-w-0">
+                <Progress value={largestExpense > 0 ? entry.total / largestExpense * 100 : 0} />
+                <span className="mt-1.5 block text-[10px] text-zinc-500">{formatMoney(entry.paid)} décaissé · {formatMoney(entry.remaining)} à venir</span>
+              </span>
+              <span className="text-left sm:text-right"><span className="block text-base font-extrabold text-zinc-900">{formatMoney(entry.total)}</span><span className="mt-0.5 block text-[10px] font-semibold text-zinc-400">sur la période</span></span>
+            </Link>
+          ))}
         </CardContent>
       </Card>
 

@@ -2,7 +2,7 @@
 
 ## Fonctionnel dans la V1
 
-- dashboard avec huit KPI distincts, objectifs fondés sur les encaissements, tâches, alertes et activité ;
+- dashboard avec sept KPI distincts, objectifs fondés sur les encaissements, classement des plus grosses charges de la période, tâches, alertes et activité ;
 - clients séparés des véhicules, recherche globale, détection de doublons et suppression rapide sans perdre l’historique légal ;
 - pipeline commercial Kanban avec glisser-déposer et vue tableau ;
 - catalogue créé, dupliqué, archivé et réordonné depuis l’interface ;

@@ -17,6 +17,7 @@ import {
   expenseOccurrenceDateKey,
   paidExpenseAmountForMonth,
   projectedExpenseAmountForMonth,
+  rankExpensesForMonths,
   recurringExpenseMetrics,
   paymentsForIntervention,
   paymentsForInvoice,
@@ -126,6 +127,23 @@ describe("charges récurrentes", () => {
 
   it("calcule l’équivalent mensuel et l’engagement annuel", () => {
     expect(recurringExpenseMetrics([monthly, annual, oneOff], "2026-04")).toEqual({ monthly: 12_000, annual: 24_000, monthlyEquivalent: 14_000, annualCommitment: 168_000 });
+  });
+
+  it("classe les charges selon leur cumul réel sur la période choisie", () => {
+    const expenses = [
+      { ...monthly, id: "mensuelle", date: "2026-01-05", amountIncludingTax: 10_000 },
+      { ...annual, id: "annuelle", date: "2026-02-10", amountIncludingTax: 25_000 },
+      { ...oneOff, id: "ponctuelle", date: "2026-03-15", amountIncludingTax: 20_000 },
+    ];
+    const ranking = rankExpensesForMonths(expenses, ["2026-01", "2026-02", "2026-03"], new Date("2026-03-31T12:00:00"));
+
+    expect(ranking.map(({ expense, total, occurrenceCount }) => ({ id: expense.id, total, occurrenceCount }))).toEqual([
+      { id: "mensuelle", total: 30_000, occurrenceCount: 3 },
+      { id: "annuelle", total: 25_000, occurrenceCount: 1 },
+      { id: "ponctuelle", total: 20_000, occurrenceCount: 1 },
+    ]);
+    expect(ranking[0]).toMatchObject({ paid: 30_000, remaining: 0 });
+    expect(ranking[2]).toMatchObject({ paid: 0, remaining: 20_000 });
   });
 });
 
