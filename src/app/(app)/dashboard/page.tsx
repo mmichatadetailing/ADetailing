@@ -6,7 +6,6 @@ import {
   CalendarClock,
   CheckCircle2,
   ChevronRight,
-  FileCheck2,
   Gauge,
   MapPin,
   Phone,
@@ -25,7 +24,6 @@ import { PageHeader } from "@/components/page-header";
 import { useWorkspace } from "@/components/workspace-provider";
 import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -111,7 +109,6 @@ export default function DashboardPage() {
     .slice(0, 8);
   const todayActions = [
     ...toCollect.map(({ intervention, workflow }) => { const client = data.clients.find((entry) => entry.id === intervention.clientId); return { icon: Banknote, title: `Encaisser ${client?.company || `${client?.firstName ?? ""} ${client?.lastName ?? ""}`.trim() || intervention.title}`, detail: `${intervention.title} · ${formatMoney(workflow.outstanding)} restant`, color: "text-emerald-600", href: `/prestations?intervention=${intervention.id}` }; }),
-    ...data.leads.filter((lead) => !["won", "lost"].includes(lead.stage)).map((lead) => ({ icon: lead.stage === "quote_to_prepare" ? FileCheck2 : Phone, title: lead.nextAction || `Suivre ${lead.prospectName}`, detail: `${lead.prospectName} · ${formatMoney(lead.estimatedAmount)}`, color: lead.stage === "quote_to_prepare" ? "text-sky-300" : "text-orange-300", href: "/commercial" })),
     ...upcoming.filter((item) => item.status === "scheduled").map((item) => { const client = data.clients.find((entry) => entry.id === item.clientId); return { icon: Sparkles, title: `Confirmer ${client?.company || `${client?.firstName ?? ""} ${client?.lastName ?? ""}`.trim() || item.title}`, detail: `${formatDate(item.startAt, { weekday: "long", hour: "2-digit", minute: "2-digit" })} · ${item.workers.length} collaborateur(s)`, color: "text-violet-300", href: "/prestations" }; }),
   ].slice(0, 4);
   const activeInterventionIds = new Set(data.interventions.map((intervention) => intervention.id));
@@ -207,7 +204,7 @@ export default function DashboardPage() {
 
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(330px,.75fr)]">
         <Card>
-          <CardHeader><div><h2 className="font-bold">Prestations à venir</h2><p className="mt-1 text-xs text-zinc-500">Les prochains rendez-vous confirmés ou planifiés.</p></div><Button variant="ghost" size="sm" onClick={() => location.assign('/planning')}>Tout voir <ArrowRight className="size-3.5" /></Button></CardHeader>
+          <CardHeader><div><h2 className="font-bold">Prestations à venir</h2><p className="mt-1 text-xs text-zinc-500">Les prochains rendez-vous confirmés ou planifiés.</p></div><Link href="/planning" className="focus-ring inline-flex min-h-8 items-center gap-2 rounded-lg px-3 text-xs font-semibold text-zinc-500 transition hover:bg-brand-50 hover:text-brand-600">Tout voir <ArrowRight className="size-3.5" /></Link></CardHeader>
           <CardContent className="px-0 pb-1">
             <div className="divide-y divide-white/[0.055]">
               {upcoming.map((item) => {
@@ -245,7 +242,7 @@ export default function DashboardPage() {
         <Card>
           <CardHeader><div><h2 className="font-bold">Alertes décisionnelles</h2><p className="mt-1 text-xs text-zinc-500">Des signaux, pas des décisions automatiques.</p></div></CardHeader>
           <CardContent className="grid gap-3">
-            <div className="rounded-xl border border-amber-400/15 bg-amber-400/[0.055] p-4"><div className="flex items-center gap-2 text-sm font-semibold text-amber-200"><CalendarClock className="size-4" /> Planning sous-rempli</div><p className="mt-2 text-xs leading-5 text-zinc-500">Le taux de remplissage des 5 prochains jours est de {Math.round(fillRate * 100)} %. Relancer les demandes chaudes avant d’ouvrir des créneaux supplémentaires.</p><Progress value={fillRate * 100} className="mt-3" /></div>
+            <div className="rounded-xl border border-amber-400/15 bg-amber-400/[0.055] p-4"><div className="flex items-center gap-2 text-sm font-semibold text-amber-200"><CalendarClock className="size-4" /> Planning sous-rempli</div><p className="mt-2 text-xs leading-5 text-zinc-500">Le taux de remplissage des 5 prochains jours est de {Math.round(fillRate * 100)} %. Planifiez d’abord les prestations sans créneau avant d’ouvrir de nouvelles disponibilités.</p><Progress value={fillRate * 100} className="mt-3" /></div>
             <div className="rounded-xl border border-sky-400/15 bg-sky-400/[0.045] p-4"><div className="flex items-center gap-2 text-sm font-semibold text-sky-200"><CheckCircle2 className="size-4" /> Avis à consolider</div><p className="mt-2 text-xs leading-5 text-zinc-500">{receivedReviews} avis reçu(s) ce mois sur un objectif de {data.settings.monthlyReviewTarget}. Les prestations terminées sans avis peuvent encore être sollicitées.</p></div>
           </CardContent>
         </Card>

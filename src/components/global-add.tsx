@@ -17,23 +17,12 @@ import { Field, Input, Select } from "./ui/field";
 import { Modal } from "./ui/modal";
 import { useDraftChanges } from "./use-draft-changes";
 
-type AddKind = "appointment" | "lead" | "client" | "expense";
+type AddKind = "appointment" | "client" | "expense";
 
 const optionalPhoneSchema = z.string().trim().refine(
   (value) => value === "" || value.replace(/\D/g, "").length >= 6,
   "Téléphone invalide",
 );
-
-const leadSchema = z.object({
-  prospectName: z.string().min(2, "Nom requis"),
-  phone: optionalPhoneSchema,
-  email: z.email("E-mail invalide").or(z.literal("")),
-  vehicleLabel: z.string().min(2, "Véhicule requis"),
-  serviceLabel: z.string().min(2, "Prestation requise"),
-  estimatedAmountEuros: z.number().min(0),
-  source: z.string().min(1),
-  ownerId: z.string().min(1),
-});
 
 const clientSchema = z.object({
   kind: z.enum(["individual", "business"]),
@@ -63,43 +52,6 @@ const expenseSchema = z.object({
 });
 
 const appointmentVehicleFormats = ["Citadine", "Berline", "SUV", "Monospace", "4x4", "Fourgon", "Autre"] as const;
-
-function LeadForm({ close }: { close: () => void }) {
-  const addLead = useDemoStore((state) => state.addLead);
-  const { mode, createRecord } = useWorkspace();
-  const sources = useDemoStore((state) => state.settings.leadSources);
-  const team = useDemoStore((state) => state.team);
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<z.infer<typeof leadSchema>>({
-    resolver: zodResolver(leadSchema),
-    defaultValues: { email: "", estimatedAmountEuros: 0, source: sources[0], ownerId: team[0]?.id },
-  });
-  return (
-    <form className="grid gap-4" onSubmit={handleSubmit(async (values) => {
-      try {
-        const input = { ...values, estimatedAmount: Math.round(values.estimatedAmountEuros * 100) };
-        if (mode === "supabase") await createRecord({ kind: "lead", ...input }); else addLead(input);
-        toast.success("Demande ajoutée au pipeline");
-        close();
-      } catch (error) { toast.error(error instanceof Error ? error.message : "Enregistrement impossible"); }
-    })}>
-      <Field label="Nom du prospect" error={errors.prospectName?.message}><Input autoFocus {...register("prospectName")} /></Field>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Téléphone (facultatif)" error={errors.phone?.message}><Input inputMode="tel" {...register("phone")} /></Field>
-        <Field label="E-mail" error={errors.email?.message}><Input type="email" {...register("email")} /></Field>
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Véhicule" error={errors.vehicleLabel?.message}><Input placeholder="Audi A4 Break" {...register("vehicleLabel")} /></Field>
-        <Field label="Prestation envisagée" error={errors.serviceLabel?.message}><Input placeholder="Formule 2" {...register("serviceLabel")} /></Field>
-      </div>
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Field label="Estimation (€)"><Input type="number" step="0.01" {...register("estimatedAmountEuros", { valueAsNumber: true })} /></Field>
-        <Field label="Source"><Select {...register("source")}>{sources.map((source) => <option key={source}>{source}</option>)}</Select></Field>
-        <Field label="Responsable"><Select {...register("ownerId")}>{team.map((member) => <option key={member.id} value={member.id}>{member.firstName}</option>)}</Select></Field>
-      </div>
-      <Button type="submit" className="mt-2" disabled={isSubmitting}>{isSubmitting ? "Enregistrement…" : "Créer la demande"}</Button>
-    </form>
-  );
-}
 
 function ClientForm({ close }: { close: () => void }) {
   const addClient = useDemoStore((state) => state.addClient);
@@ -365,13 +317,12 @@ export function GlobalAdd() {
     <>
       <Button onClick={() => setOpen(true)} aria-label="Ajouter"><Plus className="size-4" /> <span className="hidden sm:inline">Ajouter</span></Button>
       <Modal open={open} onClose={close} title="Ajouter" description="Une saisie courte, le reste pourra être complété plus tard.">
-        <div className="mb-5 grid grid-cols-2 gap-2 rounded-xl bg-white/[0.035] p-1 sm:grid-cols-4">
-          {([['appointment', 'Prestation'], ['lead', 'Demande'], ['client', 'Client'], ['expense', 'Dépense']] as const).map(([value, label]) => (
+        <div className="mb-5 grid grid-cols-3 gap-2 rounded-xl bg-white/[0.035] p-1">
+          {([['appointment', 'Prestation'], ['client', 'Client'], ['expense', 'Dépense']] as const).map(([value, label]) => (
             <button key={value} data-active={kind === value} className={`focus-ring tab-interactive rounded-lg px-3 py-2 text-xs font-semibold ${kind === value ? 'bg-brand-50 text-brand-700 shadow-sm' : 'text-zinc-500'}`} onClick={() => setKind(value)}>{label}</button>
           ))}
         </div>
         {kind === "appointment" && <AppointmentForm close={close} />}
-        {kind === "lead" && <LeadForm close={close} />}
         {kind === "client" && <ClientForm close={close} />}
         {kind === "expense" && <ExpenseForm close={close} />}
       </Modal>

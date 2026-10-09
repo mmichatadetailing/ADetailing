@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { Avatar } from "@/components/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
@@ -110,11 +110,11 @@ export default function ClientsPage() {
           const metrics = clientMetrics(selected.id);
           const vehicles = data.vehicles.filter((vehicle) => vehicle.clientId === selected.id);
           return <div className="space-y-6">
-            <div className="flex flex-wrap gap-2"><a href={`tel:${selected.phone}`}><Button size="sm"><Phone className="size-3.5" /> Appeler</Button></a><a href={`mailto:${selected.email}`}><Button size="sm" variant="secondary"><Mail className="size-3.5" /> E-mail</Button></a></div>
+            {(selected.phone || selected.email) && <div className="flex flex-wrap gap-2">{selected.phone && <a href={`tel:${selected.phone}`} className={buttonVariants({ size: "sm" })}><Phone className="size-3.5" /> Appeler</a>}{selected.email && <a href={`mailto:${selected.email}`} className={buttonVariants({ size: "sm", variant: "secondary" })}><Mail className="size-3.5" /> E-mail</a>}</div>}
             <section className="grid grid-cols-2 gap-3 sm:grid-cols-3">{[
               ["Prestations réalisées", formatMoney(metrics.revenue)], ["Encaissé", formatMoney(metrics.collected)], ["À encaisser", formatMoney(Math.max(metrics.revenue - metrics.collected, 0))], ["Panier moyen", formatMoney(metrics.revenueEntryCount ? Math.round(metrics.revenue / metrics.revenueEntryCount) : 0)], ["Prestations", String(metrics.interventions.length)], ["Factures facultatives", String(metrics.invoices.length)],
             ].map(([label, value]) => <div key={label} className="rounded-xl border border-white/[0.07] bg-white/[0.025] p-3"><p className="text-[10px] font-semibold tracking-wider text-zinc-600 uppercase">{label}</p><p className="mt-2 text-lg font-bold">{value}</p></div>)}</section>
-            <section><h3 className="mb-3 text-sm font-bold">Coordonnées</h3><div className="grid gap-3 rounded-2xl border border-white/[0.07] p-4 text-sm sm:grid-cols-2"><p><span className="block text-xs text-zinc-600">Téléphone</span>{selected.phone}</p><p><span className="block text-xs text-zinc-600">E-mail</span>{selected.email || "—"}</p><p><span className="block text-xs text-zinc-600">Adresse</span>{selected.address || "À compléter"}</p><p><span className="block text-xs text-zinc-600">Acquisition</span>{selected.source}</p></div></section>
+            <section><h3 className="mb-3 text-sm font-bold">Coordonnées</h3><div className="grid gap-3 rounded-2xl border border-white/[0.07] p-4 text-sm sm:grid-cols-2"><p><span className="block text-xs text-zinc-600">Téléphone</span>{selected.phone || "—"}</p><p><span className="block text-xs text-zinc-600">E-mail</span>{selected.email || "—"}</p><p><span className="block text-xs text-zinc-600">Adresse</span>{selected.address || "À compléter"}</p><p><span className="block text-xs text-zinc-600">Acquisition</span>{selected.source}</p></div></section>
             <section><h3 className="mb-3 text-sm font-bold">Véhicules</h3><div className="grid gap-3 sm:grid-cols-2">{vehicles.map((vehicle) => <div key={vehicle.id} className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-4"><div className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-xl bg-orange-400/10 text-orange-300"><Car className="size-4" /></span><div><p className="text-sm font-bold">{vehicle.make} {vehicle.model}</p><p className="text-xs text-zinc-500">{vehicle.registration} · {vehicle.format}</p></div></div></div>)}</div></section>
             <section><h3 className="mb-3 text-sm font-bold">Historique récent</h3><div className="divide-y divide-white/[0.06] rounded-2xl border border-white/[0.07]">{metrics.interventions.map((item) => <div key={item.id} className="flex items-center justify-between gap-4 p-4"><div><p className="text-sm font-semibold">{item.title}</p><p className="mt-1 text-xs text-zinc-600">{formatDate(item.startAt, { day: "2-digit", month: "long", year: "numeric" })}</p></div><Badge>{item.status}</Badge></div>)}</div></section>
           </div>;

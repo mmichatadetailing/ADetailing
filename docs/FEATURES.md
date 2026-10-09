@@ -4,7 +4,7 @@
 
 - dashboard avec sept KPI distincts, objectifs fondés sur les encaissements, classement des plus grosses charges de la période, tâches, alertes et activité ;
 - clients séparés des véhicules, recherche globale, détection de doublons et suppression rapide sans perdre l’historique légal ;
-- pipeline commercial Kanban avec glisser-déposer et vue tableau ;
+- création directe de prestations à venir ou déjà réalisées, sans passage obligatoire par un pipeline commercial ;
 - catalogue créé, dupliqué, archivé et réordonné depuis l’interface ;
 - interventions multi-lignes, heures individuelles, heures-personnes, coûts, marges et suppression rapide avec nettoyage des paiements manuels ;
 - calendrier jour/semaine/mois/liste, glisser-déposer, redimensionnement et conflits ;

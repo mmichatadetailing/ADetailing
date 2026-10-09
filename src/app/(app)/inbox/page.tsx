@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, Inbox, MessageSquareText, Send, Sparkles, UserPlus } from "lucide-react";
+import { FileText, Inbox, MessageSquareText, Send, Sparkles } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Avatar } from "@/components/avatar";
@@ -65,9 +65,9 @@ export default function InboxPage() {
 
   return (
     <div className="space-y-7">
-      <PageHeader eyebrow="Demandes & collaboration" title="Boîte de réception" description="Le canal général est commun à l’équipe. Les conversations de dossier restent réservées à leurs participants." />
+      <PageHeader eyebrow="Collaboration d’équipe" title="Boîte de réception" description="Le canal général est commun à l’équipe. Les conversations de dossier restent réservées à leurs participants." />
       <section className="grid gap-3 sm:grid-cols-3">{[
-        { icon: UserPlus, label: "Demandes à qualifier", value: data.leads.filter((lead) => ["received", "qualify"].includes(lead.stage)).length, color: "text-orange-500" },
+        { icon: Sparkles, label: "Dossiers suivis", value: threads.filter((thread) => thread.type === "intervention").length, color: "text-orange-500" },
         { icon: FileText, label: "Imports à vérifier", value: data.quotes.filter((quote) => quote.status === "to_review").length + data.invoices.filter((invoice) => invoice.status === "to_review").length, color: "text-sky-500" },
         { icon: MessageSquareText, label: "Messages non lus", value: threads.reduce((sum, thread) => sum + thread.unread, 0), color: "text-violet-500" },
       ].map((item) => <Card key={item.label}><CardContent className="flex items-center gap-4 p-5"><span className={`grid size-10 place-items-center rounded-xl bg-zinc-50 ${item.color}`}><item.icon className="size-5" /></span><div><p className="text-xl font-bold">{item.value}</p><p className="mt-1 text-xs text-zinc-500">{item.label}</p></div></CardContent></Card>)}</section>

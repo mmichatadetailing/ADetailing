@@ -6,7 +6,7 @@ Ouvrir **Paramètres → Import historique XLSX** et déposer `ADetailing Pilota
 
 La prévisualisation :
 
-- détecte Prestations, Charges, Objectifs mensuels, Planning capacité, Paramètres, Pipeline commercial et Investissements ;
+- détecte Prestations, Charges, Objectifs mensuels, Planning capacité, Paramètres, ancien pipeline commercial et Investissements ;
 - ignore Dashboard et Synthèses ;
 - normalise les dates, téléphones et montants ;
 - propose les doublons par e-mail, téléphone et nom ;

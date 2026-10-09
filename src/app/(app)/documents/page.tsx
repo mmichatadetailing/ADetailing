@@ -1,7 +1,8 @@
 "use client";
 
 import { AlertTriangle, Check, FileCheck2, Link2, LoaderCircle, Plus, UploadCloud, WalletCards, X } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
@@ -19,11 +20,18 @@ import type { ParsedHenrriDocument } from "@/lib/import/henrri-parser";
 import { formatDate, formatMoney } from "@/lib/utils";
 
 type ImportResponse = { fileName: string; fileSize: number; parsed: ParsedHenrriDocument };
+type DocumentTab = "quotes" | "invoices" | "imports";
 
-export default function DocumentsPage() {
+function documentTab(value: string | null): DocumentTab {
+  return value === "quotes" || value === "imports" ? value : "invoices";
+}
+
+function DocumentsContent() {
   const data = useDemoStore();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [tab, setTab] = useState<"quotes" | "invoices" | "imports">("invoices");
+  const requestedTab = documentTab(useSearchParams().get("tab"));
+  const [selectedTab, setTab] = useState<DocumentTab | null>(null);
+  const tab = selectedTab ?? requestedTab;
   const [loading, setLoading] = useState(false);
   const [importResult, setImportResult] = useState<ImportResponse | null>(null);
   const [paymentInvoice, setPaymentInvoice] = useState<Invoice | null>(null);
@@ -96,4 +104,8 @@ export default function DocumentsPage() {
       </Modal>
     </div>
   );
+}
+
+export default function DocumentsPage() {
+  return <Suspense fallback={<div className="min-h-72" />}><DocumentsContent /></Suspense>;
 }

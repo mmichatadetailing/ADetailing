@@ -43,7 +43,7 @@ export function GlobalSearch() {
   return (
     <>
       <button className="focus-ring group flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-xl border border-white/[0.075] bg-white/[0.035] px-3 text-left text-sm text-zinc-500 transition-[color,background-color,border-color,box-shadow] hover:border-brand-400/20 hover:bg-white/[0.065] hover:text-zinc-300 hover:shadow-sm sm:max-w-sm" onClick={() => setOpen(true)}>
-        <Search className="size-4 shrink-0 transition-[color,transform] duration-200 group-hover:scale-110 group-hover:text-brand-500" /><span className="truncate">Rechercher partout…</span><kbd className="ml-auto hidden rounded-md border border-white/8 bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-500 transition-colors group-hover:border-brand-400/20 group-hover:text-brand-600 md:inline">⌘ K</kbd>
+        <Search className="size-4 shrink-0 transition-[color,transform] duration-200 group-hover:scale-110 group-hover:text-brand-500" /><span className="truncate">Rechercher partout…</span><kbd className="ml-auto hidden rounded-md border border-white/8 bg-white/5 px-1.5 py-0.5 text-[10px] text-zinc-500 transition-colors group-hover:border-brand-400/20 group-hover:text-brand-600 md:inline">Ctrl K</kbd>
       </button>
       <Modal open={open} onClose={() => setOpen(false)} title="Recherche globale" description="Clients, véhicules, immatriculations, devis et factures.">
         <Input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nom, téléphone, immatriculation, numéro…" />

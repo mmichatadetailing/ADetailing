@@ -2,7 +2,6 @@
 
 import {
   BarChart3,
-  Bell,
   BookOpen,
   BriefcaseBusiness,
   CalendarDays,
@@ -129,8 +128,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Button variant="ghost" size="icon" className="shrink-0 lg:hidden" onClick={() => setMenuOpen(true)} aria-label="Ouvrir le menu"><Menu className="size-5" /></Button>
           <GlobalSearch />
           <div className="ml-auto flex items-center gap-2">
-            <Link href="/inbox" className="focus-ring icon-interactive relative grid size-10 place-items-center rounded-xl text-zinc-500" aria-label="Notifications"><Bell className="size-[18px] transition-transform duration-200" /></Link>
-            <Link href="/inbox" className="focus-ring icon-interactive hidden size-10 place-items-center rounded-xl text-zinc-500 sm:grid" aria-label="Messages"><MessageSquareText className="size-[18px] transition-transform duration-200" /></Link>
+            <Link href="/inbox" className="focus-ring icon-interactive grid size-10 place-items-center rounded-xl text-zinc-500" aria-label="Boîte de réception"><MessageSquareText className="size-[18px] transition-transform duration-200" /></Link>
             <GlobalAdd />
           </div>
         </header>
