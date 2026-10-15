@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { requireAuthenticatedWorkspace } from "@/lib/supabase/workspace";
-import { normalizeText } from "@/lib/utils";
+import { canManageBusiness, requireAuthenticatedWorkspace } from "@/lib/supabase/workspace";
+import { normalizePhone, normalizeText } from "@/lib/utils";
 
 const leadStages = ["received", "qualify", "quote_to_prepare", "quote_sent", "follow_up", "won", "lost"] as const;
 const interventionStatuses = ["to_schedule", "scheduled", "confirmed", "in_progress", "completed", "cancelled"] as const;
@@ -39,6 +39,27 @@ const expenseMutationFields = {
   vatRateBasisPoints: z.number().int().min(0).max(10_000),
   paid: z.boolean(),
 };
+const clientMutationFields = {
+  clientId: z.uuid(),
+  kind: z.enum(["individual", "business"]),
+  company: z.string().trim().max(160).optional(),
+  firstName: z.string().trim().max(120),
+  lastName: z.string().trim().max(120),
+  email: z.email().or(z.literal("")),
+  phone: z.string().trim().max(40),
+  address: z.string().trim().max(300),
+  postalCode: z.string().trim().max(20),
+  city: z.string().trim().max(120),
+  source: z.string().trim().min(1).max(120),
+  notes: z.string().trim().max(3000),
+  vehicles: z.array(z.object({
+    id: z.uuid().optional(),
+    make: z.string().trim().min(1).max(100),
+    model: z.string().trim().max(100),
+    registration: z.string().trim().max(30),
+    format: z.string().trim().min(1).max(80),
+  })).max(20),
+};
 const planningEventMutationFields = {
   kind: z.enum(["meeting", "unavailability", "absence", "personal"]),
   title: z.string().trim().min(2).max(160),
@@ -64,6 +85,7 @@ const henrriLineSchema = z.object({
 const mutationSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("moveLead"), leadId: z.uuid(), stage: z.enum(leadStages) }),
   z.object({ action: z.literal("removeClient"), clientId: z.uuid() }),
+  z.object({ action: z.literal("updateClient"), ...clientMutationFields }),
   z.object({ action: z.literal("updateExpense"), ...expenseMutationFields }),
   z.object({ action: z.literal("removeExpense"), expenseId: z.uuid() }),
   z.object({ action: z.literal("rescheduleIntervention"), interventionId: z.uuid(), startAt: z.iso.datetime(), endAt: z.iso.datetime() }),
@@ -87,9 +109,9 @@ const mutationSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("updateObjective"), month: z.string().regex(/^\d{4}-\d{2}$/), revenueTarget: z.number().int().min(0) }),
   z.object({ action: z.literal("updateAnnualObjectives"), year: z.number().int().min(2000).max(2100), revenueTargets: z.array(z.number().int().min(0).max(100_000_000_000)).length(12) }),
   z.object({ action: z.literal("mergeClients"), primaryId: z.uuid(), duplicateId: z.uuid() }),
-  z.object({ action: z.literal("addPayment"), invoiceId: z.uuid(), amount: z.number().int().positive(), method: z.string().trim().min(2).max(80) }),
+  z.object({ action: z.literal("addPayment"), invoiceId: z.uuid(), amount: z.number().int().positive(), method: z.string().trim().min(2).max(80), paidAt: z.iso.datetime() }),
   z.object({ action: z.literal("addInterventionPayment"), interventionId: z.uuid(), amount: z.number().int().positive(), method: z.string().trim().min(2).max(80), paidAt: z.iso.datetime() }),
-  z.object({ action: z.literal("updateInterventionPayment"), paymentId: z.uuid(), amount: z.number().int().positive(), method: z.string().trim().min(2).max(80), paidAt: z.iso.datetime() }),
+  z.object({ action: z.literal("updatePayment"), paymentId: z.uuid(), amount: z.number().int().positive(), method: z.string().trim().min(2).max(80), paidAt: z.iso.datetime() }),
   z.object({ action: z.literal("removePayment"), paymentId: z.uuid() }),
   z.object({ action: z.literal("linkInvoiceToIntervention"), interventionId: z.uuid(), invoiceId: z.uuid().nullable() }),
   z.object({ action: z.literal("linkInvoiceToQuote"), invoiceId: z.uuid(), quoteId: z.uuid() }),
@@ -140,6 +162,23 @@ export async function POST(request: Request) {
     const locationId = workspace.locationId;
     const userId = workspace.user.id;
 
+    const managerOnlyActions = new Set([
+      "moveLead", "removeClient", "updateClient", "updateExpense", "removeExpense", "removeIntervention", "updateIntervention",
+      "addService", "updateService", "duplicateService", "archiveService", "reorderService", "updateObjective", "updateAnnualObjectives",
+      "mergeClients", "addPayment", "addInterventionPayment", "updatePayment", "removePayment", "linkInvoiceToIntervention",
+      "linkInvoiceToQuote", "importHenrriDocument",
+    ]);
+    if (managerOnlyActions.has(input.action) && !canManageBusiness(workspace.role)) {
+      return NextResponse.json({ error: "Cette action est réservée aux administrateurs et associés." }, { status: 403 });
+    }
+
+    const employeeOperationalActions = new Set(["rescheduleIntervention", "setInterventionStatus", "completeIntervention", "incrementChecklist"]);
+    if (workspace.role === "employee" && employeeOperationalActions.has(input.action) && "interventionId" in input) {
+      const { data: assignment, error: assignmentError } = await supabase.from("intervention_workers").select("id").eq("organization_id", organizationId).eq("intervention_id", input.interventionId).eq("profile_id", userId).limit(1).maybeSingle();
+      ensureNoError(assignmentError);
+      if (!assignment) return NextResponse.json({ error: "Vous ne pouvez modifier que les prestations qui vous sont affectées." }, { status: 403 });
+    }
+
     if (input.action === "moveLead") {
       const nextAction = input.stage === "won" ? "Planifier la prestation" : input.stage === "lost" ? "Renseigner la raison de perte" : undefined;
       const patch: Record<string, unknown> = { stage: input.stage };
@@ -163,6 +202,47 @@ export async function POST(request: Request) {
       const clientName = client.company || [client.first_name, client.last_name].filter(Boolean).join(" ") || "Contact";
       const { error: activityError } = await supabase.from("activity_logs").insert({ organization_id: organizationId, actor_id: userId, kind: "comment_added", title: "Contact supprimé", description: clientName, entity_type: "client", entity_id: client.id });
       ensureNoError(activityError);
+      return NextResponse.json({ ok: true, id: client.id });
+    }
+
+    if (input.action === "updateClient") {
+      if (input.kind === "business" && !input.company) throw new Error("Le nom de l’entreprise est requis.");
+      if (input.kind === "individual" && (!input.firstName || !input.lastName)) throw new Error("Le prénom et le nom sont requis.");
+      const { data: source, error: sourceError } = await supabase.from("lead_sources").select("id").eq("organization_id", organizationId).eq("name", input.source).maybeSingle();
+      ensureNoError(sourceError);
+      const { data: client, error } = await supabase.from("clients").update({
+        kind: input.kind,
+        company: input.kind === "business" ? input.company || null : null,
+        first_name: input.firstName,
+        last_name: input.lastName,
+        email: input.email.toLowerCase() || null,
+        phone: input.phone || null,
+        normalized_phone: input.phone ? normalizePhone(input.phone) : null,
+        address: input.address || null,
+        postal_code: input.postalCode || null,
+        city: input.city || null,
+        lead_source_id: source?.id ?? null,
+        notes: input.notes || null,
+      }).eq("organization_id", organizationId).eq("id", input.clientId).is("archived_at", null).select("id").single();
+      ensureNoError(error);
+      if (!client) throw new Error("Contact introuvable.");
+
+      const { data: existingVehicles, error: existingVehiclesError } = await supabase.from("vehicles").select("id").eq("organization_id", organizationId).eq("client_id", input.clientId).is("archived_at", null);
+      ensureNoError(existingVehiclesError);
+      const allowedVehicleIds = new Set((existingVehicles ?? []).map((vehicle) => vehicle.id));
+      for (const vehicle of input.vehicles) {
+        const { data: format, error: formatError } = await supabase.from("vehicle_formats").select("id").eq("organization_id", organizationId).eq("name", vehicle.format).maybeSingle();
+        ensureNoError(formatError);
+        const vehicleRow = { format_id: format?.id ?? null, make: vehicle.make, model: vehicle.model, registration: vehicle.registration.toUpperCase() || null };
+        if (vehicle.id) {
+          if (!allowedVehicleIds.has(vehicle.id)) throw new Error("Un véhicule ne correspond pas à ce contact.");
+          const { error: vehicleError } = await supabase.from("vehicles").update(vehicleRow).eq("organization_id", organizationId).eq("client_id", input.clientId).eq("id", vehicle.id);
+          ensureNoError(vehicleError);
+        } else {
+          const { error: vehicleError } = await supabase.from("vehicles").insert({ ...vehicleRow, organization_id: organizationId, location_id: locationId, client_id: input.clientId, created_by: userId });
+          ensureNoError(vehicleError);
+        }
+      }
       return NextResponse.json({ ok: true, id: client.id });
     }
 
@@ -513,6 +593,7 @@ export async function POST(request: Request) {
     }
 
     if (input.action === "addPayment") {
+      if (new Date(input.paidAt).getTime() > Date.now()) throw new Error("La date du paiement ne peut pas être dans le futur.");
       const { data: invoice, error: invoiceError } = await supabase.from("invoices").select("total_including_tax_cents").eq("organization_id", organizationId).eq("id", input.invoiceId).single();
       ensureNoError(invoiceError);
       if (!invoice) throw new Error("Facture introuvable.");
@@ -520,7 +601,7 @@ export async function POST(request: Request) {
       ensureNoError(paymentsError);
       const alreadyPaid = payments?.reduce((sum, payment) => sum + Number(payment.amount_cents), 0) ?? 0;
       if (alreadyPaid + input.amount > Number(invoice.total_including_tax_cents)) throw new Error("Le paiement dépasse le solde restant.");
-      const { data, error } = await supabase.from("payments").insert({ organization_id: organizationId, location_id: locationId, invoice_id: input.invoiceId, amount_cents: input.amount, paid_at: new Date().toISOString(), method: input.method, created_by: userId }).select("id").single();
+      const { data, error } = await supabase.from("payments").insert({ organization_id: organizationId, location_id: locationId, invoice_id: input.invoiceId, amount_cents: input.amount, paid_at: input.paidAt, method: input.method, created_by: userId }).select("id").single();
       ensureNoError(error);
       if (!data) throw new Error("Paiement introuvable après création.");
       return NextResponse.json({ ok: true, id: data.id });
@@ -547,18 +628,28 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, id: data.id });
     }
 
-    if (input.action === "updateInterventionPayment") {
+    if (input.action === "updatePayment") {
       if (new Date(input.paidAt).getTime() > Date.now()) throw new Error("La date du paiement ne peut pas être dans le futur.");
-      const { data: payment, error: paymentError } = await supabase.from("payments").select("id,intervention_id").eq("organization_id", organizationId).eq("id", input.paymentId).single();
+      const { data: payment, error: paymentError } = await supabase.from("payments").select("id,intervention_id,invoice_id").eq("organization_id", organizationId).eq("id", input.paymentId).single();
       ensureNoError(paymentError);
-      if (!payment?.intervention_id) throw new Error("Paiement manuel introuvable.");
-      const { data: items, error: itemsError } = await supabase.from("intervention_items").select("revenue_allocated_cents").eq("organization_id", organizationId).eq("intervention_id", payment.intervention_id);
-      ensureNoError(itemsError);
-      const total = items?.reduce((sum, item) => sum + Number(item.revenue_allocated_cents), 0) ?? 0;
-      const { data: otherPayments, error: otherPaymentsError } = await supabase.from("payments").select("amount_cents").eq("organization_id", organizationId).eq("intervention_id", payment.intervention_id).neq("id", input.paymentId);
+      if (!payment) throw new Error("Paiement introuvable.");
+      let total = 0;
+      let otherPaymentsQuery = supabase.from("payments").select("amount_cents").eq("organization_id", organizationId).neq("id", input.paymentId);
+      if (payment.invoice_id) {
+        const { data: invoice, error: invoiceError } = await supabase.from("invoices").select("total_including_tax_cents").eq("organization_id", organizationId).eq("id", payment.invoice_id).single();
+        ensureNoError(invoiceError);
+        total = Number(invoice?.total_including_tax_cents ?? 0);
+        otherPaymentsQuery = otherPaymentsQuery.eq("invoice_id", payment.invoice_id);
+      } else if (payment.intervention_id) {
+        const { data: items, error: itemsError } = await supabase.from("intervention_items").select("revenue_allocated_cents").eq("organization_id", organizationId).eq("intervention_id", payment.intervention_id);
+        ensureNoError(itemsError);
+        total = items?.reduce((sum, item) => sum + Number(item.revenue_allocated_cents), 0) ?? 0;
+        otherPaymentsQuery = otherPaymentsQuery.eq("intervention_id", payment.intervention_id);
+      } else throw new Error("Ce paiement n’est rattaché à aucun dossier.");
+      const { data: otherPayments, error: otherPaymentsError } = await otherPaymentsQuery;
       ensureNoError(otherPaymentsError);
       const paidExcludingCurrent = otherPayments?.reduce((sum, item) => sum + Number(item.amount_cents), 0) ?? 0;
-      if (paidExcludingCurrent + input.amount > total) throw new Error("Le paiement dépasse le montant total de la prestation.");
+      if (paidExcludingCurrent + input.amount > total) throw new Error("Le paiement dépasse le montant total du dossier.");
       const { error } = await supabase.from("payments").update({ amount_cents: input.amount, method: input.method, paid_at: input.paidAt }).eq("organization_id", organizationId).eq("id", input.paymentId);
       ensureNoError(error);
       return NextResponse.json({ ok: true, id: input.paymentId });

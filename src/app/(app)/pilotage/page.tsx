@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
+import { useWorkspace } from "@/components/workspace-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -18,6 +19,8 @@ import { formatMoney } from "@/lib/utils";
 
 export default function PilotagePage() {
   const data = useDemoStore();
+  const { mode, workspace } = useWorkspace();
+  const canManage = mode === "demo" || Boolean(workspace?.canManageBusiness);
   const currentDate = new Date();
   const currentMonth = monthKey(currentDate);
   const currentMonthLabel = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" }).format(currentDate);
@@ -53,7 +56,7 @@ export default function PilotagePage() {
 
   return (
     <div className="space-y-7">
-      <PageHeader eyebrow="Objectifs & analyses" title="Pilotage" description="Comprendre les moteurs de rentabilité, la capacité réelle et les conditions d’une éventuelle embauche." actions={<Button variant="secondary" onClick={() => setObjectiveOpen(true)}><Pencil className="size-4" /> Modifier l’objectif</Button>} />
+      <PageHeader eyebrow="Objectifs & analyses" title="Pilotage" description="Comprendre les moteurs de rentabilité, la capacité réelle et les conditions d’une éventuelle embauche." actions={canManage ? <Button variant="secondary" onClick={() => setObjectiveOpen(true)}><Pencil className="size-4" /> Modifier l’objectif</Button> : undefined} />
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[
         ["CA encaissé", formatMoney(revenue), objectiveTarget > 0 ? `${Math.round(objectiveProgress * 100)} % de l’objectif` : "Objectif à définir"], ["Marge brute", formatMoney(margin), "prestations terminées ce mois"], ["Marge horaire", `${formatMoney(avgHourly)}/h`, `objectif ${formatMoney(data.settings.hourlyMarginTarget)}/h`], ["Panier moyen", formatMoney(averageBasket), `${completed.length} prestation(s) terminée(s)`],
       ].map(([label, value, detail]) => <Card key={label}><CardContent className="p-5"><p className="text-xs font-semibold text-zinc-500">{label}</p><p className="mt-4 text-2xl font-bold">{value}</p><p className="mt-1 text-[10px] text-zinc-600">{detail}</p></CardContent></Card>)}</section>

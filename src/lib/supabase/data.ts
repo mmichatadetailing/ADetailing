@@ -38,6 +38,7 @@ export interface WorkspaceIdentity {
   role: MemberRole;
   organizations: Array<{ id: string; name: string; role: MemberRole }>;
   canManageTeam: boolean;
+  canManageBusiness: boolean;
 }
 
 export interface TeamInvitation {
@@ -273,6 +274,7 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User):
     organizationId, organizationName: text(organization, "name", "Mon entreprise"), organizationSlug: text(organization, "slug"), locationId, locationName: text(location, "name", "Établissement principal"), locationCity: text(location, "city"), role: text(membership, "role", "employee") as MemberRole,
     organizations: memberships.map((item) => ({ id: text(item, "organization_id"), name: text(one(item.organizations), "name", "Entreprise"), role: text(item, "role", "employee") as MemberRole })),
     canManageTeam: ["admin", "partner"].includes(text(membership, "role")),
+    canManageBusiness: ["admin", "partner"].includes(text(membership, "role")),
   };
   const invitations: TeamInvitation[] = invitationRows.map((row) => ({
     id: text(row, "id"),

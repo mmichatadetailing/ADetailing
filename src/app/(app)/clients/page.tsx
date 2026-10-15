@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertTriangle, Building2, Car, ChevronRight, Mail, Merge, Phone, Search, Trash2, UserRound } from "lucide-react";
+import { AlertTriangle, Building2, Car, ChevronRight, Mail, Merge, Pencil, Phone, Plus, Save, Search, Trash2, UserRound, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
@@ -9,20 +9,25 @@ import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/field";
+import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { clientRevenueMetrics } from "@/lib/domain/calculations";
 import { interventionStatusLabels } from "@/lib/domain/labels";
 import { findDuplicateClientPairs } from "@/lib/domain/matching";
 import type { Client } from "@/lib/domain/types";
-import { useDemoStore } from "@/lib/demo/store";
+import { useDemoStore, type ClientEditInput } from "@/lib/demo/store";
 import { formatDate, formatMoney, initials, normalizeText } from "@/lib/utils";
+import { useWorkspace } from "@/components/workspace-provider";
 
 export default function ClientsPage() {
   const data = useDemoStore();
+  const { mode, workspace } = useWorkspace();
+  const canManage = mode === "demo" || Boolean(workspace?.canManageBusiness);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Client | null>(null);
   const [deletingClient, setDeletingClient] = useState<Client | null>(null);
+  const [editingClientId, setEditingClientId] = useState<string | null>(null);
+  const [clientDraft, setClientDraft] = useState<ClientEditInput | null>(null);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
   const activeClients = useMemo(() => data.clients.filter((client) => !client.archivedAt), [data.clients]);
   const filtered = useMemo(() => {
@@ -49,13 +54,39 @@ export default function ClientsPage() {
     toast.success("Contact supprimé", { description: "Il a été retiré des contacts actifs. Son historique est conservé." });
   };
 
+  const openClientEditor = (client: Client) => {
+    setEditingClientId(client.id);
+    setClientDraft({
+      kind: client.kind, company: client.company ?? "", firstName: client.firstName, lastName: client.lastName, email: client.email, phone: client.phone,
+      address: client.address, postalCode: client.postalCode, city: client.city, source: client.source, notes: client.notes,
+      vehicles: data.vehicles.filter((vehicle) => vehicle.clientId === client.id).map((vehicle) => ({ id: vehicle.id, make: vehicle.make, model: vehicle.model, registration: vehicle.registration, format: vehicle.format })),
+    });
+  };
+
+  const closeClientEditor = () => {
+    setEditingClientId(null);
+    setClientDraft(null);
+  };
+
+  const saveClient = () => {
+    if (!editingClientId || !clientDraft) return;
+    if (clientDraft.kind === "business" && !clientDraft.company?.trim()) return toast.error("Renseignez le nom de l’entreprise");
+    if (clientDraft.kind === "individual" && (clientDraft.firstName.trim().length < 2 || clientDraft.lastName.trim().length < 2)) return toast.error("Renseignez le prénom et le nom du contact");
+    if (clientDraft.email && !/^\S+@\S+\.\S+$/.test(clientDraft.email)) return toast.error("L’adresse e-mail est invalide");
+    if (clientDraft.vehicles.some((vehicle) => !vehicle.make.trim())) return toast.error("La marque est requise pour chaque véhicule");
+    data.updateClient(editingClientId, clientDraft);
+    setSelected((client) => client?.id === editingClientId ? { ...client, ...clientDraft, company: clientDraft.kind === "business" ? clientDraft.company : undefined } : client);
+    closeClientEditor();
+    toast.success("Contact mis à jour");
+  };
+
   const clientMetrics = (clientId: string) => {
     return clientRevenueMetrics(clientId, data.invoices, data.interventions, data.payments);
   };
 
   return (
     <div className="space-y-7">
-      <PageHeader eyebrow="Relation client" title="Clients & véhicules" description="Une fiche unique pour retrouver les coordonnées, véhicules, prestations et documents sans double saisie." actions={<Button variant="secondary" onClick={() => setDuplicateOpen(true)}><Merge className="size-4" /> Doublons <Badge className="ml-1">{duplicateCandidates.length}</Badge></Button>} />
+      <PageHeader eyebrow="Relation client" title="Clients & véhicules" description="Une fiche unique pour retrouver les coordonnées, véhicules, prestations et documents sans double saisie." actions={canManage ? <Button variant="secondary" onClick={() => setDuplicateOpen(true)}><Merge className="size-4" /> Doublons <Badge className="ml-1">{duplicateCandidates.length}</Badge></Button> : undefined} />
       <Card>
         <CardContent className="p-4 sm:p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -80,7 +111,7 @@ export default function ClientsPage() {
                 <div><p className="text-[10px] font-semibold tracking-wider text-zinc-500 uppercase">Prestations</p><p className="mt-1 text-sm font-bold text-zinc-900">{metrics.interventions.length}</p></div>
                 <ChevronRight className="hidden size-4 text-zinc-400 transition group-hover:translate-x-0.5 group-hover:text-orange-600 sm:block" />
               </button>
-              <button type="button" onClick={() => setDeletingClient(client)} aria-label={`Supprimer ${client.company || `${client.firstName} ${client.lastName}`}`} title="Supprimer le contact" className="focus-ring m-3 grid size-9 place-items-center self-center rounded-xl border border-red-100 bg-red-50 text-red-600 shadow-sm transition hover:border-red-300 hover:bg-red-100"><Trash2 className="size-4" /></button>
+              {canManage && <div className="m-3 flex gap-2 self-center"><button type="button" onClick={() => openClientEditor(client)} aria-label={`Modifier ${client.company || `${client.firstName} ${client.lastName}`}`} title="Modifier le contact" className="focus-ring grid size-9 place-items-center rounded-xl border border-zinc-200 bg-white text-zinc-600 shadow-sm transition hover:border-orange-300 hover:bg-orange-50 hover:text-orange-700"><Pencil className="size-4" /></button><button type="button" onClick={() => setDeletingClient(client)} aria-label={`Supprimer ${client.company || `${client.firstName} ${client.lastName}`}`} title="Supprimer le contact" className="focus-ring grid size-9 place-items-center rounded-xl border border-red-100 bg-red-50 text-red-600 shadow-sm transition hover:border-red-300 hover:bg-red-100"><Trash2 className="size-4" /></button></div>}
             </div>
           );
         })}
@@ -105,7 +136,7 @@ export default function ClientsPage() {
             .sort((a, b) => (b.startAt ?? b.createdAt).localeCompare(a.startAt ?? a.createdAt))
             .slice(0, 6);
           return <div className="space-y-6">
-            {(selected.phone || selected.email) && <div className="flex flex-wrap gap-2">{selected.phone && <a href={`tel:${selected.phone}`} className={buttonVariants({ size: "sm" })}><Phone className="size-3.5" /> Appeler</a>}{selected.email && <a href={`mailto:${selected.email}`} className={buttonVariants({ size: "sm", variant: "secondary" })}><Mail className="size-3.5" /> E-mail</a>}</div>}
+            <div className="flex flex-wrap gap-2">{selected.phone && <a href={`tel:${selected.phone}`} className={buttonVariants({ size: "sm" })}><Phone className="size-3.5" /> Appeler</a>}{selected.email && <a href={`mailto:${selected.email}`} className={buttonVariants({ size: "sm", variant: "secondary" })}><Mail className="size-3.5" /> E-mail</a>}{canManage && <Button size="sm" variant="secondary" onClick={() => openClientEditor(selected)}><Pencil className="size-3.5" /> Modifier la fiche</Button>}</div>
             <section className="grid grid-cols-2 gap-3 sm:grid-cols-3">{[
               ["Montant des prestations", formatMoney(metrics.revenue)], ["Encaissé", formatMoney(metrics.collected)], ["À encaisser", formatMoney(Math.max(metrics.revenue - metrics.collected, 0))], ["Panier moyen", formatMoney(metrics.revenueEntryCount ? Math.round(metrics.revenue / metrics.revenueEntryCount) : 0)], ["Prestations", String(metrics.interventions.length)], ["Factures facultatives", String(metrics.invoices.length)],
             ].map(([label, value]) => <div key={label} className="rounded-xl border border-white/[0.07] bg-white/[0.025] p-3"><p className="text-[10px] font-semibold tracking-wider text-zinc-600 uppercase">{label}</p><p className="mt-2 text-lg font-bold">{value}</p></div>)}</section>
@@ -114,6 +145,18 @@ export default function ClientsPage() {
             <section><h3 className="mb-3 text-sm font-bold">Historique récent</h3><div className="divide-y divide-white/[0.06] rounded-2xl border border-white/[0.07]">{recentInterventions.length === 0 ? <p className="p-5 text-center text-xs text-zinc-500">Aucune prestation enregistrée pour ce contact.</p> : recentInterventions.map((item) => <div key={item.id} className="flex items-center justify-between gap-4 p-4"><div><p className="text-sm font-semibold">{item.title}</p><p className="mt-1 text-xs text-zinc-600">{formatDate(item.startAt, { day: "2-digit", month: "long", year: "numeric" })}</p></div><StatusBadge status={item.status}>{interventionStatusLabels[item.status]}</StatusBadge></div>)}</div></section>
           </div>;
         })()}
+      </Modal>
+
+      <Modal open={Boolean(editingClientId && clientDraft)} onClose={closeClientEditor} title="Modifier le contact" description="Coordonnées, acquisition et véhicules" className="sm:max-w-3xl">
+        {clientDraft && <div className="grid gap-5">
+          <div className="grid gap-4 sm:grid-cols-2"><Field label="Type"><Select value={clientDraft.kind} onChange={(event) => setClientDraft({ ...clientDraft, kind: event.target.value as ClientEditInput["kind"] })}><option value="individual">Particulier</option><option value="business">Professionnel</option></Select></Field><Field label={clientDraft.kind === "business" ? "Société" : "Société (facultatif)"}><Input value={clientDraft.company ?? ""} onChange={(event) => setClientDraft({ ...clientDraft, company: event.target.value })} /></Field></div>
+          <div className="grid gap-4 sm:grid-cols-2"><Field label={clientDraft.kind === "business" ? "Prénom du contact (facultatif)" : "Prénom"}><Input value={clientDraft.firstName} onChange={(event) => setClientDraft({ ...clientDraft, firstName: event.target.value })} /></Field><Field label={clientDraft.kind === "business" ? "Nom du contact (facultatif)" : "Nom"}><Input value={clientDraft.lastName} onChange={(event) => setClientDraft({ ...clientDraft, lastName: event.target.value })} /></Field></div>
+          <div className="grid gap-4 sm:grid-cols-2"><Field label="Téléphone (facultatif)"><Input inputMode="tel" value={clientDraft.phone} onChange={(event) => setClientDraft({ ...clientDraft, phone: event.target.value })} /></Field><Field label="E-mail (facultatif)"><Input type="email" value={clientDraft.email} onChange={(event) => setClientDraft({ ...clientDraft, email: event.target.value })} /></Field></div>
+          <div className="grid gap-4 sm:grid-cols-[1fr_120px_1fr]"><Field label="Adresse"><Input value={clientDraft.address} onChange={(event) => setClientDraft({ ...clientDraft, address: event.target.value })} /></Field><Field label="Code postal"><Input value={clientDraft.postalCode} onChange={(event) => setClientDraft({ ...clientDraft, postalCode: event.target.value })} /></Field><Field label="Ville"><Input value={clientDraft.city} onChange={(event) => setClientDraft({ ...clientDraft, city: event.target.value })} /></Field></div>
+          <div className="grid gap-4 sm:grid-cols-2"><Field label="Source"><Select value={clientDraft.source} onChange={(event) => setClientDraft({ ...clientDraft, source: event.target.value })}>{data.settings.leadSources.map((source) => <option key={source}>{source}</option>)}</Select></Field><Field label="Notes"><Textarea rows={2} value={clientDraft.notes} onChange={(event) => setClientDraft({ ...clientDraft, notes: event.target.value })} /></Field></div>
+          <section><div className="flex items-center justify-between"><div><h3 className="text-sm font-bold">Véhicules</h3><p className="mt-1 text-xs text-zinc-500">Modifiez les véhicules existants ou ajoutez-en un.</p></div><Button size="sm" variant="secondary" onClick={() => setClientDraft({ ...clientDraft, vehicles: [...clientDraft.vehicles, { make: "", model: "", registration: "", format: data.settings.vehicleFormats[0] ?? "Autre" }] })}><Plus className="size-3.5" /> Ajouter</Button></div><div className="mt-3 grid gap-3">{clientDraft.vehicles.length === 0 ? <p className="rounded-xl border border-dashed border-zinc-200 p-5 text-center text-xs text-zinc-500">Aucun véhicule enregistré.</p> : clientDraft.vehicles.map((vehicle, index) => <div key={vehicle.id ?? `new-${index}`} className="grid gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 sm:grid-cols-[1fr_1fr_1fr_1fr_auto]"><Field label="Marque"><Input value={vehicle.make} onChange={(event) => setClientDraft({ ...clientDraft, vehicles: clientDraft.vehicles.map((item, itemIndex) => itemIndex === index ? { ...item, make: event.target.value } : item) })} /></Field><Field label="Modèle"><Input value={vehicle.model} onChange={(event) => setClientDraft({ ...clientDraft, vehicles: clientDraft.vehicles.map((item, itemIndex) => itemIndex === index ? { ...item, model: event.target.value } : item) })} /></Field><Field label="Immatriculation"><Input value={vehicle.registration} onChange={(event) => setClientDraft({ ...clientDraft, vehicles: clientDraft.vehicles.map((item, itemIndex) => itemIndex === index ? { ...item, registration: event.target.value } : item) })} /></Field><Field label="Format"><Select value={vehicle.format} onChange={(event) => setClientDraft({ ...clientDraft, vehicles: clientDraft.vehicles.map((item, itemIndex) => itemIndex === index ? { ...item, format: event.target.value } : item) })}>{data.settings.vehicleFormats.map((format) => <option key={format}>{format}</option>)}</Select></Field>{!vehicle.id && <Button className="self-end" size="sm" variant="ghost" aria-label="Retirer le nouveau véhicule" onClick={() => setClientDraft({ ...clientDraft, vehicles: clientDraft.vehicles.filter((_, itemIndex) => itemIndex !== index) })}><X className="size-4" /></Button>}</div>)}</div></section>
+          <div className="flex justify-end gap-2"><Button variant="ghost" onClick={closeClientEditor}>Annuler</Button><Button onClick={saveClient}><Save className="size-4" /> Enregistrer les modifications</Button></div>
+        </div>}
       </Modal>
 
       <Modal open={duplicateOpen} onClose={() => setDuplicateOpen(false)} title="Fusion des doublons" description="Les rapprochements ambigus ne sont jamais appliqués automatiquement.">

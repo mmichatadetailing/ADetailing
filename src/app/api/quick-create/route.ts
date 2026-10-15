@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { canManageBusiness, requireAuthenticatedWorkspace } from "@/lib/supabase/workspace";
+import { normalizePhone } from "@/lib/utils";
 
 const optionalPhoneSchema = z.string().trim().refine((value) => value === "" || value.replace(/\D/g, "").length >= 6);
 
@@ -8,7 +10,7 @@ const leadSchema = z.object({
   kind: z.literal("lead"), prospectName: z.string().min(2), phone: optionalPhoneSchema, email: z.email().or(z.literal("")), vehicleLabel: z.string().min(2), serviceLabel: z.string().min(2), estimatedAmount: z.number().min(0), source: z.string().min(1), ownerId: z.uuid().optional(),
 });
 const clientSchema = z.object({
-  kind: z.literal("client"), clientKind: z.enum(["individual", "business"]), company: z.string().optional(), firstName: z.string().min(2), lastName: z.string().min(2), email: z.email().or(z.literal("")), phone: optionalPhoneSchema, city: z.string().min(2), source: z.string().min(1),
+  kind: z.literal("client"), clientKind: z.enum(["individual", "business"]), company: z.string().trim().max(160).optional(), firstName: z.string().trim().max(120), lastName: z.string().trim().max(120), email: z.email().or(z.literal("")), phone: optionalPhoneSchema, city: z.string().trim().max(120), source: z.string().min(1),
   vehicle: z.object({ make: z.string(), model: z.string(), registration: z.string(), format: z.string() }).optional(),
 });
 const expenseSchema = z.object({
@@ -37,12 +39,16 @@ export async function POST(request: Request) {
   try {
     const input = quickCreateSchema.parse(await request.json());
     const supabase = await createSupabaseServerClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return NextResponse.json({ error: "Authentification requise." }, { status: 401 });
-    const { data: membership, error: membershipError } = await supabase.from("organization_members").select("organization_id,location_id").eq("profile_id", user.id).eq("active", true).limit(1).single();
-    if (membershipError || !membership) throw membershipError ?? new Error("Espace de travail introuvable.");
-    const organizationId = membership.organization_id;
-    const locationId = membership.location_id;
+    const workspace = await requireAuthenticatedWorkspace(supabase);
+    const user = workspace.user;
+    const organizationId = workspace.organizationId;
+    const locationId = workspace.locationId;
+    if (!canManageBusiness(workspace.role) && input.kind !== "appointment") {
+      return NextResponse.json({ error: "Cette action est réservée aux administrateurs et associés." }, { status: 403 });
+    }
+    if (workspace.role === "employee" && input.kind === "appointment" && (input.workerIds.length !== 1 || input.workerIds[0] !== user.id)) {
+      return NextResponse.json({ error: "Un employé peut uniquement créer un rendez-vous pour lui-même." }, { status: 403 });
+    }
     const { data: source } = await supabase.from("lead_sources").select("id").eq("organization_id", organizationId).eq("name", "source" in input ? input.source : "").maybeSingle();
 
     if (input.kind === "lead") {
@@ -58,14 +64,16 @@ export async function POST(request: Request) {
     }
 
     if (input.kind === "client") {
-      const { data, error } = await supabase.from("clients").insert({ organization_id: organizationId, location_id: locationId, kind: input.clientKind, company: input.company?.trim() || null, first_name: input.firstName.trim(), last_name: input.lastName.trim(), email: input.email.trim().toLowerCase(), phone: input.phone.trim(), city: input.city.trim(), lead_source_id: source?.id ?? null, owner_id: user.id, notes: "", created_by: user.id }).select("id").single();
+      if (input.clientKind === "business" && !input.company?.trim()) throw new Error("Le nom de l’entreprise est requis.");
+      if (input.clientKind === "individual" && (!input.firstName || !input.lastName)) throw new Error("Le prénom et le nom sont requis.");
+      const { data, error } = await supabase.from("clients").insert({ organization_id: organizationId, location_id: locationId, kind: input.clientKind, company: input.company?.trim() || null, first_name: input.firstName.trim(), last_name: input.lastName.trim(), email: input.email.trim().toLowerCase(), phone: input.phone.trim(), normalized_phone: input.phone ? normalizePhone(input.phone) : null, city: input.city.trim(), lead_source_id: source?.id ?? null, owner_id: user.id, notes: "", created_by: user.id }).select("id").single();
       if (error) throw error;
       if (input.vehicle?.make.trim()) {
         const { data: format } = await supabase.from("vehicle_formats").select("id").eq("organization_id", organizationId).eq("name", input.vehicle.format).maybeSingle();
         const { error: vehicleError } = await supabase.from("vehicles").insert({ organization_id: organizationId, location_id: locationId, client_id: data.id, format_id: format?.id ?? null, make: input.vehicle.make.trim(), model: input.vehicle.model.trim(), registration: input.vehicle.registration.trim().toUpperCase(), created_by: user.id });
         if (vehicleError) throw vehicleError;
       }
-      await supabase.from("activity_logs").insert({ organization_id: organizationId, actor_id: user.id, kind: "lead_created", title: "Nouveau client", description: `${input.firstName} ${input.lastName}`, entity_type: "client", entity_id: data.id });
+      await supabase.from("activity_logs").insert({ organization_id: organizationId, actor_id: user.id, kind: "lead_created", title: "Nouveau client", description: input.company?.trim() || `${input.firstName} ${input.lastName}`.trim(), entity_type: "client", entity_id: data.id });
       return NextResponse.json({ id: data.id }, { status: 201 });
     }
 
@@ -89,13 +97,13 @@ export async function POST(request: Request) {
       if (error) throw error;
       if (!intervention) throw new Error("Rendez-vous introuvable après création.");
 
-      const { error: itemError } = await supabase.from("intervention_items").insert({ organization_id: organizationId, intervention_id: intervention.id, service_id: service?.id ?? null, label: input.title, quantity: 1, revenue_allocated_cents: input.revenueAllocated });
-      if (itemError) throw itemError;
       const { error: workersError } = await supabase.from("intervention_workers").insert(input.workerIds.map((memberId) => {
         const member = members.get(memberId)!;
         return { organization_id: organizationId, intervention_id: intervention.id, profile_id: member.profile_id, pending_member_id: member.profile_id ? null : member.id, planned_minutes: input.plannedDurationMinutes, actual_minutes: input.completed ? input.plannedDurationMinutes : null };
       }));
       if (workersError) throw workersError;
+      const { error: itemError } = await supabase.from("intervention_items").insert({ organization_id: organizationId, intervention_id: intervention.id, service_id: service?.id ?? null, label: input.title, quantity: 1, revenue_allocated_cents: input.revenueAllocated });
+      if (itemError) throw itemError;
       await supabase.from("activity_logs").insert({ organization_id: organizationId, actor_id: user.id, kind: "comment_added", title: input.completed ? "Prestation effectuée enregistrée" : "Rendez-vous créé", description: input.title, entity_type: "intervention", entity_id: intervention.id });
       return NextResponse.json({ id: intervention.id }, { status: 201 });
     }

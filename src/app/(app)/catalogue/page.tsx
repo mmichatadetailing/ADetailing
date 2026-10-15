@@ -4,6 +4,7 @@ import { Archive, ArrowDown, ArrowUp, Copy, Pencil, Plus, Search, Tag, Timer, Tr
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
+import { useWorkspace } from "@/components/workspace-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -87,6 +88,8 @@ function formForService(service: Service, priceFormats: string[]) {
 
 export default function CataloguePage() {
   const data = useDemoStore();
+  const { mode, workspace } = useWorkspace();
+  const canManage = mode === "demo" || Boolean(workspace?.canManageBusiness);
   const priceFormats = data.settings.vehicleFormats.length > 0 ? data.settings.vehicleFormats : ["Tous formats"];
   const [tab, setTab] = useState<(typeof tabs)[number]["id"]>("all");
   const [query, setQuery] = useState("");
@@ -201,7 +204,7 @@ export default function CataloguePage() {
         eyebrow="Offres & standards"
         title="Catalogue modifiable"
         description="Définissez une tarification par type de véhicule, par nombre de véhicules ou avec vos propres règles. Le prix final reste toujours modifiable."
-        actions={<Button onClick={openCreate}><Plus className="size-4" /> Nouvelle offre</Button>}
+        actions={canManage ? <Button onClick={openCreate}><Plus className="size-4" /> Nouvelle offre</Button> : undefined}
       />
 
       <div className="-mx-4 overflow-x-auto px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
@@ -243,7 +246,7 @@ export default function CataloguePage() {
                     </div>
                     {service.prices.length > 0 && <div className="mt-4 flex flex-wrap gap-1.5">{service.prices.map((price, index) => <Badge key={`${servicePriceRuleLabel(price, pricingMode)}-${index}`} variant="blue">{servicePriceRuleLabel(price, pricingMode)} · {formatRange(price.amount, price.maximumAmount ?? price.amount)}{pricingMode === "vehicle_count" ? "/véhicule" : ""}</Badge>)}</div>}
                     {service.aliases.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{service.aliases.map((alias) => <Badge key={alias}>{alias}</Badge>)}</div>}
-                    <div className="mt-5 flex flex-wrap items-center gap-1 border-t border-white/[0.06] pt-3"><Button size="sm" variant="ghost" onClick={() => data.reorderService(service.id, -1)} aria-label="Monter"><ArrowUp className="size-3.5" /></Button><Button size="sm" variant="ghost" onClick={() => data.reorderService(service.id, 1)} aria-label="Descendre"><ArrowDown className="size-3.5" /></Button>{!service.archivedAt && <Button size="sm" variant="ghost" onClick={() => openEdit(service)}><Pencil className="size-3.5" /> Modifier</Button>}<Button size="sm" variant="ghost" onClick={() => { data.duplicateService(service.id); toast.success("Offre dupliquée en brouillon"); }}><Copy className="size-3.5" /> Dupliquer</Button>{service.active && <Button size="sm" variant="ghost" className="ml-auto text-red-300" onClick={() => { data.archiveService(service.id); toast.success("Offre archivée, historique conservé"); }}><Archive className="size-3.5" /> Archiver</Button>}</div>
+                    {canManage && <div className="mt-5 flex flex-wrap items-center gap-1 border-t border-white/[0.06] pt-3"><Button size="sm" variant="ghost" onClick={() => data.reorderService(service.id, -1)} aria-label="Monter"><ArrowUp className="size-3.5" /></Button><Button size="sm" variant="ghost" onClick={() => data.reorderService(service.id, 1)} aria-label="Descendre"><ArrowDown className="size-3.5" /></Button>{!service.archivedAt && <Button size="sm" variant="ghost" onClick={() => openEdit(service)}><Pencil className="size-3.5" /> Modifier</Button>}<Button size="sm" variant="ghost" onClick={() => { data.duplicateService(service.id); toast.success("Offre dupliquée en brouillon"); }}><Copy className="size-3.5" /> Dupliquer</Button>{service.active && <Button size="sm" variant="ghost" className="ml-auto text-red-300" onClick={() => { data.archiveService(service.id); toast.success("Offre archivée, historique conservé"); }}><Archive className="size-3.5" /> Archiver</Button>}</div>}
                   </CardContent>
                 </Card>
               );

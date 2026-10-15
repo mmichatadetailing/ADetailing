@@ -26,17 +26,21 @@ const optionalPhoneSchema = z.string().trim().refine(
 
 const clientSchema = z.object({
   kind: z.enum(["individual", "business"]),
-  company: z.string().optional(),
-  firstName: z.string().min(2, "Prénom requis"),
-  lastName: z.string().min(2, "Nom requis"),
+  company: z.string().trim().optional(),
+  firstName: z.string().trim(),
+  lastName: z.string().trim(),
   email: z.email("E-mail invalide").or(z.literal("")),
   phone: optionalPhoneSchema,
-  city: z.string().min(2, "Ville requise"),
+  city: z.string().trim(),
   source: z.string().min(1),
   vehicleMake: z.string().optional(),
   vehicleModel: z.string().optional(),
   registration: z.string().optional(),
   vehicleFormat: z.string().optional(),
+}).superRefine((value, context) => {
+  if (value.kind === "business" && !value.company) context.addIssue({ code: "custom", path: ["company"], message: "Nom de l’entreprise requis" });
+  if (value.kind === "individual" && value.firstName.length < 2) context.addIssue({ code: "custom", path: ["firstName"], message: "Prénom requis" });
+  if (value.kind === "individual" && value.lastName.length < 2) context.addIssue({ code: "custom", path: ["lastName"], message: "Nom requis" });
 });
 
 const expenseSchema = z.object({
@@ -57,10 +61,11 @@ function ClientForm({ close }: { close: () => void }) {
   const addClient = useDemoStore((state) => state.addClient);
   const { mode, createRecord } = useWorkspace();
   const settings = useDemoStore((state) => state.settings);
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<z.infer<typeof clientSchema>>({
+  const { register, handleSubmit, control, formState: { errors, isSubmitting } } = useForm<z.infer<typeof clientSchema>>({
     resolver: zodResolver(clientSchema),
-    defaultValues: { kind: "individual", source: settings.leadSources[0], vehicleFormat: settings.vehicleFormats[0], email: "" },
+    defaultValues: { kind: "individual", company: "", firstName: "", lastName: "", source: settings.leadSources[0], vehicleFormat: settings.vehicleFormats[0], email: "", phone: "", city: "" },
   });
+  const clientKind = useWatch({ control, name: "kind" });
   return (
     <form className="grid gap-4" onSubmit={handleSubmit(async (values) => {
       try {
@@ -73,18 +78,18 @@ function ClientForm({ close }: { close: () => void }) {
     })}>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Type"><Select {...register("kind")}><option value="individual">Particulier</option><option value="business">Professionnel</option></Select></Field>
-        <Field label="Société"><Input {...register("company")} /></Field>
+        <Field label={clientKind === "business" ? "Société" : "Société (facultatif)"} error={errors.company?.message}><Input autoFocus={clientKind === "business"} {...register("company")} /></Field>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Prénom" error={errors.firstName?.message}><Input autoFocus {...register("firstName")} /></Field>
-        <Field label="Nom" error={errors.lastName?.message}><Input {...register("lastName")} /></Field>
+        <Field label={clientKind === "business" ? "Prénom du contact (facultatif)" : "Prénom"} error={errors.firstName?.message}><Input autoFocus={clientKind === "individual"} {...register("firstName")} /></Field>
+        <Field label={clientKind === "business" ? "Nom du contact (facultatif)" : "Nom"} error={errors.lastName?.message}><Input {...register("lastName")} /></Field>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Téléphone (facultatif)" error={errors.phone?.message}><Input inputMode="tel" {...register("phone")} /></Field>
         <Field label="E-mail" error={errors.email?.message}><Input type="email" {...register("email")} /></Field>
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Ville"><Input {...register("city")} /></Field>
+        <Field label="Ville (facultatif)"><Input {...register("city")} /></Field>
         <Field label="Source"><Select {...register("source")}>{settings.leadSources.map((source) => <option key={source}>{source}</option>)}</Select></Field>
       </div>
       <div className="mt-2 rounded-2xl border border-white/[0.07] bg-white/[0.025] p-4">
@@ -301,30 +306,33 @@ function ExpenseForm({ close }: { close: () => void }) {
 }
 
 export function GlobalAdd() {
+  const { mode, workspace } = useWorkspace();
+  const canManage = mode === "demo" || Boolean(workspace?.canManageBusiness);
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState<AddKind>("appointment");
   const close = () => setOpen(false);
   useEffect(() => {
     const openGlobalAdd = (event: Event) => {
       const requestedKind = (event as CustomEvent<AddKind>).detail;
-      if (requestedKind) setKind(requestedKind);
+      if (requestedKind) setKind(canManage || requestedKind === "appointment" ? requestedKind : "appointment");
       setOpen(true);
     };
     window.addEventListener("adetailing:open-add", openGlobalAdd);
     return () => window.removeEventListener("adetailing:open-add", openGlobalAdd);
-  }, []);
+  }, [canManage]);
+  const addKinds = canManage ? ([['appointment', 'Prestation'], ['client', 'Client'], ['expense', 'Dépense']] as const) : ([['appointment', 'Prestation']] as const);
   return (
     <>
       <Button onClick={() => setOpen(true)} aria-label="Ajouter"><Plus className="size-4" /> <span className="hidden sm:inline">Ajouter</span></Button>
       <Modal open={open} onClose={close} title="Ajouter" description="Une saisie courte, le reste pourra être complété plus tard.">
-        <div className="mb-5 grid grid-cols-3 gap-2 rounded-xl bg-white/[0.035] p-1">
-          {([['appointment', 'Prestation'], ['client', 'Client'], ['expense', 'Dépense']] as const).map(([value, label]) => (
+        <div className={`mb-5 grid gap-2 rounded-xl bg-white/[0.035] p-1 ${canManage ? "grid-cols-3" : "grid-cols-1"}`}>
+          {addKinds.map(([value, label]) => (
             <button key={value} data-active={kind === value} className={`focus-ring tab-interactive rounded-lg px-3 py-2 text-xs font-semibold ${kind === value ? 'bg-brand-50 text-brand-700 shadow-sm' : 'text-zinc-500'}`} onClick={() => setKind(value)}>{label}</button>
           ))}
         </div>
-        {kind === "appointment" && <AppointmentForm close={close} />}
-        {kind === "client" && <ClientForm close={close} />}
-        {kind === "expense" && <ExpenseForm close={close} />}
+        {kind === "appointment" && <AppointmentForm close={close} allowedMemberIds={!canManage && workspace ? [workspace.userId] : undefined} />}
+        {canManage && kind === "client" && <ClientForm close={close} />}
+        {canManage && kind === "expense" && <ExpenseForm close={close} />}
       </Modal>
     </>
   );

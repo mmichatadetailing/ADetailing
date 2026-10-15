@@ -4,6 +4,7 @@ import { AlertCircle, Banknote, CalendarClock, CheckCircle2, CircleDollarSign, C
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
+import { useWorkspace } from "@/components/workspace-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -113,6 +114,8 @@ function ExpenseEditor({ expense, onCancel, onSave }: { expense: Expense; onCanc
 
 export default function FinancesPage() {
   const data = useDemoStore();
+  const { mode, workspace } = useWorkspace();
+  const canManage = mode === "demo" || Boolean(workspace?.canManageBusiness);
   const [tab, setTab] = useState<"expenses" | "assets">("expenses");
   const [selectedMonth, setSelectedMonth] = useState(() => monthKey(new Date()));
   const [recurrenceFilter, setRecurrenceFilter] = useState<"all" | Expense["recurrence"]>("all");
@@ -165,7 +168,7 @@ export default function FinancesPage() {
         actions={(
           <div className="flex flex-wrap items-center gap-2">
             <Input className="w-[170px]" aria-label="Mois analysé" type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} />
-            <Button onClick={openExpenseForm}><Plus className="size-4" /> Ajouter une dépense</Button>
+            {canManage && <Button onClick={openExpenseForm}><Plus className="size-4" /> Ajouter une dépense</Button>}
           </div>
         )}
       />
@@ -226,7 +229,7 @@ export default function FinancesPage() {
               <div><p className="text-xs font-bold text-zinc-900">{formatDate(occurrence.dueDate, { day: "2-digit", month: "long" })}</p><p className="mt-1 text-[10px] text-zinc-500">{recurrenceLabels[occurrence.expense.recurrence]}</p></div>
               <div className="min-w-0"><p className="truncate text-sm font-bold text-zinc-900">{occurrence.expense.description}</p><p className="mt-1 truncate text-xs text-zinc-500">{occurrence.expense.category}{occurrence.expense.supplier ? ` · ${occurrence.expense.supplier}` : ""}</p></div>
               <div className="flex items-center gap-2 sm:justify-end"><Badge variant={occurrence.status === "paid" ? "green" : occurrence.status === "due" ? "yellow" : "blue"}>{occurrenceLabels[occurrence.status]}</Badge><p className="min-w-20 text-right text-sm font-extrabold text-zinc-900">{formatMoney(occurrence.amount)}</p></div>
-              <Button size="sm" variant="secondary" onClick={() => setEditingExpense(occurrence.expense)}><Pencil className="size-3.5" /> Modifier</Button>
+              {canManage && <Button size="sm" variant="secondary" onClick={() => setEditingExpense(occurrence.expense)}><Pencil className="size-3.5" /> Modifier</Button>}
             </div>
           ))}
           {monthSummary.occurrences.length === 0 && <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 p-8 text-center"><ReceiptText className="mx-auto size-6 text-zinc-400" /><p className="mt-2 text-sm font-bold text-zinc-700">Aucune charge prévue</p><p className="mt-1 text-xs text-zinc-500">Ajoutez une dépense ponctuelle ou une première échéance pour ce mois.</p></div>}
@@ -294,7 +297,7 @@ export default function FinancesPage() {
                     <td className="px-4 py-4 font-bold">{formatMoney(expense.amountIncludingTax)}</td>
                     <td className="px-4 py-4 text-zinc-500">{formatMoney(expense.vatAmount)}</td>
                     <td className="px-4 py-4"><Badge variant={expense.paid ? "green" : "yellow"}>{expense.recurrence === "one_off" ? (expense.paid ? "Payée" : "À payer") : (expense.paid ? "Automatique" : "À valider")}</Badge></td>
-                    <td className="px-4 py-4 pr-5"><div className="flex items-center gap-1"><Button size="sm" variant="secondary" onClick={() => setEditingExpense(expense)}><Pencil className="size-3.5" /> Modifier</Button><Button size="sm" variant="ghost" className="text-red-600" aria-label={`Supprimer ${expense.description}`} onClick={() => setDeletingExpense(expense)}><Trash2 className="size-3.5" /></Button></div></td>
+                    <td className="px-4 py-4 pr-5">{canManage ? <div className="flex items-center gap-1"><Button size="sm" variant="secondary" onClick={() => setEditingExpense(expense)}><Pencil className="size-3.5" /> Modifier</Button><Button size="sm" variant="ghost" className="text-red-600" aria-label={`Supprimer ${expense.description}`} onClick={() => setDeletingExpense(expense)}><Trash2 className="size-3.5" /></Button></div> : <span className="text-zinc-400">Lecture seule</span>}</td>
                   </tr>
                 ))}
                 {visibleExpenses.length === 0 && <tr><td colSpan={10} className="px-5 py-10 text-center text-sm text-zinc-500">Aucune charge ne correspond à ce filtre.</td></tr>}

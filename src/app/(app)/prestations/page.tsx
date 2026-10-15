@@ -5,6 +5,7 @@ import { Suspense, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { InterventionDetail } from "@/components/intervention-detail";
+import { useWorkspace } from "@/components/workspace-provider";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,8 @@ const filterLabels: Record<WorkflowFilter, string> = {
 
 function PrestationsPageContent() {
   const data = useDemoStore();
+  const { mode, workspace } = useWorkspace();
+  const canManage = mode === "demo" || Boolean(workspace?.canManageBusiness);
   const searchParams = useSearchParams();
   const router = useRouter();
   const queryInterventionId = searchParams.get("intervention");
@@ -126,10 +129,10 @@ function PrestationsPageContent() {
                 <div><p className="text-[10px] font-bold tracking-wider text-zinc-500 uppercase">Prochaine étape</p><p className={`mt-1 text-xs font-bold ${workflow.isComplete ? "text-emerald-700" : "text-brand-700"}`}>{workflow.isComplete ? "Parcours terminé" : intervention.status === "cancelled" ? "Prestation annulée" : currentStep?.detail}</p></div>
                 <StatusBadge status={intervention.status}>{interventionStatusLabels[intervention.status]}</StatusBadge>
               </button>
-              <div className="m-3 flex items-center gap-1 self-center">
+              {canManage && <div className="m-3 flex items-center gap-1 self-center">
                 <button type="button" onClick={() => { setEditOverride(true); setSelectedOverride(intervention.id); }} aria-label={`Modifier ${intervention.title}`} title="Modifier" className="focus-ring grid size-9 place-items-center rounded-xl border border-black/[0.08] bg-zinc-50 text-zinc-500 shadow-sm transition hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700"><Pencil className="size-4" /></button>
                 <button type="button" onClick={() => setDeletingInterventionId(intervention.id)} aria-label={`Supprimer ${intervention.title}`} title="Supprimer la prestation" className="focus-ring grid size-9 place-items-center rounded-xl border border-red-100 bg-red-50 text-red-600 shadow-sm transition hover:border-red-300 hover:bg-red-100"><Trash2 className="size-4" /></button>
-              </div>
+              </div>}
             </div>
           );
         })}

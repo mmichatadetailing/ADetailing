@@ -9,6 +9,7 @@ const preinviteMigration = readFileSync(resolve(process.cwd(), "supabase/migrati
 const googleCalendarMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/202608040012_google_calendar_user_connections.sql"), "utf8");
 const planningEventsMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/202609040013_planning_events.sql"), "utf8");
 const sharedGoogleEventsMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/202609080014_shared_google_calendar_events.sql"), "utf8");
+const roleWriteMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/202610150015_role_write_permissions.sql"), "utf8");
 
 describe("migration de sécurité", () => {
   it("active la RLS et isole les données par organisation", () => {
@@ -105,5 +106,18 @@ describe("événements Google partagés", () => {
     expect(sharedGoogleEventsMigration).toContain("membership.role in ('admin', 'partner')");
     expect(sharedGoogleEventsMigration).toContain("public.can_view_team_google_events(organization_id)");
     expect(sharedGoogleEventsMigration).toContain("enable row level security");
+  });
+});
+
+describe("droits d’écriture métier", () => {
+  it("réserve les écritures de pilotage aux administrateurs et associés", () => {
+    expect(roleWriteMigration).toContain("public.has_permission(organization_id, 'business.manage')");
+    expect(roleWriteMigration).toContain("payments_manager_delete");
+  });
+
+  it("limite les mises à jour opérationnelles aux prestations affectées", () => {
+    expect(roleWriteMigration).toContain("interventions_assigned_update");
+    expect(roleWriteMigration).toContain("public.is_assigned_to_intervention(intervention_id)");
+    expect(roleWriteMigration).toContain("enforce_employee_intervention_fields");
   });
 });

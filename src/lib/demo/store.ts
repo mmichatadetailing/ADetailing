@@ -58,6 +58,21 @@ export interface NewClientInput {
   };
 }
 
+export interface ClientEditInput {
+  kind: Client["kind"];
+  company?: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  address: string;
+  postalCode: string;
+  city: string;
+  source: string;
+  notes: string;
+  vehicles: Array<{ id?: string; make: string; model: string; registration: string; format: string }>;
+}
+
 export interface NewLeadInput {
   prospectName: string;
   phone: string;
@@ -141,6 +156,7 @@ interface DemoActions {
   hydrateFromSupabase: (data: AppData) => void;
   resetDemo: () => void;
   addClient: (input: NewClientInput) => string;
+  updateClient: (clientId: string, input: ClientEditInput) => void;
   removeClient: (clientId: string) => void;
   mergeClients: (primaryId: string, duplicateId: string) => void;
   addLead: (input: NewLeadInput) => string;
@@ -149,9 +165,9 @@ interface DemoActions {
   updateExpense: (expenseId: string, input: NewExpenseInput) => void;
   removeExpense: (expenseId: string) => void;
   addAppointment: (input: NewAppointmentInput) => string;
-  addPayment: (invoiceId: string, amount: number, method: string) => string;
+  addPayment: (invoiceId: string, amount: number, method: string, paidAt: string) => string;
   addInterventionPayment: (interventionId: string, amount: number, method: string, paidAt: string) => string;
-  updateInterventionPayment: (paymentId: string, input: { amount: number; method: string; paidAt: string }) => void;
+  updatePayment: (paymentId: string, input: { amount: number; method: string; paidAt: string }) => void;
   removePayment: (paymentId: string) => void;
   importHenrriDocument: (document: ParsedHenrriDocument, fileName: string) => string;
   linkInvoiceToQuote: (invoiceId: string, quoteId: string) => void;
@@ -239,11 +255,44 @@ export const useDemoStore = create<DemoStore>()(
           clients: [client, ...state.clients],
           vehicles: vehicle ? [vehicle, ...state.vehicles] : state.vehicles,
           activities: [
-            activity("lead_created", "Nouveau client", `${client.firstName} ${client.lastName}`, "client", client.id),
+            activity("lead_created", "Nouveau client", client.company || `${client.firstName} ${client.lastName}`.trim(), "client", client.id),
             ...state.activities,
           ],
         }));
         return client.id;
+      },
+      updateClient: (clientId, input) => {
+        const updatedAt = nowIso();
+        const existingVehicleIds = new Set(get().vehicles.filter((vehicle) => vehicle.clientId === clientId).map((vehicle) => vehicle.id));
+        const newVehicles: Vehicle[] = input.vehicles.filter((vehicle) => !vehicle.id).map((vehicle) => ({
+          ...entityBase(), clientId, make: vehicle.make.trim(), model: vehicle.model.trim(), registration: vehicle.registration.trim().toUpperCase(), format: vehicle.format,
+        }));
+        set((state) => ({
+          clients: state.clients.map((client) => client.id === clientId ? {
+            ...client,
+            kind: input.kind,
+            company: input.kind === "business" ? input.company?.trim() || undefined : undefined,
+            firstName: input.firstName.trim(),
+            lastName: input.lastName.trim(),
+            email: input.email.trim().toLowerCase(),
+            phone: normalizePhone(input.phone),
+            address: input.address.trim(),
+            postalCode: input.postalCode.trim(),
+            city: input.city.trim(),
+            source: input.source,
+            notes: input.notes.trim(),
+            updatedAt,
+          } : client),
+          vehicles: [
+            ...newVehicles,
+            ...state.vehicles.map((vehicle) => {
+              const patch = input.vehicles.find((item) => item.id === vehicle.id);
+              if (!patch || !existingVehicleIds.has(vehicle.id)) return vehicle;
+              return { ...vehicle, make: patch.make.trim(), model: patch.model.trim(), registration: patch.registration.trim().toUpperCase(), format: patch.format, updatedAt };
+            }),
+          ],
+        }));
+        persistMutation({ action: "updateClient", clientId, ...input });
       },
       removeClient: (clientId) => {
         const client = get().clients.find((item) => item.id === clientId);
@@ -439,12 +488,12 @@ export const useDemoStore = create<DemoStore>()(
         }));
         return intervention.id;
       },
-      addPayment: (invoiceId, amount, method) => {
+      addPayment: (invoiceId, amount, method, paidAt) => {
         const payment: Payment = {
           ...entityBase(),
           invoiceId,
           amount,
-          paidAt: nowIso(),
+          paidAt,
           method,
         };
         const nextPayments = [payment, ...get().payments];
@@ -464,7 +513,7 @@ export const useDemoStore = create<DemoStore>()(
             ...state.activities,
           ],
         }));
-        persistMutation({ action: "addPayment", invoiceId, amount, method });
+        persistMutation({ action: "addPayment", invoiceId, amount, method, paidAt });
         return payment.id;
       },
       addInterventionPayment: (interventionId, amount, method, paidAt) => {
@@ -485,17 +534,19 @@ export const useDemoStore = create<DemoStore>()(
         persistMutation({ action: "addInterventionPayment", interventionId, amount, method, paidAt });
         return payment.id;
       },
-      updateInterventionPayment: (paymentId, input) => {
-        const currentPayment = get().payments.find((payment) => payment.id === paymentId && payment.interventionId);
+      updatePayment: (paymentId, input) => {
+        const currentPayment = get().payments.find((payment) => payment.id === paymentId);
         if (!currentPayment) return;
+        const nextPayments = get().payments.map((payment) => payment.id === paymentId ? { ...payment, amount: input.amount, method: input.method, paidAt: input.paidAt, updatedAt: nowIso() } : payment);
         set((state) => ({
-          payments: state.payments.map((payment) => payment.id === paymentId ? { ...payment, amount: input.amount, method: input.method, paidAt: input.paidAt, updatedAt: nowIso() } : payment),
+          payments: nextPayments,
+          invoices: currentPayment.invoiceId ? state.invoices.map((invoice) => invoice.id === currentPayment.invoiceId ? { ...invoice, paymentStatus: paymentStatusForInvoice(invoice, nextPayments), updatedAt: nowIso() } : invoice) : state.invoices,
           activities: [
-            activity("payment_added", "Paiement manuel modifié", `${input.amount / 100} €`, "intervention", currentPayment.interventionId),
+            activity("payment_added", "Paiement modifié", `${input.amount / 100} €`, currentPayment.invoiceId ? "invoice" : "intervention", currentPayment.invoiceId ?? currentPayment.interventionId),
             ...state.activities,
           ],
         }));
-        persistMutation({ action: "updateInterventionPayment", paymentId, amount: input.amount, method: input.method, paidAt: input.paidAt });
+        persistMutation({ action: "updatePayment", paymentId, amount: input.amount, method: input.method, paidAt: input.paidAt });
       },
       removePayment: (paymentId) => {
         const currentPayment = get().payments.find((payment) => payment.id === paymentId);

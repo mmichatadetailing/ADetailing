@@ -1,5 +1,6 @@
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import type { MemberRole } from "@/lib/domain/types";
+import { canManageBusiness } from "@/lib/domain/permissions";
 
 export interface AuthenticatedWorkspace {
   user: User;
@@ -38,5 +39,7 @@ export async function requireAuthenticatedWorkspace(supabase: SupabaseClient): P
 }
 
 export function canManageTeam(role: MemberRole) {
-  return role === "admin" || role === "partner";
+  return canManageBusiness(role);
 }
+
+export { canManageBusiness };
