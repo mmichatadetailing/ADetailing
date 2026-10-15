@@ -6,9 +6,6 @@ import { normalizePhone } from "@/lib/utils";
 
 const optionalPhoneSchema = z.string().trim().refine((value) => value === "" || value.replace(/\D/g, "").length >= 6);
 
-const leadSchema = z.object({
-  kind: z.literal("lead"), prospectName: z.string().min(2), phone: optionalPhoneSchema, email: z.email().or(z.literal("")), vehicleLabel: z.string().min(2), serviceLabel: z.string().min(2), estimatedAmount: z.number().min(0), source: z.string().min(1), ownerId: z.uuid().optional(),
-});
 const clientSchema = z.object({
   kind: z.literal("client"), clientKind: z.enum(["individual", "business"]), company: z.string().trim().max(160).optional(), firstName: z.string().trim().max(120), lastName: z.string().trim().max(120), email: z.email().or(z.literal("")), phone: optionalPhoneSchema, city: z.string().trim().max(120), source: z.string().min(1),
   vehicle: z.object({ make: z.string(), model: z.string(), registration: z.string(), format: z.string() }).optional(),
@@ -19,7 +16,7 @@ const expenseSchema = z.object({
 const appointmentSchema = z.object({
   kind: z.literal("appointment"), clientId: z.uuid(), vehicleFormat: z.enum(["Citadine", "Berline", "SUV", "Monospace", "4x4", "Fourgon", "Autre"]).optional(), serviceId: z.uuid().optional(), title: z.string().trim().min(2).max(160), startAt: z.iso.datetime(), plannedDurationMinutes: z.number().int().min(15).max(1440), workerIds: z.array(z.uuid()).min(1).max(12).refine((ids) => new Set(ids).size === ids.length), address: z.string().trim().max(300), revenueAllocated: z.number().int().min(0), completed: z.boolean(),
 });
-const quickCreateSchema = z.discriminatedUnion("kind", [leadSchema, clientSchema, appointmentSchema, expenseSchema]);
+const quickCreateSchema = z.discriminatedUnion("kind", [clientSchema, appointmentSchema, expenseSchema]);
 
 async function resolveAppointmentMembers(
   supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
@@ -49,23 +46,10 @@ export async function POST(request: Request) {
     if (workspace.role === "employee" && input.kind === "appointment" && (input.workerIds.length !== 1 || input.workerIds[0] !== user.id)) {
       return NextResponse.json({ error: "Un employé peut uniquement créer un rendez-vous pour lui-même." }, { status: 403 });
     }
-    const { data: source } = await supabase.from("lead_sources").select("id").eq("organization_id", organizationId).eq("name", "source" in input ? input.source : "").maybeSingle();
-
-    if (input.kind === "lead") {
-      let ownerId = user.id;
-      if (input.ownerId) {
-        const { data: owner } = await supabase.from("organization_members").select("profile_id").eq("organization_id", organizationId).eq("profile_id", input.ownerId).eq("active", true).maybeSingle();
-        if (owner) ownerId = owner.profile_id;
-      }
-      const { data, error } = await supabase.from("leads").insert({ organization_id: organizationId, location_id: locationId, prospect_name: input.prospectName.trim(), phone: input.phone.trim(), email: input.email.trim().toLowerCase(), vehicle_label: input.vehicleLabel.trim(), service_label: input.serviceLabel.trim(), estimated_amount_cents: input.estimatedAmount, source_id: source?.id ?? null, stage: "received", owner_id: ownerId, next_action: "Qualifier la demande", created_by: user.id }).select("id").single();
-      if (error) throw error;
-      await supabase.from("activity_logs").insert({ organization_id: organizationId, actor_id: user.id, kind: "lead_created", title: "Nouvelle demande", description: input.prospectName.trim(), entity_type: "lead", entity_id: data.id });
-      return NextResponse.json({ id: data.id }, { status: 201 });
-    }
-
     if (input.kind === "client") {
       if (input.clientKind === "business" && !input.company?.trim()) throw new Error("Le nom de l’entreprise est requis.");
       if (input.clientKind === "individual" && (!input.firstName || !input.lastName)) throw new Error("Le prénom et le nom sont requis.");
+      const { data: source } = await supabase.from("lead_sources").select("id").eq("organization_id", organizationId).eq("name", input.source).maybeSingle();
       const { data, error } = await supabase.from("clients").insert({ organization_id: organizationId, location_id: locationId, kind: input.clientKind, company: input.company?.trim() || null, first_name: input.firstName.trim(), last_name: input.lastName.trim(), email: input.email.trim().toLowerCase(), phone: input.phone.trim(), normalized_phone: input.phone ? normalizePhone(input.phone) : null, city: input.city.trim(), lead_source_id: source?.id ?? null, owner_id: user.id, notes: "", created_by: user.id }).select("id").single();
       if (error) throw error;
       if (input.vehicle?.make.trim()) {

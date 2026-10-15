@@ -3,7 +3,6 @@ import type {
   Expense,
   Intervention,
   Invoice,
-  Lead,
   Money,
   MonthlyObjective,
   Payment,
@@ -330,12 +329,6 @@ export function paymentStatusForInvoice(
   if (paid > 0) return "partial";
   if (invoice.dueAt && new Date(invoice.dueAt).getTime() < now.getTime()) return "overdue";
   return "unpaid";
-}
-
-export function conversionRate(leads: Lead[]): number {
-  const decided = leads.filter((lead) => lead.stage === "won" || lead.stage === "lost");
-  if (decided.length === 0) return 0;
-  return decided.filter((lead) => lead.stage === "won").length / decided.length;
 }
 
 export function occupancyRate(plannedMinutes: number, availableMinutes: number): number {

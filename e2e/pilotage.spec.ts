@@ -72,3 +72,18 @@ test("un paiement lié à une facture peut être daté, modifié puis annulé", 
   await dialog.getByRole("button", { name: "Confirmer", exact: true }).click();
   await expect(dialog.getByRole("button", { name: /Modifier le paiement du/ })).toHaveCount(0);
 });
+
+test("la recherche ouvre directement la fiche du véhicule trouvé", async ({ page }) => {
+  await page.goto("/dashboard");
+  await page.getByRole("button", { name: /Rechercher partout/ }).click();
+
+  const searchDialog = page.getByRole("dialog", { name: "Recherche globale" });
+  await searchDialog.getByPlaceholder("Nom, téléphone, immatriculation, numéro…").fill("AA-123-AA");
+  await searchDialog.getByRole("link", { name: /Mini Cooper S/ }).click();
+
+  await expect(page).toHaveURL(/\/clients\?client=.*&vehicle=.*/);
+  const clientDialog = page.getByRole("dialog", { name: "Camille Bernard" });
+  await expect(clientDialog).toBeVisible();
+  await expect(clientDialog.getByText("Mini Cooper S", { exact: true })).toBeVisible();
+  await expect(clientDialog.getByText("AA-123-AA · Citadine", { exact: true })).toBeVisible();
+});

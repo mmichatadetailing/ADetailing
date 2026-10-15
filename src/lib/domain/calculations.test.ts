@@ -4,7 +4,6 @@ import {
   calculateVat,
   clientRevenueMetrics,
   collectedInterventionRevenue,
-  conversionRate,
   grossMargin,
   hourlyMargin,
   inferDiscount,
@@ -23,7 +22,7 @@ import {
   paymentsForInvoice,
   servicePerformance,
 } from "./calculations";
-import type { Intervention, Invoice, Lead, MonthlyObjective, Payment } from "./types";
+import type { Intervention, Invoice, MonthlyObjective, Payment } from "./types";
 
 const base = { organizationId: "org", locationId: "loc", createdAt: "2026-01-01", updatedAt: "2026-01-01" };
 
@@ -169,8 +168,6 @@ describe("charges récurrentes", () => {
 });
 
 describe("indicateurs", () => {
-  const lead = (id: string, stage: Lead["stage"]): Lead => ({ ...base, id, prospectName: id, phone: "", email: "", vehicleLabel: "", serviceLabel: "", estimatedAmount: 0, source: "Google", stage, ownerId: "a", requestedAt: "2026-01-01", nextAction: "" });
-  it("calcule le taux de conversion sur les décisions", () => expect(conversionRate([lead("1", "won"), lead("2", "lost"), lead("3", "received")])).toBe(0.5));
   it("borne le taux de remplissage à 100 %", () => expect(occupancyRate(600, 500)).toBe(1));
   it("calcule l’atteinte d’objectif", () => {
     const objective = { ...base, id: "o", month: "2026-07", revenueTarget: 100_000, interventionTarget: 0, averageBasketTarget: 0, hourlyMarginTarget: 0, reviewTarget: 0 } satisfies MonthlyObjective;

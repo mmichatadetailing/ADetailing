@@ -624,13 +624,11 @@ export const demoSeed: AppData = {
     dailyAvailableMinutes: 540,
     hourlyMarginTarget: 6_000,
     averageBasketTarget: 30_000,
-    conversionTargetBasisPoints: 4_500,
     monthlyReviewTarget: 5,
     googleRatingTarget: 4.8,
     reviewRateTargetBasisPoints: 4_000,
     cashSafetyBuffer: 300_000,
     leadSources: ["Site web", "Google", "Instagram", "TikTok", "Bouche-à-oreille", "Partenariat garage", "LinkedIn", "Prospection", "Autre"],
-    lostReasons: ["Prix trop élevé", "Pas de réponse", "Délai trop long", "Concurrence", "Pas prioritaire", "Autre"],
     vehicleFormats: ["Citadine", "Berline", "Break", "SUV", "Fourgon", "Autre"],
   },
 };

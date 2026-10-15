@@ -4,7 +4,6 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { canManageBusiness, requireAuthenticatedWorkspace } from "@/lib/supabase/workspace";
 import { normalizePhone, normalizeText } from "@/lib/utils";
 
-const leadStages = ["received", "qualify", "quote_to_prepare", "quote_sent", "follow_up", "won", "lost"] as const;
 const interventionStatuses = ["to_schedule", "scheduled", "confirmed", "in_progress", "completed", "cancelled"] as const;
 const serviceKinds = ["formula", "option", "subscription", "pack"] as const;
 const servicePricingModes = ["vehicle_format", "vehicle_count", "custom"] as const;
@@ -83,7 +82,6 @@ const henrriLineSchema = z.object({
 }).passthrough();
 
 const mutationSchema = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("moveLead"), leadId: z.uuid(), stage: z.enum(leadStages) }),
   z.object({ action: z.literal("removeClient"), clientId: z.uuid() }),
   z.object({ action: z.literal("updateClient"), ...clientMutationFields }),
   z.object({ action: z.literal("updateExpense"), ...expenseMutationFields }),
@@ -163,7 +161,7 @@ export async function POST(request: Request) {
     const userId = workspace.user.id;
 
     const managerOnlyActions = new Set([
-      "moveLead", "removeClient", "updateClient", "updateExpense", "removeExpense", "removeIntervention", "updateIntervention",
+      "removeClient", "updateClient", "updateExpense", "removeExpense", "removeIntervention", "updateIntervention",
       "addService", "updateService", "duplicateService", "archiveService", "reorderService", "updateObjective", "updateAnnualObjectives",
       "mergeClients", "addPayment", "addInterventionPayment", "updatePayment", "removePayment", "linkInvoiceToIntervention",
       "linkInvoiceToQuote", "importHenrriDocument",
@@ -177,14 +175,6 @@ export async function POST(request: Request) {
       const { data: assignment, error: assignmentError } = await supabase.from("intervention_workers").select("id").eq("organization_id", organizationId).eq("intervention_id", input.interventionId).eq("profile_id", userId).limit(1).maybeSingle();
       ensureNoError(assignmentError);
       if (!assignment) return NextResponse.json({ error: "Vous ne pouvez modifier que les prestations qui vous sont affectées." }, { status: 403 });
-    }
-
-    if (input.action === "moveLead") {
-      const nextAction = input.stage === "won" ? "Planifier la prestation" : input.stage === "lost" ? "Renseigner la raison de perte" : undefined;
-      const patch: Record<string, unknown> = { stage: input.stage };
-      if (nextAction) patch.next_action = nextAction;
-      const { error } = await supabase.from("leads").update(patch).eq("organization_id", organizationId).eq("id", input.leadId);
-      ensureNoError(error);
     }
 
     if (input.action === "removeClient") {

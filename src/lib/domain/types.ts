@@ -332,13 +332,11 @@ export interface AppSettings {
   dailyAvailableMinutes: number;
   hourlyMarginTarget: Money;
   averageBasketTarget: Money;
-  conversionTargetBasisPoints: number;
   monthlyReviewTarget: number;
   googleRatingTarget: number;
   reviewRateTargetBasisPoints: number;
   cashSafetyBuffer: Money;
   leadSources: string[];
-  lostReasons: string[];
   vehicleFormats: string[];
 }
 

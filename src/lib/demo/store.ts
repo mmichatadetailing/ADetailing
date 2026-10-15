@@ -10,8 +10,6 @@ import type {
   Expense,
   Intervention,
   InterventionStatus,
-  Lead,
-  LeadStage,
   MonthlyObjective,
   Payment,
   PlanningEvent,
@@ -71,17 +69,6 @@ export interface ClientEditInput {
   source: string;
   notes: string;
   vehicles: Array<{ id?: string; make: string; model: string; registration: string; format: string }>;
-}
-
-export interface NewLeadInput {
-  prospectName: string;
-  phone: string;
-  email: string;
-  vehicleLabel: string;
-  serviceLabel: string;
-  estimatedAmount: number;
-  source: string;
-  ownerId: string;
 }
 
 export interface NewExpenseInput {
@@ -159,8 +146,6 @@ interface DemoActions {
   updateClient: (clientId: string, input: ClientEditInput) => void;
   removeClient: (clientId: string) => void;
   mergeClients: (primaryId: string, duplicateId: string) => void;
-  addLead: (input: NewLeadInput) => string;
-  moveLead: (leadId: string, stage: LeadStage) => void;
   addExpense: (input: NewExpenseInput) => string;
   updateExpense: (expenseId: string, input: NewExpenseInput) => void;
   removeExpense: (expenseId: string) => void;
@@ -341,50 +326,6 @@ export const useDemoStore = create<DemoStore>()(
           };
         });
         persistMutation({ action: "mergeClients", primaryId, duplicateId });
-      },
-      addLead: (input) => {
-        const lead: Lead = {
-          ...entityBase(),
-          prospectName: input.prospectName.trim(),
-          phone: normalizePhone(input.phone),
-          email: input.email.trim().toLowerCase(),
-          vehicleLabel: input.vehicleLabel.trim(),
-          serviceLabel: input.serviceLabel.trim(),
-          estimatedAmount: input.estimatedAmount,
-          source: input.source,
-          stage: "received",
-          ownerId: input.ownerId,
-          requestedAt: nowIso(),
-          nextAction: "Qualifier la demande",
-        };
-        set((state) => ({
-          leads: [lead, ...state.leads],
-          activities: [
-            activity("lead_created", "Nouvelle demande", lead.prospectName, "lead", lead.id),
-            ...state.activities,
-          ],
-        }));
-        return lead.id;
-      },
-      moveLead: (leadId, stage) => {
-        set((state) => ({
-          leads: state.leads.map((lead) =>
-            lead.id === leadId
-              ? {
-                  ...lead,
-                  stage,
-                  updatedAt: nowIso(),
-                  nextAction:
-                    stage === "won"
-                      ? "Planifier la prestation"
-                      : stage === "lost"
-                        ? "Renseigner la raison de perte"
-                        : lead.nextAction,
-                }
-              : lead,
-          ),
-        }));
-        persistMutation({ action: "moveLead", leadId, stage });
       },
       addExpense: (input) => {
         const amountExcludingTax = Math.round(

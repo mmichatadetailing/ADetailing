@@ -81,11 +81,6 @@ function settingNumber(settings: Map<string, unknown>, key: string, fallback: nu
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function settingStrings(settings: Map<string, unknown>, key: string, fallback: string[]) {
-  const value = settings.get(key);
-  return Array.isArray(value) && value.every((item) => typeof item === "string") ? value : fallback;
-}
-
 function documentLines(value: unknown): DocumentLine[] {
   return rows(value).map((row) => ({
     id: text(row, "id"),
@@ -266,8 +261,8 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User):
     organizationName: text(organization, "name", "Mon entreprise"), locationName: text(location, "name", "Établissement principal"), locationCity: text(location, "city"),
     pilotYear: settingNumber(settingsMap, "pilot_year", new Date().getFullYear()), initialCash: settingNumber(settingsMap, "initial_cash_cents", 0), standardVatBasisPoints: settingNumber(settingsMap, "standard_vat_basis_points", 2000),
     dailyAvailableMinutes: settingNumber(settingsMap, "daily_available_minutes", 420), hourlyMarginTarget: settingNumber(settingsMap, "hourly_margin_target_cents", 6000), averageBasketTarget: settingNumber(settingsMap, "average_basket_target_cents", 30000),
-    conversionTargetBasisPoints: settingNumber(settingsMap, "conversion_target_basis_points", 5000), monthlyReviewTarget: settingNumber(settingsMap, "monthly_review_target", 8), googleRatingTarget: settingNumber(settingsMap, "google_rating_target", 4.8), reviewRateTargetBasisPoints: settingNumber(settingsMap, "review_rate_target_basis_points", 5000), cashSafetyBuffer: settingNumber(settingsMap, "cash_safety_buffer_cents", 300000),
-    leadSources: sourceRows.map((row) => text(row, "name")), lostReasons: settingStrings(settingsMap, "lost_reasons", ["Budget", "Délai", "Concurrence", "Sans réponse", "Projet reporté", "Autre"]), vehicleFormats: formatRows.map((row) => text(row, "name")),
+    monthlyReviewTarget: settingNumber(settingsMap, "monthly_review_target", 8), googleRatingTarget: settingNumber(settingsMap, "google_rating_target", 4.8), reviewRateTargetBasisPoints: settingNumber(settingsMap, "review_rate_target_basis_points", 5000), cashSafetyBuffer: settingNumber(settingsMap, "cash_safety_buffer_cents", 300000),
+    leadSources: sourceRows.map((row) => text(row, "name")), vehicleFormats: formatRows.map((row) => text(row, "name")),
   };
   const workspace: WorkspaceIdentity = {
     userId: user.id, email: user.email ?? text(currentProfile, "email"), firstName: text(currentProfile, "first_name", "Utilisateur"), lastName: text(currentProfile, "last_name"),
