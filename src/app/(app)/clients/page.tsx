@@ -5,15 +5,18 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { Avatar } from "@/components/avatar";
+import { StatusBadge } from "@/components/status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { clientRevenueMetrics } from "@/lib/domain/calculations";
+import { interventionStatusLabels } from "@/lib/domain/labels";
+import { findDuplicateClientPairs } from "@/lib/domain/matching";
 import type { Client } from "@/lib/domain/types";
 import { useDemoStore } from "@/lib/demo/store";
-import { formatDate, formatMoney, initials, normalizePhone, normalizeText } from "@/lib/utils";
+import { formatDate, formatMoney, initials, normalizeText } from "@/lib/utils";
 
 export default function ClientsPage() {
   const data = useDemoStore();
@@ -31,18 +34,7 @@ export default function ClientsPage() {
     });
   }, [activeClients, data.vehicles, query]);
 
-  const duplicateCandidates = useMemo(() => {
-    const pairs: Array<[Client, Client, string]> = [];
-    activeClients.forEach((client, index) => {
-      activeClients.slice(index + 1).forEach((other) => {
-        const sameEmail = client.email && client.email === other.email;
-        const samePhone = normalizePhone(client.phone) === normalizePhone(other.phone);
-        const sameName = normalizeText(`${client.firstName} ${client.lastName}`) === normalizeText(`${other.firstName} ${other.lastName}`);
-        if (sameEmail || samePhone || sameName) pairs.push([client, other, sameEmail ? "Même e-mail" : samePhone ? "Même téléphone" : "Même nom"]);
-      });
-    });
-    return pairs;
-  }, [activeClients]);
+  const duplicateCandidates = useMemo(() => findDuplicateClientPairs(activeClients), [activeClients]);
 
   const activeClientIds = useMemo(() => new Set(activeClients.map((client) => client.id)), [activeClients]);
   const deletingVehicles = deletingClient ? data.vehicles.filter((vehicle) => vehicle.clientId === deletingClient.id).length : 0;
@@ -109,6 +101,9 @@ export default function ClientsPage() {
         {selected && (() => {
           const metrics = clientMetrics(selected.id);
           const vehicles = data.vehicles.filter((vehicle) => vehicle.clientId === selected.id);
+          const recentInterventions = [...metrics.interventions]
+            .sort((a, b) => (b.startAt ?? b.createdAt).localeCompare(a.startAt ?? a.createdAt))
+            .slice(0, 6);
           return <div className="space-y-6">
             {(selected.phone || selected.email) && <div className="flex flex-wrap gap-2">{selected.phone && <a href={`tel:${selected.phone}`} className={buttonVariants({ size: "sm" })}><Phone className="size-3.5" /> Appeler</a>}{selected.email && <a href={`mailto:${selected.email}`} className={buttonVariants({ size: "sm", variant: "secondary" })}><Mail className="size-3.5" /> E-mail</a>}</div>}
             <section className="grid grid-cols-2 gap-3 sm:grid-cols-3">{[
@@ -116,13 +111,13 @@ export default function ClientsPage() {
             ].map(([label, value]) => <div key={label} className="rounded-xl border border-white/[0.07] bg-white/[0.025] p-3"><p className="text-[10px] font-semibold tracking-wider text-zinc-600 uppercase">{label}</p><p className="mt-2 text-lg font-bold">{value}</p></div>)}</section>
             <section><h3 className="mb-3 text-sm font-bold">Coordonnées</h3><div className="grid gap-3 rounded-2xl border border-white/[0.07] p-4 text-sm sm:grid-cols-2"><p><span className="block text-xs text-zinc-600">Téléphone</span>{selected.phone || "—"}</p><p><span className="block text-xs text-zinc-600">E-mail</span>{selected.email || "—"}</p><p><span className="block text-xs text-zinc-600">Adresse</span>{selected.address || "À compléter"}</p><p><span className="block text-xs text-zinc-600">Acquisition</span>{selected.source}</p></div></section>
             <section><h3 className="mb-3 text-sm font-bold">Véhicules</h3><div className="grid gap-3 sm:grid-cols-2">{vehicles.map((vehicle) => <div key={vehicle.id} className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-4"><div className="flex items-center gap-3"><span className="grid size-9 place-items-center rounded-xl bg-orange-400/10 text-orange-300"><Car className="size-4" /></span><div><p className="text-sm font-bold">{vehicle.make} {vehicle.model}</p><p className="text-xs text-zinc-500">{vehicle.registration} · {vehicle.format}</p></div></div></div>)}</div></section>
-            <section><h3 className="mb-3 text-sm font-bold">Historique récent</h3><div className="divide-y divide-white/[0.06] rounded-2xl border border-white/[0.07]">{metrics.interventions.map((item) => <div key={item.id} className="flex items-center justify-between gap-4 p-4"><div><p className="text-sm font-semibold">{item.title}</p><p className="mt-1 text-xs text-zinc-600">{formatDate(item.startAt, { day: "2-digit", month: "long", year: "numeric" })}</p></div><Badge>{item.status}</Badge></div>)}</div></section>
+            <section><h3 className="mb-3 text-sm font-bold">Historique récent</h3><div className="divide-y divide-white/[0.06] rounded-2xl border border-white/[0.07]">{recentInterventions.length === 0 ? <p className="p-5 text-center text-xs text-zinc-500">Aucune prestation enregistrée pour ce contact.</p> : recentInterventions.map((item) => <div key={item.id} className="flex items-center justify-between gap-4 p-4"><div><p className="text-sm font-semibold">{item.title}</p><p className="mt-1 text-xs text-zinc-600">{formatDate(item.startAt, { day: "2-digit", month: "long", year: "numeric" })}</p></div><StatusBadge status={item.status}>{interventionStatusLabels[item.status]}</StatusBadge></div>)}</div></section>
           </div>;
         })()}
       </Modal>
 
       <Modal open={duplicateOpen} onClose={() => setDuplicateOpen(false)} title="Fusion des doublons" description="Les rapprochements ambigus ne sont jamais appliqués automatiquement.">
-        {duplicateCandidates.length === 0 ? <div className="grid place-items-center rounded-2xl border border-dashed border-white/10 p-10 text-center"><UserRound className="size-8 text-zinc-700" /><p className="mt-3 text-sm font-semibold">Aucun doublon probable</p><p className="mt-1 text-xs text-zinc-600">E-mails, téléphones et noms normalisés ont été comparés.</p></div> : duplicateCandidates.map(([a, b, reason]) => <div key={`${a.id}-${b.id}`} className="rounded-xl border border-white/10 p-4"><Badge variant="yellow">{reason}</Badge><p className="mt-3 text-sm font-semibold">{a.firstName} {a.lastName} ↔ {b.firstName} {b.lastName}</p><p className="mt-2 text-xs leading-5 text-zinc-600">La première fiche est conservée ; véhicules, documents, prestations et avis de la seconde y seront rattachés.</p><Button className="mt-3" size="sm" onClick={() => { data.mergeClients(a.id, b.id); toast.success("Clients fusionnés et historique réaffecté"); }}><Merge className="size-3.5" /> Fusionner dans la première fiche</Button></div>)}
+        {duplicateCandidates.length === 0 ? <div className="grid place-items-center rounded-2xl border border-dashed border-white/10 p-10 text-center"><UserRound className="size-8 text-zinc-700" /><p className="mt-3 text-sm font-semibold">Aucun doublon probable</p><p className="mt-1 text-xs text-zinc-600">Seules les coordonnées renseignées et les identités non vides sont comparées.</p></div> : duplicateCandidates.map(([a, b, reason]) => <div key={`${a.id}-${b.id}`} className="rounded-xl border border-white/10 p-4"><Badge variant="yellow">{reason}</Badge><p className="mt-3 text-sm font-semibold">{a.company || `${a.firstName} ${a.lastName}`} ↔ {b.company || `${b.firstName} ${b.lastName}`}</p><p className="mt-2 text-xs leading-5 text-zinc-600">La première fiche est conservée ; véhicules, documents, prestations et avis de la seconde y seront rattachés.</p><Button className="mt-3" size="sm" onClick={() => { data.mergeClients(a.id, b.id); toast.success("Clients fusionnés et historique réaffecté"); }}><Merge className="size-3.5" /> Fusionner dans la première fiche</Button></div>)}
       </Modal>
     </div>
   );

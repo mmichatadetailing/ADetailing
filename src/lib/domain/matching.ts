@@ -1,4 +1,38 @@
-import type { Invoice, Quote } from "./types";
+import { normalizePhone, normalizeText } from "@/lib/utils";
+import type { Client, Invoice, Quote } from "./types";
+
+export type DuplicateClientPair = [Client, Client, "Même e-mail" | "Même téléphone" | "Même nom ou société"];
+
+export function findDuplicateClientPairs(clients: Client[]): DuplicateClientPair[] {
+  const activeClients = clients.filter((client) => !client.archivedAt);
+  const pairs: DuplicateClientPair[] = [];
+
+  activeClients.forEach((client, index) => {
+    activeClients.slice(index + 1).forEach((other) => {
+      const email = normalizeText(client.email);
+      const otherEmail = normalizeText(other.email);
+      const phone = normalizePhone(client.phone);
+      const otherPhone = normalizePhone(other.phone);
+      const company = normalizeText(client.company ?? "");
+      const otherCompany = normalizeText(other.company ?? "");
+      const name = normalizeText(`${client.firstName} ${client.lastName}`);
+      const otherName = normalizeText(`${other.firstName} ${other.lastName}`);
+      const sameEmail = Boolean(email) && email === otherEmail;
+      const samePhone = Boolean(phone) && phone === otherPhone;
+      const sameIdentity = (Boolean(company) && company === otherCompany) || (Boolean(name) && name === otherName);
+
+      if (sameEmail || samePhone || sameIdentity) {
+        pairs.push([
+          client,
+          other,
+          sameEmail ? "Même e-mail" : samePhone ? "Même téléphone" : "Même nom ou société",
+        ]);
+      }
+    });
+  });
+
+  return pairs;
+}
 
 export interface MatchScore {
   quoteId: string;
