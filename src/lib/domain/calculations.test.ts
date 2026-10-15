@@ -21,6 +21,7 @@ import {
   recurringExpenseMetrics,
   paymentsForIntervention,
   paymentsForInvoice,
+  servicePerformance,
 } from "./calculations";
 import type { Intervention, Invoice, Lead, MonthlyObjective, Payment } from "./types";
 
@@ -45,6 +46,26 @@ describe("calculs financiers", () => {
   it("additionne les heures-personnes individuelles", () => expect(actualPersonMinutes(intervention)).toBe(420));
   it("calcule la marge horaire sur les heures-personnes", () => expect(hourlyMargin(intervention)).toBe(6_000));
   it("gère une durée nulle sans division", () => expect(hourlyMargin({ ...intervention, workers: [] })).toBeNull());
+  it("répartit les coûts entre les offres sans dupliquer la marge de la prestation", () => {
+    const mixedIntervention = {
+      ...intervention,
+      items: [
+        { id: "l1", label: "Offre A", serviceId: "service-a", quantity: 1, revenueAllocated: 30_000 },
+        { id: "l2", label: "Offre B", serviceId: "service-b", quantity: 1, revenueAllocated: 20_000 },
+      ],
+      productCost: 5_000,
+      travelCost: 3_000,
+      otherDirectCosts: 2_000,
+    };
+    const scheduledIntervention = { ...mixedIntervention, id: "i2", status: "scheduled" as const };
+
+    expect(servicePerformance("service-a", [mixedIntervention, scheduledIntervention])).toEqual({
+      sales: 1,
+      revenue: 30_000,
+      margin: 24_000,
+      averageMargin: 24_000,
+    });
+  });
   it("calcule la TVA sans flottant métier", () => expect(calculateVat(18_110, 2_000)).toBe(3_622));
   it("détecte une remise implicite de 10 %", () => expect(inferDiscount(1, 6_900, 6_210)).toEqual({ amount: 690, rateBasisPoints: 1_000, detected: true }));
   it("ignore une remise lorsque le prix brut est nul", () => expect(inferDiscount(0, 10_000, -500)).toEqual({ amount: 0, rateBasisPoints: 0, detected: false }));

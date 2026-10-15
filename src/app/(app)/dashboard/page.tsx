@@ -67,10 +67,10 @@ export default function DashboardPage() {
   const previousPeriodEnd = new Date(Math.min(previousStatisticsPeriod.end.getTime(), previousStatisticsPeriod.start.getTime() + periodElapsed + 1));
   const previousPeriodRange = { start: previousStatisticsPeriod.start, end: previousPeriodEnd };
   const previousPeriodReference = new Date(Math.max(previousStatisticsPeriod.start.getTime(), previousPeriodEnd.getTime() - 1));
-  const upcoming = useMemo(
-    () => data.interventions.filter((item) => item.startAt && new Date(item.startAt) >= new Date() && item.status !== "cancelled").sort((a, b) => (a.startAt ?? "").localeCompare(b.startAt ?? "")).slice(0, 4),
-    [data.interventions],
-  );
+  const futureInterventions = data.interventions
+    .filter((item) => item.startAt && new Date(item.startAt) >= now && item.status !== "cancelled")
+    .sort((a, b) => (a.startAt ?? "").localeCompare(b.startAt ?? ""));
+  const upcoming = futureInterventions.slice(0, 4);
   const periodPayments = data.payments.filter((item) => isDateInRange(item.paidAt, periodRange));
   const revenueInterventions = data.interventions.filter((intervention) => intervention.status !== "cancelled");
   const completed = data.interventions.filter((item) => item.status === "completed" && isDateInRange(item.startAt, periodRange));
@@ -90,8 +90,15 @@ export default function DashboardPage() {
   const cashFlow = cashReceipts - paidExpenses;
   const previousCashFlow = previousCashReceipts - previousPaidExpenses;
   const objective = data.objectives.filter((item) => statisticsPeriod.monthKeys.includes(item.month)).reduce((sum, item) => sum + item.revenueTarget, 0);
-  const plannedMinutes = upcoming.reduce((sum, item) => sum + item.workers.reduce((workerSum, worker) => workerSum + worker.plannedMinutes, 0), 0);
-  const fillRate = occupancyRate(plannedMinutes, data.team.length * data.settings.dailyAvailableMinutes * 5);
+  const fillWindowEnd = new Date(now);
+  fillWindowEnd.setDate(fillWindowEnd.getDate() + 5);
+  const plannedMinutes = futureInterventions
+    .filter((item) => new Date(item.startAt!) < fillWindowEnd)
+    .reduce((sum, item) => sum + item.workers.reduce((workerSum, worker) => workerSum + worker.plannedMinutes, 0), 0);
+  const availableMinutes = data.team
+    .filter((member) => member.active)
+    .reduce((sum, member) => sum + member.weeklyCapacityMinutes, 0);
+  const fillRate = occupancyRate(plannedMinutes, availableMinutes);
   const margin = completed.reduce((sum, item) => sum + grossMargin(item), 0);
   const previousMargin = previousCompleted.reduce((sum, item) => sum + grossMargin(item), 0);
   const completedRevenue = completed.reduce((sum, item) => sum + item.items.reduce((itemSum, line) => itemSum + line.revenueAllocated, 0), 0);
@@ -113,6 +120,7 @@ export default function DashboardPage() {
   ].slice(0, 4);
   const activeInterventionIds = new Set(data.interventions.map((intervention) => intervention.id));
   const receivedReviews = data.reviews.filter((review) => activeInterventionIds.has(review.interventionId) && isDateInRange(review.receivedAt, periodRange)).length;
+  const reviewTarget = data.settings.monthlyReviewTarget * (statisticsPeriod.kind === "year" ? statisticsPeriod.monthKeys.length : 1);
   const dashboardYear = statisticsPeriod.year;
   const dashboardCharts = useMemo(() => buildDashboardChartData({
     year: dashboardYear,
@@ -215,7 +223,7 @@ export default function DashboardPage() {
                   <div key={item.id} className="group grid gap-3 px-5 py-4 transition hover:bg-white/[0.022] sm:grid-cols-[92px_minmax(0,1fr)_auto] sm:items-center">
                     <div><p className="text-sm font-bold text-zinc-200">{formatDate(item.startAt, { weekday: "short", day: "2-digit", month: "short" })}</p><p className="mt-1 text-xs text-zinc-500">{formatDate(item.startAt, { hour: "2-digit", minute: "2-digit" })} · {Math.round(item.plannedDurationMinutes / 60 * 10) / 10} h</p></div>
                     <div className="flex min-w-0 items-center gap-3"><Avatar label={member?.initials ?? "?"} color={member?.color} /><div className="min-w-0"><p className="truncate text-sm font-semibold">{client?.company || `${client?.firstName} ${client?.lastName}`}</p><p className="truncate text-xs text-zinc-500">{vehicle ? `${vehicle.make} ${vehicle.model}` : item.vehicleFormat || "Véhicule non renseigné"} · {item.title.split("—")[0]}</p></div></div>
-                    <div className="flex items-center gap-2"><StatusBadge status={item.status}>{interventionStatusLabels[item.status]}</StatusBadge><a href={`tel:${client?.phone}`} className="focus-ring hidden size-8 place-items-center rounded-lg text-zinc-600 hover:bg-brand-50 hover:text-brand-600 sm:grid" aria-label="Appeler"><Phone className="size-3.5" /></a><a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.address)}`} target="_blank" className="focus-ring hidden size-8 place-items-center rounded-lg text-zinc-600 hover:bg-brand-50 hover:text-brand-600 sm:grid" aria-label="Itinéraire"><MapPin className="size-3.5" /></a></div>
+                    <div className="flex items-center gap-2"><StatusBadge status={item.status}>{interventionStatusLabels[item.status]}</StatusBadge>{client?.phone && <a href={`tel:${client.phone}`} className="focus-ring hidden size-8 place-items-center rounded-lg text-zinc-600 hover:bg-brand-50 hover:text-brand-600 sm:grid" aria-label={`Appeler ${client.company || `${client.firstName} ${client.lastName}`}`}><Phone className="size-3.5" /></a>}{item.address && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.address)}`} target="_blank" rel="noreferrer" className="focus-ring hidden size-8 place-items-center rounded-lg text-zinc-600 hover:bg-brand-50 hover:text-brand-600 sm:grid" aria-label="Itinéraire"><MapPin className="size-3.5" /></a>}</div>
                   </div>
                 );
               })}
@@ -243,7 +251,7 @@ export default function DashboardPage() {
           <CardHeader><div><h2 className="font-bold">Alertes décisionnelles</h2><p className="mt-1 text-xs text-zinc-500">Des signaux, pas des décisions automatiques.</p></div></CardHeader>
           <CardContent className="grid gap-3">
             <div className="rounded-xl border border-amber-400/15 bg-amber-400/[0.055] p-4"><div className="flex items-center gap-2 text-sm font-semibold text-amber-200"><CalendarClock className="size-4" /> Planning sous-rempli</div><p className="mt-2 text-xs leading-5 text-zinc-500">Le taux de remplissage des 5 prochains jours est de {Math.round(fillRate * 100)} %. Planifiez d’abord les prestations sans créneau avant d’ouvrir de nouvelles disponibilités.</p><Progress value={fillRate * 100} className="mt-3" /></div>
-            <div className="rounded-xl border border-sky-400/15 bg-sky-400/[0.045] p-4"><div className="flex items-center gap-2 text-sm font-semibold text-sky-200"><CheckCircle2 className="size-4" /> Avis à consolider</div><p className="mt-2 text-xs leading-5 text-zinc-500">{receivedReviews} avis reçu(s) ce mois sur un objectif de {data.settings.monthlyReviewTarget}. Les prestations terminées sans avis peuvent encore être sollicitées.</p></div>
+            <div className="rounded-xl border border-sky-400/15 bg-sky-400/[0.045] p-4"><div className="flex items-center gap-2 text-sm font-semibold text-sky-200"><CheckCircle2 className="size-4" /> Avis à consolider</div><p className="mt-2 text-xs leading-5 text-zinc-500">{receivedReviews} avis reçu(s) sur {statisticsPeriod.label.toLocaleLowerCase("fr-FR")} pour un objectif de {reviewTarget}. Les prestations terminées sans avis peuvent encore être sollicitées.</p></div>
           </CardContent>
         </Card>
         <Card>

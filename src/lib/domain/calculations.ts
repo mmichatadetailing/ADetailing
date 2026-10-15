@@ -214,6 +214,43 @@ export function grossMargin(intervention: Intervention): Money {
   );
 }
 
+export interface ServicePerformance {
+  sales: number;
+  revenue: Money;
+  margin: Money;
+  averageMargin: Money;
+}
+
+export function servicePerformance(serviceId: string, interventions: Intervention[]): ServicePerformance {
+  const completed = interventions.filter((intervention) => intervention.status === "completed");
+  let sales = 0;
+  let revenue = 0;
+  let margin = 0;
+
+  for (const intervention of completed) {
+    const matchingLines = intervention.items.filter((line) => line.serviceId === serviceId);
+    if (matchingLines.length === 0) continue;
+
+    const serviceRevenue = matchingLines.reduce((sum, line) => sum + line.revenueAllocated, 0);
+    const interventionRevenue = intervention.items.reduce((sum, line) => sum + line.revenueAllocated, 0);
+    const directCosts = intervention.productCost + intervention.travelCost + intervention.otherDirectCosts;
+    const allocatedCosts = interventionRevenue > 0
+      ? cents(new Decimal(directCosts).mul(serviceRevenue).div(interventionRevenue))
+      : 0;
+
+    sales += 1;
+    revenue += serviceRevenue;
+    margin += serviceRevenue - allocatedCosts;
+  }
+
+  return {
+    sales,
+    revenue,
+    margin,
+    averageMargin: sales > 0 ? cents(new Decimal(margin).div(sales)) : 0,
+  };
+}
+
 export function actualPersonMinutes(intervention: Intervention): number {
   return intervention.workers.reduce(
     (sum, worker) => sum + (worker.actualMinutes ?? worker.plannedMinutes),
