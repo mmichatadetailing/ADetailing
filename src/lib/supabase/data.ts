@@ -10,6 +10,8 @@ import type {
   Intervention,
   Invoice,
   Lead,
+  MaintenanceBillingPeriod,
+  MaintenanceContract,
   MemberRole,
   Message,
   MonthlyObjective,
@@ -137,6 +139,8 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User):
     supabase.from("payments").select("*").eq("organization_id", organizationId).order("paid_at", { ascending: false }),
     supabase.from("interventions").select("*,intervention_items(*),intervention_workers(*),intervention_checklist_items(*)").eq("organization_id", organizationId).is("archived_at", null).order("start_at"),
     supabase.from("planning_events").select("*").eq("organization_id", organizationId).is("archived_at", null).order("starts_at"),
+    supabase.from("maintenance_contracts").select("*").eq("organization_id", organizationId).is("archived_at", null).order("first_visit_on"),
+    supabase.from("maintenance_billing_periods").select("*").eq("organization_id", organizationId).order("due_on"),
     supabase.from("expenses").select("*").eq("organization_id", organizationId).is("archived_at", null).order("expense_date", { ascending: false }),
     supabase.from("assets").select("*").eq("organization_id", organizationId).is("archived_at", null).order("created_at", { ascending: false }),
     supabase.from("monthly_objectives").select("*").eq("organization_id", organizationId).order("month"),
@@ -148,7 +152,7 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User):
   ]);
   const firstError = results.find((result) => result.error)?.error;
   if (firstError) throw firstError;
-  const [memberRows = [], sourceRows = [], formatRows = [], clientRows = [], vehicleRows = [], leadRows = [], serviceRows = [], quoteRows = [], invoiceRows = [], paymentRows = [], interventionRows = [], planningEventRows = [], expenseRows = [], assetRows = [], objectiveRows = [], reviewRows = [], activityRows = [], messageRows = [], settingRows = [], invitationRows = []] = results.map((result) => rows(result.data));
+  const [memberRows = [], sourceRows = [], formatRows = [], clientRows = [], vehicleRows = [], leadRows = [], serviceRows = [], quoteRows = [], invoiceRows = [], paymentRows = [], interventionRows = [], planningEventRows = [], maintenanceContractRows = [], maintenanceBillingRows = [], expenseRows = [], assetRows = [], objectiveRows = [], reviewRows = [], activityRows = [], messageRows = [], settingRows = [], invitationRows = []] = results.map((result) => rows(result.data));
 
   const base = (row: Row) => ({
     id: text(row, "id"),
@@ -218,9 +222,9 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User):
     ...base(row), number: text(row, "number"), clientId: text(row, "client_id"), quoteId: optionalText(row, "quote_id"), status: text(row, "status", "imported") as Invoice["status"], paymentStatus: text(row, "payment_status", "unpaid") as Invoice["paymentStatus"],
     issuedAt: text(row, "issued_at", text(row, "created_at")), dueAt: optionalText(row, "due_at"), totalExcludingTax: number(row, "total_excluding_tax_cents"), totalTax: number(row, "total_tax_cents"), totalIncludingTax: number(row, "total_including_tax_cents"), lines: documentLines(row.invoice_items), expectedPaymentMethod: optionalText(row, "expected_payment_method"),
   }));
-  const payments: Payment[] = paymentRows.map((row) => ({ ...base(row), invoiceId: optionalText(row, "invoice_id"), interventionId: optionalText(row, "intervention_id"), amount: number(row, "amount_cents"), paidAt: iso(text(row, "paid_at")), method: text(row, "method"), reference: optionalText(row, "reference"), notes: optionalText(row, "notes") }));
+  const payments: Payment[] = paymentRows.map((row) => ({ ...base(row), invoiceId: optionalText(row, "invoice_id"), interventionId: optionalText(row, "intervention_id"), maintenanceContractId: optionalText(row, "maintenance_contract_id"), maintenanceBillingPeriodId: optionalText(row, "maintenance_billing_period_id"), amount: number(row, "amount_cents"), paidAt: iso(text(row, "paid_at")), method: text(row, "method"), reference: optionalText(row, "reference"), notes: optionalText(row, "notes") }));
   const interventions: Intervention[] = interventionRows.map((row) => ({
-    ...base(row), clientId: text(row, "client_id"), vehicleId: optionalText(row, "vehicle_id"), vehicleFormat: optionalText(row, "vehicle_format"), quoteId: optionalText(row, "quote_id"), invoiceId: optionalText(row, "invoice_id"), status: text(row, "status", "to_schedule") as Intervention["status"], title: text(row, "title"), startAt: optionalText(row, "start_at"), endAt: optionalText(row, "end_at"), plannedDurationMinutes: number(row, "planned_duration_minutes"), actualDurationMinutes: nullableNumber(row, "actual_duration_minutes"), preparationMinutes: number(row, "preparation_minutes"), cleanupMinutes: number(row, "cleanup_minutes"),
+    ...base(row), clientId: text(row, "client_id"), vehicleId: optionalText(row, "vehicle_id"), vehicleFormat: optionalText(row, "vehicle_format"), quoteId: optionalText(row, "quote_id"), invoiceId: optionalText(row, "invoice_id"), maintenanceContractId: optionalText(row, "maintenance_contract_id"), maintenancePeriod: optionalText(row, "maintenance_period"), status: text(row, "status", "to_schedule") as Intervention["status"], title: text(row, "title"), startAt: optionalText(row, "start_at"), endAt: optionalText(row, "end_at"), plannedDurationMinutes: number(row, "planned_duration_minutes"), actualDurationMinutes: nullableNumber(row, "actual_duration_minutes"), preparationMinutes: number(row, "preparation_minutes"), cleanupMinutes: number(row, "cleanup_minutes"),
     workers: rows(row.intervention_workers).map((worker) => ({ memberId: text(worker, "profile_id", text(worker, "pending_member_id")), plannedMinutes: number(worker, "planned_minutes"), actualMinutes: nullableNumber(worker, "actual_minutes") })),
     items: rows(row.intervention_items).map((item) => ({ id: text(item, "id"), serviceId: optionalText(item, "service_id"), label: text(item, "label"), revenueAllocated: number(item, "revenue_allocated_cents"), quantity: number(item, "quantity", 1) })),
     productCost: number(row, "product_cost_cents"), travelCost: number(row, "travel_cost_cents"), otherDirectCosts: number(row, "other_direct_costs_cents"), address: text(row, "address"), checklistDone: rows(row.intervention_checklist_items).filter((item) => bool(item, "completed")).length, checklistTotal: rows(row.intervention_checklist_items).length, depositAmount: number(row, "deposit_amount_cents"), notes: optionalText(row, "notes"),
@@ -236,6 +240,35 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User):
     location: optionalText(row, "location_label"),
     notes: optionalText(row, "notes"),
     color: optionalText(row, "color"),
+  }));
+  const maintenanceContracts: MaintenanceContract[] = maintenanceContractRows.map((row) => ({
+    ...base(row),
+    clientId: text(row, "client_id"),
+    serviceId: optionalText(row, "service_id"),
+    title: text(row, "title"),
+    status: text(row, "status", "active") as MaintenanceContract["status"],
+    billingFrequency: text(row, "billing_frequency", "monthly") as MaintenanceContract["billingFrequency"],
+    billingAmount: number(row, "billing_amount_cents"),
+    vehicleCount: number(row, "vehicle_count", 1),
+    firstVisitOn: text(row, "first_visit_on"),
+    visitDay: number(row, "visit_day", 1),
+    preferredStartTime: text(row, "preferred_start_time", "09:00").slice(0, 5),
+    plannedDurationMinutes: number(row, "planned_duration_minutes", 60),
+    assignedMemberIds: Array.isArray(row.assigned_member_ids) ? row.assigned_member_ids.filter((id): id is string => typeof id === "string") : [],
+    address: text(row, "address"),
+    notes: text(row, "notes"),
+    endsOn: optionalText(row, "ends_on"),
+    generatedThrough: optionalText(row, "generated_through"),
+  }));
+  const maintenanceBillingPeriods: MaintenanceBillingPeriod[] = maintenanceBillingRows.map((row) => ({
+    ...base(row),
+    contractId: text(row, "contract_id"),
+    periodStart: text(row, "period_start"),
+    dueOn: text(row, "due_on"),
+    amount: number(row, "amount_cents"),
+    status: text(row, "status", "due") as MaintenanceBillingPeriod["status"],
+    paidAt: optionalText(row, "paid_at"),
+    paymentMethod: optionalText(row, "payment_method"),
   }));
   const expenses: Expense[] = expenseRows.map((row) => ({
     ...base(row), date: text(row, "expense_date"), endsAt: optionalText(row, "ends_on"), seriesId: optionalText(row, "series_id"), replacesExpenseId: optionalText(row, "replaces_expense_id"), family: text(row, "family", "variable") as Expense["family"], category: text(row, "category"), supplier: text(row, "supplier"), description: text(row, "description"), amountIncludingTax: number(row, "amount_including_tax_cents"), amountExcludingTax: number(row, "amount_excluding_tax_cents"), vatAmount: number(row, "vat_amount_cents"), vatRecoverable: bool(row, "vat_recoverable"), recurrence: text(row, "recurrence", "one_off") as Expense["recurrence"], allocatedMonth: text(row, "allocated_month").slice(0, 7), paid: bool(row, "paid"), paidAt: optionalText(row, "paid_at"), paymentMethod: optionalText(row, "payment_method"),
@@ -284,5 +317,5 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User):
     revokedAt: optionalText(row, "revoked_at"),
     createdAt: iso(text(row, "created_at")),
   }));
-  return { workspace, invitations, data: { team, clients, vehicles, leads, services, quotes, invoices, payments, interventions, planningEvents, expenses, assets, objectives, reviews, activities, messages, settings } };
+  return { workspace, invitations, data: { team, clients, vehicles, leads, services, quotes, invoices, payments, interventions, planningEvents, maintenanceContracts, maintenanceBillingPeriods, expenses, assets, objectives, reviews, activities, messages, settings } };
 }

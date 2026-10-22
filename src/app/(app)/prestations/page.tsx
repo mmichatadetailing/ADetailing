@@ -9,6 +9,7 @@ import { useWorkspace } from "@/components/workspace-provider";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
@@ -59,7 +60,7 @@ function PrestationsPageContent() {
     if (filter === "upcoming") return ["to_schedule", "scheduled", "confirmed"].includes(intervention.status);
     if (filter === "in_progress") return intervention.status === "in_progress";
     if (filter === "to_collect") return intervention.status === "completed" && !workflow.isComplete;
-    if (filter === "done") return workflow.isComplete;
+    if (filter === "done") return intervention.status === "completed" && workflow.isComplete;
     if (filter === "cancelled") return intervention.status === "cancelled";
     return true;
   }).sort((a, b) => {
@@ -123,7 +124,7 @@ function PrestationsPageContent() {
           return (
             <div key={intervention.id} className="surface-interactive grid grid-cols-[minmax(0,1fr)_auto] overflow-hidden rounded-2xl border border-black/[0.08] bg-ink-900 text-[#172033] shadow-[0_6px_22px_rgba(47,40,72,.06)]">
               <button onClick={() => { setEditOverride(false); setSelectedOverride(intervention.id); }} className="focus-ring grid min-w-0 gap-4 p-4 text-left transition-colors hover:bg-brand-50/40 sm:grid-cols-[minmax(230px,1.3fr)_170px_150px_minmax(180px,.8fr)_auto] sm:items-center sm:p-5">
-                <div className="min-w-0"><div className="flex items-center gap-2"><p className="truncate text-sm font-bold">{intervention.title}</p>{workflow.isComplete && <CheckMark />}</div><p className="mt-1 truncate text-xs text-zinc-500">{client?.company || `${client?.firstName} ${client?.lastName}`} · {vehicleSummary}</p><div className="mt-3 flex items-center gap-1.5">{workflow.steps.map((step) => <span key={step.id} title={`${step.label} : ${step.detail}`} className={`h-1.5 flex-1 rounded-full ${step.state === "done" ? "bg-emerald-500" : step.state === "current" ? "bg-brand-500" : "bg-slate-200"}`} />)}</div></div>
+                <div className="min-w-0"><div className="flex items-center gap-2"><p className="truncate text-sm font-bold">{intervention.title}</p>{intervention.maintenanceContractId && <Badge variant="blue">Entretien mensuel</Badge>}{workflow.isComplete && intervention.status === "completed" && <CheckMark />}</div><p className="mt-1 truncate text-xs text-zinc-500">{client?.company || `${client?.firstName} ${client?.lastName}`} · {vehicleSummary}</p><div className="mt-3 flex items-center gap-1.5">{workflow.steps.map((step) => <span key={step.id} title={`${step.label} : ${step.detail}`} className={`h-1.5 flex-1 rounded-full ${step.state === "done" ? "bg-emerald-500" : step.state === "current" ? "bg-brand-500" : "bg-slate-200"}`} />)}</div></div>
                 <div><p className="text-[10px] font-bold tracking-wider text-zinc-500 uppercase">Rendez-vous</p><p className="mt-1 text-xs font-semibold">{intervention.startAt ? formatDate(intervention.startAt, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "À planifier"}</p><p className="mt-1 text-[10px] text-zinc-500"><Clock3 className="mr-1 inline size-3" /> {intervention.plannedDurationMinutes / 60} h</p></div>
                 <div><p className="text-[10px] font-bold tracking-wider text-zinc-500 uppercase">Montant prévu</p><p className="mt-1 text-sm font-bold">{formatMoney(intervention.items.reduce((sum, item) => sum + item.revenueAllocated, 0))}</p></div>
                 <div><p className="text-[10px] font-bold tracking-wider text-zinc-500 uppercase">Prochaine étape</p><p className={`mt-1 text-xs font-bold ${workflow.isComplete ? "text-emerald-700" : "text-brand-700"}`}>{workflow.isComplete ? "Parcours terminé" : intervention.status === "cancelled" ? "Prestation annulée" : currentStep?.detail}</p></div>

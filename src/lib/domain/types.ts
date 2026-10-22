@@ -31,6 +31,9 @@ export type PaymentStatus = "unpaid" | "partial" | "paid" | "overdue";
 export type ServiceKind = "formula" | "option" | "subscription" | "pack";
 export type ServicePricingMode = "vehicle_format" | "vehicle_count" | "custom";
 export type PlanningEventKind = "meeting" | "unavailability" | "absence" | "personal";
+export type MaintenanceBillingFrequency = "monthly" | "annual";
+export type MaintenanceContractStatus = "active" | "paused" | "ended";
+export type MaintenanceBillingStatus = "due" | "paid" | "cancelled";
 
 export interface BaseEntity {
   id: UUID;
@@ -184,6 +187,8 @@ export interface Invoice extends BaseEntity {
 export interface Payment extends BaseEntity {
   invoiceId?: UUID;
   interventionId?: UUID;
+  maintenanceContractId?: UUID;
+  maintenanceBillingPeriodId?: UUID;
   amount: Money;
   paidAt: ISODate;
   method: string;
@@ -211,6 +216,8 @@ export interface Intervention extends BaseEntity {
   vehicleFormat?: string;
   quoteId?: UUID;
   invoiceId?: UUID;
+  maintenanceContractId?: UUID;
+  maintenancePeriod?: string;
   status: InterventionStatus;
   title: string;
   startAt?: ISODate;
@@ -229,6 +236,35 @@ export interface Intervention extends BaseEntity {
   checklistTotal: number;
   depositAmount: Money;
   notes?: string;
+}
+
+export interface MaintenanceContract extends BaseEntity {
+  clientId: UUID;
+  serviceId?: UUID;
+  title: string;
+  status: MaintenanceContractStatus;
+  billingFrequency: MaintenanceBillingFrequency;
+  billingAmount: Money;
+  vehicleCount: number;
+  firstVisitOn: string;
+  visitDay: number;
+  preferredStartTime: string;
+  plannedDurationMinutes: number;
+  assignedMemberIds: UUID[];
+  address: string;
+  notes: string;
+  endsOn?: string;
+  generatedThrough?: string;
+}
+
+export interface MaintenanceBillingPeriod extends BaseEntity {
+  contractId: UUID;
+  periodStart: string;
+  dueOn: string;
+  amount: Money;
+  status: MaintenanceBillingStatus;
+  paidAt?: ISODate;
+  paymentMethod?: string;
 }
 
 export interface PlanningEvent extends BaseEntity {
@@ -354,6 +390,8 @@ export interface AppData {
   payments: Payment[];
   interventions: Intervention[];
   planningEvents: PlanningEvent[];
+  maintenanceContracts: MaintenanceContract[];
+  maintenanceBillingPeriods: MaintenanceBillingPeriod[];
   expenses: Expense[];
   assets: Asset[];
   objectives: MonthlyObjective[];

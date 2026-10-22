@@ -13,6 +13,7 @@ import {
   Inbox,
   Menu,
   MessageSquareText,
+  Repeat2,
   LogOut,
   Settings,
   Sparkles,
@@ -43,6 +44,7 @@ const groups = [
     label: "Opérations",
     items: [
       { href: "/prestations", label: "Prestations", icon: Sparkles },
+      { href: "/entretiens", label: "Entretiens mensuels", icon: Repeat2 },
       { href: "/clients", label: "Clients", icon: ContactRound },
       { href: "/documents", label: "Documents", icon: FileStack },
     ],

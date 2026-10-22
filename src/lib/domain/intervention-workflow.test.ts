@@ -45,4 +45,12 @@ describe("parcours d’une prestation", () => {
     expect(result.paidAmount).toBe(12_000);
     expect(result.hasInvoice).toBe(true);
   });
+
+  it("confie l’encaissement d’une visite mensuelle au contrat", () => {
+    const result = getInterventionWorkflow({ ...intervention, maintenanceContractId: "contract", status: "scheduled" }, undefined, []);
+    expect(result.outstanding).toBe(0);
+    expect(result.paymentMode).toBe("maintenance");
+    expect(result.steps[2]?.detail).toBe("Géré par l’entretien mensuel");
+    expect(result.currentStep).toBe("service");
+  });
 });

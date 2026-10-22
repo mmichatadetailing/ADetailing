@@ -23,14 +23,15 @@ export function getInterventionWorkflow(
   const payableTotal = interventionTotal > 0 ? interventionTotal : (invoice?.totalIncludingTax ?? 0);
   const invoicePaidAmount = invoice ? paymentsForInvoice(invoice.id, payments) : 0;
   const paidAmount = directPaidAmount + invoicePaidAmount;
-  const paid = payableTotal > 0 && paidAmount >= payableTotal;
-  const outstanding = Math.max(payableTotal - paidAmount, 0);
+  const contractManaged = Boolean(intervention.maintenanceContractId);
+  const paid = contractManaged || (payableTotal > 0 && paidAmount >= payableTotal);
+  const outstanding = contractManaged ? 0 : Math.max(payableTotal - paidAmount, 0);
   const completed = [appointmentDone, serviceDone, paid];
   const currentIndex = completed.findIndex((value) => !value);
   const details = [
     intervention.startAt ? "Créneau défini" : "À planifier",
     serviceDone ? "Terminée" : intervention.status === "in_progress" ? "En cours" : "À réaliser",
-    paid ? "Encaissée" : paidAmount > 0 ? "Paiement partiel" : "À encaisser",
+    contractManaged ? "Géré par l’entretien mensuel" : paid ? "Encaissée" : paidAmount > 0 ? "Paiement partiel" : "À encaisser",
   ];
   const labels = ["Rendez-vous", "Prestation", "Encaissement"];
   const ids: WorkflowStepId[] = ["appointment", "service", "payment"];
@@ -49,6 +50,6 @@ export function getInterventionWorkflow(
     paidAmount,
     outstanding,
     hasInvoice: Boolean(invoice),
-    paymentMode: invoice ? "invoice" as const : directPaidAmount > 0 ? "manual" as const : null,
+    paymentMode: contractManaged ? "maintenance" as const : invoice ? "invoice" as const : directPaidAmount > 0 ? "manual" as const : null,
   };
 }

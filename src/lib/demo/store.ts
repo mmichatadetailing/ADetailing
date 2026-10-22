@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { paymentStatusForInvoice } from "@/lib/domain/calculations";
+import { maintenanceSchedule } from "@/lib/domain/maintenance";
 import type {
   AppData,
   AppSettings,
@@ -10,6 +11,7 @@ import type {
   Expense,
   Intervention,
   InterventionStatus,
+  MaintenanceContract,
   MonthlyObjective,
   Payment,
   PlanningEvent,
@@ -35,6 +37,11 @@ const previousDay = (value: string) => {
   const day = Number(date.slice(8, 10));
   const previous = new Date(year, month - 1, day - 1, 12);
   return `${previous.getFullYear()}-${String(previous.getMonth() + 1).padStart(2, "0")}-${String(previous.getDate()).padStart(2, "0")}`;
+};
+const addMonthsToDate = (value: string, months: number) => {
+  const date = new Date(`${value.slice(0, 10)}T12:00:00`);
+  date.setMonth(date.getMonth() + months);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 };
 const persistMutation = (mutation: WorkspaceMutation) => {
   if (isSupabaseConfigured) queueWorkspaceMutation(mutation);
@@ -147,6 +154,23 @@ export interface PlanningEventInput {
   color?: string;
 }
 
+export interface MaintenanceContractInput {
+  clientId: string;
+  serviceId?: string;
+  title: string;
+  status: MaintenanceContract["status"];
+  billingFrequency: MaintenanceContract["billingFrequency"];
+  billingAmount: number;
+  vehicleCount: number;
+  firstVisitOn: string;
+  preferredStartTime: string;
+  plannedDurationMinutes: number;
+  assignedMemberIds: string[];
+  address: string;
+  notes: string;
+  endsOn?: string;
+}
+
 interface DemoActions {
   hydrateFromSupabase: (data: AppData) => void;
   resetDemo: () => void;
@@ -177,6 +201,9 @@ interface DemoActions {
   addPlanningEvent: (input: PlanningEventInput) => string;
   updatePlanningEvent: (eventId: string, input: PlanningEventInput) => void;
   removePlanningEvent: (eventId: string) => void;
+  saveMaintenanceContract: (contractId: string | undefined, input: MaintenanceContractInput) => string;
+  generateMaintenanceSchedule: (contractId: string, through: string) => number;
+  setMaintenanceBillingPaid: (periodId: string, paid: boolean, paidAt: string, method: string) => void;
   addService: (input: NewServiceInput) => string;
   updateService: (serviceId: string, input: NewServiceInput) => void;
   duplicateService: (serviceId: string) => string | null;
@@ -210,6 +237,53 @@ function activity(
     entityType,
     entityId,
   };
+}
+
+function addDemoMaintenanceSchedule(state: AppData, contract: MaintenanceContract, through: string) {
+  const service = contract.serviceId ? state.services.find((item) => item.id === contract.serviceId) : undefined;
+  const interventions = [...state.interventions];
+  const maintenanceBillingPeriods = [...state.maintenanceBillingPeriods];
+  let generated = 0;
+
+  for (const entry of maintenanceSchedule(contract, through)) {
+    if (!interventions.some((item) => item.maintenanceContractId === contract.id && item.maintenancePeriod === `${entry.month}-01`)) {
+      const startAt = new Date(`${entry.visitOn}T${contract.preferredStartTime}:00`).toISOString();
+      interventions.push({
+        ...entityBase(),
+        clientId: contract.clientId,
+        maintenanceContractId: contract.id,
+        maintenancePeriod: `${entry.month}-01`,
+        status: "scheduled",
+        title: contract.title,
+        startAt,
+        endAt: new Date(new Date(startAt).getTime() + contract.plannedDurationMinutes * 60_000).toISOString(),
+        plannedDurationMinutes: contract.plannedDurationMinutes,
+        workers: contract.assignedMemberIds.map((memberId) => ({ memberId, plannedMinutes: contract.plannedDurationMinutes })),
+        items: [{ id: createId(), serviceId: service?.id, label: contract.title, quantity: 1, revenueAllocated: entry.recognizedRevenue }],
+        productCost: service?.targetProductCost ?? 0,
+        travelCost: service?.targetTravelCost ?? 0,
+        otherDirectCosts: 0,
+        address: contract.address,
+        checklistDone: 0,
+        checklistTotal: 0,
+        depositAmount: 0,
+        notes: "Visite générée par le contrat d’entretien mensuel.",
+      });
+      generated += 1;
+    }
+    if (entry.billingDue && !maintenanceBillingPeriods.some((period) => period.contractId === contract.id && period.periodStart === `${entry.month}-01`)) {
+      maintenanceBillingPeriods.push({
+        ...entityBase(),
+        contractId: contract.id,
+        periodStart: `${entry.month}-01`,
+        dueOn: entry.visitOn,
+        amount: entry.billingAmount,
+        status: "due",
+      });
+    }
+  }
+
+  return { interventions, maintenanceBillingPeriods, generated };
 }
 
 export const useDemoStore = create<DemoStore>()(
@@ -326,6 +400,7 @@ export const useDemoStore = create<DemoStore>()(
             quotes: state.quotes.map((quote) => quote.clientId === duplicateId ? { ...quote, clientId: primaryId, updatedAt: nowIso() } : quote),
             invoices: state.invoices.map((invoice) => invoice.clientId === duplicateId ? { ...invoice, clientId: primaryId, updatedAt: nowIso() } : invoice),
             interventions: state.interventions.map((item) => item.clientId === duplicateId ? { ...item, clientId: primaryId, updatedAt: nowIso() } : item),
+            maintenanceContracts: state.maintenanceContracts.map((contract) => contract.clientId === duplicateId ? { ...contract, clientId: primaryId, updatedAt: nowIso() } : contract),
             reviews: state.reviews.map((review) => review.clientId === duplicateId ? { ...review, clientId: primaryId, updatedAt: nowIso() } : review),
             activities: [
               activity("comment_added", "Clients fusionnés", `${duplicate.firstName} ${duplicate.lastName} → ${primary.firstName} ${primary.lastName}`, "client", primaryId),
@@ -774,6 +849,79 @@ export const useDemoStore = create<DemoStore>()(
       removePlanningEvent: (eventId) => {
         set((state) => ({ planningEvents: state.planningEvents.filter((event) => event.id !== eventId) }));
         persistMutation({ action: "removePlanningEvent", eventId });
+      },
+      saveMaintenanceContract: (contractId, input) => {
+        const existing = contractId ? get().maintenanceContracts.find((contract) => contract.id === contractId) : undefined;
+        const contractBase = existing ?? entityBase();
+        const through = existing?.generatedThrough ?? addMonthsToDate(input.firstVisitOn, 11);
+        const contract: MaintenanceContract = {
+          ...contractBase,
+          clientId: input.clientId,
+          serviceId: input.serviceId,
+          title: input.title.trim(),
+          status: input.status,
+          billingFrequency: input.billingFrequency,
+          billingAmount: input.billingAmount,
+          vehicleCount: input.vehicleCount,
+          firstVisitOn: input.firstVisitOn,
+          visitDay: Number(input.firstVisitOn.slice(8, 10)),
+          preferredStartTime: input.preferredStartTime,
+          plannedDurationMinutes: input.plannedDurationMinutes,
+          assignedMemberIds: [...new Set(input.assignedMemberIds)],
+          address: input.address.trim(),
+          notes: input.notes.trim(),
+          endsOn: input.endsOn,
+          generatedThrough: through,
+          updatedAt: nowIso(),
+        };
+        set((state) => {
+          const today = new Date().toISOString().slice(0, 10);
+          const baseState = existing ? {
+            ...state,
+            interventions: state.interventions.filter((intervention) => intervention.maintenanceContractId !== contract.id || intervention.status === "completed" || intervention.status === "cancelled" || (intervention.startAt?.slice(0, 10) ?? "") < today),
+            maintenanceBillingPeriods: state.maintenanceBillingPeriods.filter((period) => period.contractId !== contract.id || period.status === "paid" || period.dueOn < today),
+          } : state;
+          const generated = contract.status === "active" ? addDemoMaintenanceSchedule(baseState, contract, through) : { interventions: baseState.interventions, maintenanceBillingPeriods: baseState.maintenanceBillingPeriods };
+          return {
+            maintenanceContracts: existing
+              ? state.maintenanceContracts.map((item) => item.id === contract.id ? contract : item)
+              : [contract, ...state.maintenanceContracts],
+            interventions: generated.interventions,
+            maintenanceBillingPeriods: generated.maintenanceBillingPeriods,
+          };
+        });
+        return contract.id;
+      },
+      generateMaintenanceSchedule: (contractId, through) => {
+        let generatedCount = 0;
+        set((state) => {
+          const contract = state.maintenanceContracts.find((item) => item.id === contractId);
+          if (!contract || contract.status !== "active") return state;
+          const generated = addDemoMaintenanceSchedule(state, contract, through);
+          generatedCount = generated.generated;
+          return {
+            interventions: generated.interventions,
+            maintenanceBillingPeriods: generated.maintenanceBillingPeriods,
+            maintenanceContracts: state.maintenanceContracts.map((item) => item.id === contractId ? { ...item, generatedThrough: through, updatedAt: nowIso() } : item),
+          };
+        });
+        return generatedCount;
+      },
+      setMaintenanceBillingPaid: (periodId, paid, paidAt, method) => {
+        set((state) => {
+          const period = state.maintenanceBillingPeriods.find((item) => item.id === periodId);
+          if (!period) return state;
+          const existingPayment = state.payments.find((payment) => payment.maintenanceBillingPeriodId === periodId);
+          const payments = paid
+            ? existingPayment
+              ? state.payments.map((payment) => payment.id === existingPayment.id ? { ...payment, amount: period.amount, paidAt, method, updatedAt: nowIso() } : payment)
+              : [{ ...entityBase(), maintenanceContractId: period.contractId, maintenanceBillingPeriodId: period.id, amount: period.amount, paidAt, method }, ...state.payments]
+            : state.payments.filter((payment) => payment.maintenanceBillingPeriodId !== periodId);
+          return {
+            payments,
+            maintenanceBillingPeriods: state.maintenanceBillingPeriods.map((item) => item.id === periodId ? { ...item, status: paid ? "paid" : "due", paidAt: paid ? paidAt : undefined, paymentMethod: paid ? method : undefined, updatedAt: nowIso() } : item),
+          };
+        });
       },
       addService: (input) => {
         const service: Service = {

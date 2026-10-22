@@ -53,6 +53,7 @@ const serviceIds = {
   vapeur: "30000000-0000-4000-8000-000000000005",
   phares: "30000000-0000-4000-8000-000000000006",
   ciel: "30000000-0000-4000-8000-000000000007",
+  entretien: "30000000-0000-4000-8000-000000000008",
 };
 
 export const demoSeed: AppData = {
@@ -361,6 +362,29 @@ export const demoSeed: AppData = {
       recommendedWorkers: 2,
       photosRequired: true,
     },
+    {
+      ...base(serviceIds.entretien),
+      kind: "subscription",
+      pricingMode: "vehicle_count",
+      category: "Entretien mensuel",
+      name: "Entretien mensuel",
+      clientDescription: "Une visite planifiée chaque mois pour maintenir les véhicules propres toute l’année.",
+      internalDescription: "Contrat récurrent avec planning et encaissements suivis séparément.",
+      prices: [
+        { label: "1 à 3 véhicules", minimumVehicleCount: 1, maximumVehicleCount: 3, amount: 11000 },
+        { label: "4 à 6 véhicules", minimumVehicleCount: 4, maximumVehicleCount: 6, amount: 9900 },
+      ],
+      targetDurationMinutes: 120,
+      targetProductCost: 800,
+      targetTravelCost: 1000,
+      targetHourlyMargin: 6000,
+      vatRateBasisPoints: 2000,
+      active: true,
+      displayOrder: 4,
+      aliases: ["Contrat entretien", "Maintenance mensuelle"],
+      recommendedWorkers: 1,
+      photosRequired: false,
+    },
     ...[
       [serviceIds.cuir, "Option cuir", 7900, 48, 600],
       [serviceIds.vapeur, "Désinfection vapeur", 6900, 36, 400],
@@ -587,6 +611,8 @@ export const demoSeed: AppData = {
     },
   ],
   planningEvents: [],
+  maintenanceContracts: [],
+  maintenanceBillingPeriods: [],
   expenses: [
     { ...base("90000000-0000-4000-8000-000000000001"), date: "2026-07-01T08:00:00.000Z", family: "fixed", category: "Local", supplier: "Bailleur Orange", description: "Loyer atelier", amountIncludingTax: 120000, amountExcludingTax: 100000, vatAmount: 20000, vatRecoverable: true, recurrence: "monthly", allocatedMonth: "2026-07", paid: true, paidAt: "2026-07-03T08:00:00.000Z", paymentMethod: "Virement" },
     { ...base("90000000-0000-4000-8000-000000000002"), date: "2026-07-08T08:00:00.000Z", family: "variable", category: "Produits", supplier: "Detail Supply", description: "Consommables et microfibres", amountIncludingTax: 46200, amountExcludingTax: 38500, vatAmount: 7700, vatRecoverable: true, recurrence: "one_off", allocatedMonth: "2026-07", paid: true, paidAt: "2026-07-08T08:00:00.000Z", paymentMethod: "Carte" },

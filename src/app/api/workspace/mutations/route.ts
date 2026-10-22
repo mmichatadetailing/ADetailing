@@ -591,7 +591,7 @@ export async function POST(request: Request) {
       const primary = clientRows?.find((client) => client.id === input.primaryId);
       const duplicate = clientRows?.find((client) => client.id === input.duplicateId);
       if (!primary || !duplicate) throw new Error("Client introuvable.");
-      const references = ["vehicles", "leads", "quotes", "invoices", "interventions", "reviews"] as const;
+      const references = ["vehicles", "leads", "quotes", "invoices", "interventions", "maintenance_contracts", "reviews"] as const;
       for (const table of references) {
         const { error } = await supabase.from(table).update({ client_id: input.primaryId }).eq("organization_id", organizationId).eq("client_id", input.duplicateId);
         ensureNoError(error);
