@@ -15,6 +15,7 @@ import {
   collectedRevenue,
   expenseForecast,
   expenseMonthSummary,
+  nextExpenseOccurrenceDateKey,
   paidExpenseAmountForMonth,
   recurringExpenseMetrics,
 } from "@/lib/domain/calculations";
@@ -54,7 +55,10 @@ function vatRateForExpense(expense: Expense) {
 }
 
 function ExpenseEditor({ expense, onCancel, onSave }: { expense: Expense; onCancel: () => void; onSave: (input: NewExpenseInput) => void }) {
-  const [date, setDate] = useState(expense.date.slice(0, 10));
+  const isRecurringRevision = expense.recurrence !== "one_off";
+  const [date, setDate] = useState(() => isRecurringRevision
+    ? nextExpenseOccurrenceDateKey(expense) ?? expense.date.slice(0, 10)
+    : expense.date.slice(0, 10));
   const [recurrence, setRecurrence] = useState<Expense["recurrence"]>(expense.recurrence);
   const [family, setFamily] = useState<Expense["family"]>(expense.family);
   const [category, setCategory] = useState(expense.category);
@@ -67,6 +71,7 @@ function ExpenseEditor({ expense, onCancel, onSave }: { expense: Expense; onCanc
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!date) return toast.error("Indiquez une date.");
+    if (isRecurringRevision && date < expense.date.slice(0, 10)) return toast.error("La nouvelle date ne peut pas précéder la première échéance actuelle.");
     if (category.trim().length < 2) return toast.error("Indiquez une catégorie.");
     if (description.trim().length < 2) return toast.error("Indiquez une description.");
     if (!Number.isFinite(amountEuros) || amountEuros <= 0) return toast.error("Le montant doit être supérieur à zéro.");
@@ -88,10 +93,12 @@ function ExpenseEditor({ expense, onCancel, onSave }: { expense: Expense; onCanc
     <form className="grid gap-4" onSubmit={submit}>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Fréquence"><Select autoFocus value={recurrence} onChange={(event) => setRecurrence(event.target.value as Expense["recurrence"])}><option value="one_off">Ponctuelle</option><option value="monthly">Tous les mois</option><option value="annual">Tous les ans</option></Select></Field>
-        <Field label={recurrence === "one_off" ? "Date de la dépense" : "Première échéance"}><Input type="date" value={date} onChange={(event) => setDate(event.target.value)} /></Field>
+        <Field label={isRecurringRevision ? "Première échéance au nouveau tarif" : recurrence === "one_off" ? "Date de la dépense" : "Première échéance"}><Input type="date" min={isRecurringRevision ? expense.date.slice(0, 10) : undefined} value={date} onChange={(event) => setDate(event.target.value)} /></Field>
       </div>
       <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-xs text-violet-800">
-        {recurrence === "monthly" ? "Cette charge sera ajoutée automatiquement au total de chaque mois à cette date." : recurrence === "annual" ? "Cette charge sera ajoutée automatiquement au total du mois de cette échéance, chaque année." : "Cette charge ne sera comptée qu’une seule fois."}
+        {isRecurringRevision
+          ? `Les mois antérieurs à ${date ? formatMonth(date.slice(0, 7)) : "la date choisie"} conserveront l’ancien montant de ${formatMoney(expense.amountIncludingTax)}. Une nouvelle version sera créée pour la suite.`
+          : recurrence === "monthly" ? "Cette charge sera ajoutée automatiquement au total de chaque mois à cette date." : recurrence === "annual" ? "Cette charge sera ajoutée automatiquement au total du mois de cette échéance, chaque année." : "Cette charge ne sera comptée qu’une seule fois."}
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Famille"><Select value={family} onChange={(event) => setFamily(event.target.value as Expense["family"])}><option value="fixed">Fixe</option><option value="variable">Variable</option><option value="investment">Investissement</option><option value="personal">Personnel</option></Select></Field>
@@ -107,7 +114,7 @@ function ExpenseEditor({ expense, onCancel, onSave }: { expense: Expense; onCanc
       </div>
       <label className="flex items-center gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-sm font-semibold text-zinc-700"><input type="checkbox" className="accent-brand-500" checked={paid} onChange={(event) => setPaid(event.target.checked)} /> {recurrence === "one_off" ? "Dépense déjà payée" : "Prélèvement automatique à chaque échéance"}</label>
       {recurrence !== "one_off" && <p className="-mt-2 text-[11px] leading-5 text-zinc-500">Même décochée, la charge reste incluse dans le total prévu. Cochez uniquement si elle doit être déduite automatiquement de la trésorerie le jour prévu.</p>}
-      <div className="flex justify-end gap-2 pt-2"><Button variant="ghost" onClick={onCancel}>Annuler</Button><Button type="submit"><Save className="size-4" /> Enregistrer les modifications</Button></div>
+      <div className="flex justify-end gap-2 pt-2"><Button variant="ghost" onClick={onCancel}>Annuler</Button><Button type="submit"><Save className="size-4" /> {isRecurringRevision ? "Appliquer à partir de cette date" : "Enregistrer les modifications"}</Button></div>
     </form>
   );
 }
@@ -150,7 +157,7 @@ export default function FinancesPage() {
   const saveExpense = (expense: Expense, input: NewExpenseInput) => {
     data.updateExpense(expense.id, input);
     setEditingExpense(null);
-    toast.success("Charge modifiée", { description: "Les statistiques et projections ont été recalculées." });
+    toast.success(expense.recurrence === "one_off" ? "Charge modifiée" : "Nouveau tarif enregistré", { description: expense.recurrence === "one_off" ? "Les statistiques et projections ont été recalculées." : "Les mois précédents conservent leur ancien montant." });
   };
   const deleteExpense = () => {
     if (!deletingExpense) return;
@@ -180,7 +187,7 @@ export default function FinancesPage() {
       <Modal open={Boolean(deletingExpense)} onClose={() => setDeletingExpense(null)} title="Supprimer cette charge ?" description={deletingExpense?.description}>
         <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
           <p className="flex items-center gap-2 text-sm font-bold text-red-700"><TriangleAlert className="size-4" /> Cette charge disparaîtra de vos calculs</p>
-          <p className="mt-2 text-xs leading-5 text-red-600">{deletingExpense?.recurrence === "one_off" ? "Le décaissement ponctuel ne sera plus comptabilisé dans la trésorerie ni dans les statistiques." : "Toutes les projections liées à cette charge récurrente seront retirées des mois concernés."}</p>
+          <p className="mt-2 text-xs leading-5 text-red-600">{deletingExpense?.recurrence === "one_off" ? "Le décaissement ponctuel ne sera plus comptabilisé dans la trésorerie ni dans les statistiques." : "Les projections de la version actuelle seront retirées. Les anciens tarifs déjà historisés resteront conservés."}</p>
         </div>
         {deletingExpense && <div className="mt-4 grid gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-xs text-zinc-600"><p><strong className="text-zinc-900">{deletingExpense.description}</strong> · {formatMoney(deletingExpense.amountIncludingTax)}</p><p>{recurrenceLabels[deletingExpense.recurrence]} · première date le {formatDate(deletingExpense.date)}</p></div>}
         <div className="mt-5 flex justify-end gap-2"><Button variant="ghost" onClick={() => setDeletingExpense(null)}>Annuler</Button><Button variant="danger" onClick={deleteExpense}><Trash2 className="size-4" /> Supprimer définitivement</Button></div>
@@ -229,7 +236,7 @@ export default function FinancesPage() {
               <div><p className="text-xs font-bold text-zinc-900">{formatDate(occurrence.dueDate, { day: "2-digit", month: "long" })}</p><p className="mt-1 text-[10px] text-zinc-500">{recurrenceLabels[occurrence.expense.recurrence]}</p></div>
               <div className="min-w-0"><p className="truncate text-sm font-bold text-zinc-900">{occurrence.expense.description}</p><p className="mt-1 truncate text-xs text-zinc-500">{occurrence.expense.category}{occurrence.expense.supplier ? ` · ${occurrence.expense.supplier}` : ""}</p></div>
               <div className="flex items-center gap-2 sm:justify-end"><Badge variant={occurrence.status === "paid" ? "green" : occurrence.status === "due" ? "yellow" : "blue"}>{occurrenceLabels[occurrence.status]}</Badge><p className="min-w-20 text-right text-sm font-extrabold text-zinc-900">{formatMoney(occurrence.amount)}</p></div>
-              {canManage && <Button size="sm" variant="secondary" onClick={() => setEditingExpense(occurrence.expense)}><Pencil className="size-3.5" /> Modifier</Button>}
+              {canManage ? !occurrence.expense.endsAt ? <Button size="sm" variant="secondary" onClick={() => setEditingExpense(occurrence.expense)}><Pencil className="size-3.5" /> Modifier</Button> : <Badge variant="neutral">Historique</Badge> : null}
             </div>
           ))}
           {monthSummary.occurrences.length === 0 && <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 p-8 text-center"><ReceiptText className="mx-auto size-6 text-zinc-400" /><p className="mt-2 text-sm font-bold text-zinc-700">Aucune charge prévue</p><p className="mt-1 text-xs text-zinc-500">Ajoutez une dépense ponctuelle ou une première échéance pour ce mois.</p></div>}
@@ -258,7 +265,7 @@ export default function FinancesPage() {
       <Card>
         <CardHeader>
           <div><h2 className="flex items-center gap-2 font-bold"><Repeat2 className="size-4 text-violet-600" /> Structure des charges</h2><p className="mt-1 text-xs text-zinc-500">Les charges récurrentes sont automatiquement projetées à partir de leur première échéance.</p></div>
-          <Badge>{data.expenses.filter((expense) => expense.recurrence !== "one_off").length} récurrentes</Badge>
+          <Badge>{new Set(data.expenses.filter((expense) => expense.recurrence !== "one_off" && !expense.endsAt).map((expense) => expense.seriesId ?? expense.id)).size} récurrentes</Badge>
         </CardHeader>
         <CardContent>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -279,17 +286,17 @@ export default function FinancesPage() {
       {tab === "expenses" ? (
         <Card>
           <CardHeader>
-            <div><h2 className="font-bold">Charges & dépenses</h2><p className="mt-1 text-xs text-zinc-500">Une ligne récurrente représente une règle ; elle n’est pas dupliquée chaque mois dans cette liste.</p></div>
+            <div><h2 className="font-bold">Charges & dépenses</h2><p className="mt-1 text-xs text-zinc-500">Chaque changement de tarif crée une nouvelle période afin de conserver des calculs historiques exacts.</p></div>
             <div className="flex items-center gap-2"><Select aria-label="Filtrer par fréquence" className="w-[170px]" value={recurrenceFilter} onChange={(event) => setRecurrenceFilter(event.target.value as typeof recurrenceFilter)}><option value="all">Toutes les fréquences</option><option value="one_off">Ponctuelles</option><option value="monthly">Mensuelles</option><option value="annual">Annuelles</option></Select><Badge>{visibleExpenses.length} charge(s)</Badge></div>
           </CardHeader>
           <CardContent className="overflow-x-auto px-0 pb-1">
             <table className="w-full min-w-[1120px] text-left text-xs">
-              <thead className="text-[10px] tracking-wider text-zinc-600 uppercase"><tr>{["Début / date", "Fréquence", "Famille", "Catégorie", "Fournisseur", "Description", "TTC / échéance", "TVA", "Paiement", "Actions"].map((head) => <th key={head} className="px-4 py-3 font-semibold first:pl-5 last:pr-5">{head}</th>)}</tr></thead>
+              <thead className="text-[10px] tracking-wider text-zinc-600 uppercase"><tr>{["Période / date", "Fréquence", "Famille", "Catégorie", "Fournisseur", "Description", "TTC / échéance", "TVA", "Paiement", "Actions"].map((head) => <th key={head} className="px-4 py-3 font-semibold first:pl-5 last:pr-5">{head}</th>)}</tr></thead>
               <tbody className="divide-y divide-zinc-100">
                 {visibleExpenses.map((expense) => (
                   <tr key={expense.id} className="hover:bg-white/[0.02]">
-                    <td className="px-4 py-4 pl-5 text-zinc-500">{formatDate(expense.date)}</td>
-                    <td className="px-4 py-4"><Badge variant={expense.recurrence === "one_off" ? "neutral" : "blue"}>{recurrenceLabels[expense.recurrence]}</Badge></td>
+                    <td className="px-4 py-4 pl-5 text-zinc-500"><p>{formatDate(expense.date)}</p>{expense.endsAt && <p className="mt-1 text-[10px]">jusqu’au {formatDate(expense.endsAt)}</p>}</td>
+                    <td className="px-4 py-4"><div className="flex flex-wrap gap-1"><Badge variant={expense.recurrence === "one_off" ? "neutral" : "blue"}>{recurrenceLabels[expense.recurrence]}</Badge>{expense.endsAt && <Badge variant="neutral">Historique</Badge>}</div></td>
                     <td className="px-4 py-4"><Badge>{familyLabels[expense.family]}</Badge></td>
                     <td className="px-4 py-4 font-semibold">{expense.category}</td>
                     <td className="px-4 py-4 text-zinc-500">{expense.supplier}</td>
@@ -297,7 +304,7 @@ export default function FinancesPage() {
                     <td className="px-4 py-4 font-bold">{formatMoney(expense.amountIncludingTax)}</td>
                     <td className="px-4 py-4 text-zinc-500">{formatMoney(expense.vatAmount)}</td>
                     <td className="px-4 py-4"><Badge variant={expense.paid ? "green" : "yellow"}>{expense.recurrence === "one_off" ? (expense.paid ? "Payée" : "À payer") : (expense.paid ? "Automatique" : "À valider")}</Badge></td>
-                    <td className="px-4 py-4 pr-5">{canManage ? <div className="flex items-center gap-1"><Button size="sm" variant="secondary" onClick={() => setEditingExpense(expense)}><Pencil className="size-3.5" /> Modifier</Button><Button size="sm" variant="ghost" className="text-red-600" aria-label={`Supprimer ${expense.description}`} onClick={() => setDeletingExpense(expense)}><Trash2 className="size-3.5" /></Button></div> : <span className="text-zinc-400">Lecture seule</span>}</td>
+                    <td className="px-4 py-4 pr-5">{canManage && !expense.endsAt ? <div className="flex items-center gap-1"><Button size="sm" variant="secondary" onClick={() => setEditingExpense(expense)}><Pencil className="size-3.5" /> Modifier</Button><Button size="sm" variant="ghost" className="text-red-600" aria-label={`Supprimer ${expense.description}`} onClick={() => setDeletingExpense(expense)}><Trash2 className="size-3.5" /></Button></div> : <span className="text-zinc-400">{expense.endsAt ? "Historique verrouillé" : "Lecture seule"}</span>}</td>
                   </tr>
                 ))}
                 {visibleExpenses.length === 0 && <tr><td colSpan={10} className="px-5 py-10 text-center text-sm text-zinc-500">Aucune charge ne correspond à ce filtre.</td></tr>}

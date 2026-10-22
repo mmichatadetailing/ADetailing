@@ -11,7 +11,7 @@ import type {
 
 const cents = (value: Decimal.Value): Money => new Decimal(value).toDecimalPlaces(0).toNumber();
 
-export type ExpenseSchedule = Pick<Expense, "date" | "recurrence" | "amountIncludingTax" | "paid" | "paidAt">;
+export type ExpenseSchedule = Pick<Expense, "date" | "endsAt" | "seriesId" | "recurrence" | "amountIncludingTax" | "paid" | "paidAt">;
 
 export type ExpenseOccurrenceStatus = "paid" | "due" | "upcoming";
 
@@ -70,25 +70,43 @@ function nextMonth(month: string, offset: number) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
-export function expenseOccursInMonth(expense: ExpenseSchedule, month: string): boolean {
+function scheduledExpenseDate(expense: ExpenseSchedule, month: string): Date | null {
   const startMonth = expense.date.slice(0, 7);
-  if (month < startMonth) return false;
-  if (expense.recurrence === "one_off") return month === startMonth;
-  if (expense.recurrence === "monthly") return true;
-  return month.slice(5, 7) === startMonth.slice(5, 7);
-}
-
-export function expenseOccurrenceDate(expense: ExpenseSchedule, month: string): Date | null {
-  if (!expenseOccursInMonth(expense, month)) return null;
+  if (month < startMonth) return null;
+  if (expense.recurrence === "one_off" && month !== startMonth) return null;
+  if (expense.recurrence === "annual" && month.slice(5, 7) !== startMonth.slice(5, 7)) return null;
   const target = monthParts(month);
   const start = expenseStartParts(expense);
   const lastDay = new Date(target.year, target.month, 0).getDate();
   return new Date(target.year, target.month - 1, Math.min(start.day, lastDay), 12, 0, 0, 0);
 }
 
+export function expenseOccursInMonth(expense: ExpenseSchedule, month: string): boolean {
+  const occurrence = scheduledExpenseDate(expense, month);
+  if (!occurrence) return false;
+  return !expense.endsAt || dateKey(occurrence) <= expense.endsAt.slice(0, 10);
+}
+
+export function expenseOccurrenceDate(expense: ExpenseSchedule, month: string): Date | null {
+  if (!expenseOccursInMonth(expense, month)) return null;
+  return scheduledExpenseDate(expense, month);
+}
+
 export function expenseOccurrenceDateKey(expense: ExpenseSchedule, month: string): string | null {
   const occurrence = expenseOccurrenceDate(expense, month);
   return occurrence ? dateKey(occurrence) : null;
+}
+
+export function nextExpenseOccurrenceDateKey(expense: ExpenseSchedule, reference = new Date()): string | null {
+  const referenceDate = dateKey(reference);
+  const referenceMonth = referenceDate.slice(0, 7);
+  const searchMonths = expense.recurrence === "annual" ? 25 : 14;
+
+  for (let offset = 0; offset < searchMonths; offset += 1) {
+    const occurrence = expenseOccurrenceDateKey(expense, nextMonth(referenceMonth, offset));
+    if (occurrence && occurrence >= referenceDate) return occurrence;
+  }
+  return null;
 }
 
 export function projectedExpensesForMonth<T extends ExpenseSchedule>(expenses: T[], month: string): T[] {
@@ -137,18 +155,20 @@ export function rankExpensesForMonths<T extends ExpenseSchedule & { id: string }
 
   for (const month of new Set(months)) {
     for (const occurrence of expenseOccurrencesForMonth(expenses, month, reference)) {
-      const current = ranking.get(occurrence.expense.id) ?? {
+      const seriesId = occurrence.expense.seriesId ?? occurrence.expense.id;
+      const current = ranking.get(seriesId) ?? {
         expense: occurrence.expense,
         total: 0,
         paid: 0,
         remaining: 0,
         occurrenceCount: 0,
       };
+      if (occurrence.expense.date > current.expense.date) current.expense = occurrence.expense;
       current.total += occurrence.amount;
       current.occurrenceCount += 1;
       if (occurrence.status === "paid") current.paid += occurrence.amount;
       else current.remaining += occurrence.amount;
-      ranking.set(occurrence.expense.id, current);
+      ranking.set(seriesId, current);
     }
   }
 
@@ -182,7 +202,10 @@ export function paidExpenseAmountForMonth(expenses: ExpenseSchedule[], month: st
 }
 
 export function recurringExpenseMetrics(expenses: ExpenseSchedule[], month: string) {
-  const active = expenses.filter((expense) => expense.recurrence !== "one_off" && expense.date.slice(0, 7) <= month);
+  const active = expenses.filter((expense) => {
+    if (expense.recurrence === "one_off" || expense.date.slice(0, 7) > month) return false;
+    return !expense.endsAt || expense.endsAt.slice(0, 7) >= month;
+  });
   const monthly = active.filter((expense) => expense.recurrence === "monthly").reduce((sum, expense) => sum + expense.amountIncludingTax, 0);
   const annual = active.filter((expense) => expense.recurrence === "annual").reduce((sum, expense) => sum + expense.amountIncludingTax, 0);
   return { monthly, annual, monthlyEquivalent: monthly + Math.round(annual / 12), annualCommitment: monthly * 12 + annual };

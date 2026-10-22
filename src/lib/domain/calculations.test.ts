@@ -14,6 +14,7 @@ import {
   expenseForecast,
   expenseMonthSummary,
   expenseOccurrenceDateKey,
+  nextExpenseOccurrenceDateKey,
   paidExpenseAmountForMonth,
   projectedExpenseAmountForMonth,
   rankExpensesForMonths,
@@ -164,6 +165,29 @@ describe("charges récurrentes", () => {
     ]);
     expect(ranking[0]).toMatchObject({ paid: 30_000, remaining: 0 });
     expect(ranking[2]).toMatchObject({ paid: 0, remaining: 20_000 });
+  });
+
+  it("conserve l’ancien tarif avant la date d’augmentation", () => {
+    const oldPrice = { ...monthly, id: "old", seriesId: "subscription", date: "2026-01-15", endsAt: "2026-08-31", amountIncludingTax: 10_000 };
+    const newPrice = { ...monthly, id: "new", seriesId: "subscription", date: "2026-09-15", amountIncludingTax: 12_000 };
+
+    expect(projectedExpenseAmountForMonth([oldPrice, newPrice], "2026-08")).toBe(10_000);
+    expect(projectedExpenseAmountForMonth([oldPrice, newPrice], "2026-09")).toBe(12_000);
+    expect(recurringExpenseMetrics([oldPrice, newPrice], "2026-08").monthly).toBe(10_000);
+    expect(recurringExpenseMetrics([oldPrice, newPrice], "2026-09").monthly).toBe(12_000);
+
+    const ranking = rankExpensesForMonths(
+      [oldPrice, newPrice],
+      ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09"],
+      new Date("2026-09-30T12:00:00"),
+    );
+    expect(ranking).toHaveLength(1);
+    expect(ranking[0]).toMatchObject({ expense: { id: "new" }, total: 92_000, occurrenceCount: 9 });
+  });
+
+  it("propose la prochaine échéance disponible pour un nouveau tarif", () => {
+    expect(nextExpenseOccurrenceDateKey({ ...monthly, date: "2026-01-15" }, new Date("2026-10-22T12:00:00"))).toBe("2026-11-15");
+    expect(nextExpenseOccurrenceDateKey({ ...monthly, date: "2026-01-28" }, new Date("2026-10-22T12:00:00"))).toBe("2026-10-28");
   });
 });
 

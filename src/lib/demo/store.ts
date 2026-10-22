@@ -28,6 +28,13 @@ import { ALBAN_ID, demoSeed, DEMO_LOCATION_ID, DEMO_ORG_ID } from "./seed";
 
 const createId = () => crypto.randomUUID();
 const nowIso = () => new Date().toISOString();
+const endOfPreviousMonth = (value: string) => {
+  const date = value.slice(0, 10);
+  const year = Number(date.slice(0, 4));
+  const month = Number(date.slice(5, 7));
+  const previousMonthEnd = new Date(year, month - 1, 0, 12);
+  return `${previousMonthEnd.getFullYear()}-${String(previousMonthEnd.getMonth() + 1).padStart(2, "0")}-${String(previousMonthEnd.getDate()).padStart(2, "0")}`;
+};
 const persistMutation = (mutation: WorkspaceMutation) => {
   if (isSupabaseConfigured) queueWorkspaceMutation(mutation);
 };
@@ -331,8 +338,10 @@ export const useDemoStore = create<DemoStore>()(
         const amountExcludingTax = Math.round(
           input.amountIncludingTax / (1 + input.vatRateBasisPoints / 10_000),
         );
+        const expenseBase = entityBase();
         const expense: Expense = {
-          ...entityBase(),
+          ...expenseBase,
+          seriesId: expenseBase.id,
           date: input.date,
           family: input.family,
           category: input.category,
@@ -371,11 +380,47 @@ export const useDemoStore = create<DemoStore>()(
         const amountExcludingTax = Math.round(
           input.amountIncludingTax / (1 + input.vatRateBasisPoints / 10_000),
         );
+        const existing = get().expenses.find((expense) => expense.id === expenseId);
+        if (!existing) return;
+        const normalizedDate = input.date.slice(0, 10);
+
+        if (existing.recurrence !== "one_off") {
+          const revisionBase = entityBase();
+          const revision: Expense = {
+            ...existing,
+            ...revisionBase,
+            seriesId: existing.seriesId ?? existing.id,
+            replacesExpenseId: existing.id,
+            endsAt: undefined,
+            date: normalizedDate,
+            family: input.family,
+            category: input.category.trim(),
+            supplier: input.supplier.trim(),
+            description: input.description.trim(),
+            amountIncludingTax: input.amountIncludingTax,
+            amountExcludingTax,
+            vatAmount: input.amountIncludingTax - amountExcludingTax,
+            vatRecoverable: input.family !== "personal",
+            recurrence: input.recurrence,
+            allocatedMonth: normalizedDate.slice(0, 7),
+            paid: input.paid,
+            paidAt: input.paid ? normalizedDate : undefined,
+            paymentMethod: input.paid ? existing.paymentMethod ?? "Carte" : undefined,
+          };
+          set((state) => ({
+            expenses: [revision, ...state.expenses.map((expense) => expense.id === expenseId
+              ? { ...expense, endsAt: endOfPreviousMonth(normalizedDate), updatedAt: nowIso() }
+              : expense)],
+          }));
+          persistMutation({ action: "reviseExpense", expenseId, ...input, date: normalizedDate });
+          return;
+        }
+
         set((state) => ({
           expenses: state.expenses.map((expense) => expense.id === expenseId
             ? {
                 ...expense,
-                date: input.date,
+                date: normalizedDate,
                 family: input.family,
                 category: input.category.trim(),
                 supplier: input.supplier.trim(),
@@ -385,15 +430,15 @@ export const useDemoStore = create<DemoStore>()(
                 vatAmount: input.amountIncludingTax - amountExcludingTax,
                 vatRecoverable: input.family !== "personal",
                 recurrence: input.recurrence,
-                allocatedMonth: input.date.slice(0, 7),
+                allocatedMonth: normalizedDate.slice(0, 7),
                 paid: input.paid,
-                paidAt: input.paid ? input.date : undefined,
+                paidAt: input.paid ? normalizedDate : undefined,
                 paymentMethod: input.paid ? expense.paymentMethod ?? "Carte" : undefined,
                 updatedAt: nowIso(),
               }
             : expense),
         }));
-        persistMutation({ action: "updateExpense", expenseId, ...input, date: input.date.slice(0, 10) });
+        persistMutation({ action: "updateExpense", expenseId, ...input, date: normalizedDate });
       },
       removeExpense: (expenseId) => {
         set((state) => ({ expenses: state.expenses.filter((expense) => expense.id !== expenseId) }));

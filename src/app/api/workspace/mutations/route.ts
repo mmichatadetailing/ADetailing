@@ -85,6 +85,7 @@ const mutationSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("removeClient"), clientId: z.uuid() }),
   z.object({ action: z.literal("updateClient"), ...clientMutationFields }),
   z.object({ action: z.literal("updateExpense"), ...expenseMutationFields }),
+  z.object({ action: z.literal("reviseExpense"), ...expenseMutationFields }),
   z.object({ action: z.literal("removeExpense"), expenseId: z.uuid() }),
   z.object({ action: z.literal("rescheduleIntervention"), interventionId: z.uuid(), startAt: z.iso.datetime(), endAt: z.iso.datetime() }),
   z.object({ action: z.literal("addPlanningEvent"), eventId: z.uuid(), ...planningEventMutationFields }),
@@ -161,7 +162,7 @@ export async function POST(request: Request) {
     const userId = workspace.user.id;
 
     const managerOnlyActions = new Set([
-      "removeClient", "updateClient", "updateExpense", "removeExpense", "removeIntervention", "updateIntervention",
+      "removeClient", "updateClient", "updateExpense", "reviseExpense", "removeExpense", "removeIntervention", "updateIntervention",
       "addService", "updateService", "duplicateService", "archiveService", "reorderService", "updateObjective", "updateAnnualObjectives",
       "mergeClients", "addPayment", "addInterventionPayment", "updatePayment", "removePayment", "linkInvoiceToIntervention",
       "linkInvoiceToQuote", "importHenrriDocument",
@@ -236,6 +237,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, id: client.id });
     }
 
+    if (input.action === "reviseExpense") {
+      const { data: expenseId, error } = await supabase.rpc("revise_recurring_expense", {
+        target_expense: input.expenseId,
+        effective_on: input.date,
+        revision: {
+          recurrence: input.recurrence,
+          family: input.family,
+          category: input.category,
+          supplier: input.supplier,
+          description: input.description,
+          amountIncludingTax: input.amountIncludingTax,
+          vatRateBasisPoints: input.vatRateBasisPoints,
+          paid: input.paid,
+        },
+      });
+      ensureNoError(error);
+      return NextResponse.json({ ok: true, id: expenseId });
+    }
+
     if (input.action === "updateExpense") {
       const amountExcludingTax = Math.round(input.amountIncludingTax / (1 + input.vatRateBasisPoints / 10_000));
       const { data: expense, error } = await supabase.from("expenses").update({
@@ -253,9 +273,9 @@ export async function POST(request: Request) {
         allocated_month: `${input.date.slice(0, 7)}-01`,
         paid: input.paid,
         paid_at: input.paid ? `${input.date}T12:00:00.000Z` : null,
-      }).eq("organization_id", organizationId).eq("id", input.expenseId).is("archived_at", null).select("id").single();
+      }).eq("organization_id", organizationId).eq("id", input.expenseId).eq("recurrence", "one_off").is("archived_at", null).select("id").maybeSingle();
       ensureNoError(error);
-      if (!expense) throw new Error("Charge introuvable.");
+      if (!expense) throw new Error("Cette charge récurrente doit être modifiée à partir d’une nouvelle date.");
     }
 
     if (input.action === "removeExpense") {

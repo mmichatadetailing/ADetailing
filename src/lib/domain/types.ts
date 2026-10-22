@@ -245,6 +245,9 @@ export interface PlanningEvent extends BaseEntity {
 
 export interface Expense extends BaseEntity {
   date: ISODate;
+  endsAt?: ISODate;
+  seriesId?: UUID;
+  replacesExpenseId?: UUID;
   family: "fixed" | "variable" | "investment" | "personal";
   category: string;
   supplier: string;
