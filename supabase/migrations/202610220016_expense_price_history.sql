@@ -93,10 +93,10 @@ begin
 
   next_amount_excluding_tax := round(next_amount::numeric / (1 + next_vat_rate::numeric / 10000));
 
-  -- Pour une charge mensuelle, le nouveau tarif remplace tout le mois choisi :
-  -- une même série ne peut donc jamais être comptée deux fois dans ce mois.
+  -- La date choisie est exacte : l’ancien tarif s’arrête la veille et le
+  -- nouveau commence au jour sélectionné.
   update public.expenses
-  set ends_on = (date_trunc('month', effective_on)::date - 1),
+  set ends_on = effective_on - 1,
       updated_at = now()
   where id = current_expense.id;
 

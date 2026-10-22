@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   actualPersonMinutes,
+  cashBalance,
   calculateVat,
   clientRevenueMetrics,
   collectedInterventionRevenue,
@@ -23,7 +24,7 @@ import {
   paymentsForInvoice,
   servicePerformance,
 } from "./calculations";
-import type { Intervention, Invoice, MonthlyObjective, Payment } from "./types";
+import type { Expense, Intervention, Invoice, MonthlyObjective, Payment } from "./types";
 
 const base = { organizationId: "org", locationId: "loc", createdAt: "2026-01-01", updatedAt: "2026-01-01" };
 
@@ -183,6 +184,34 @@ describe("charges récurrentes", () => {
     );
     expect(ranking).toHaveLength(1);
     expect(ranking[0]).toMatchObject({ expense: { id: "new" }, total: 92_000, occurrenceCount: 9 });
+  });
+
+  it("applique une date exacte sans doubler l’abonnement pendant le mois de transition", () => {
+    const oldPrice = { ...monthly, id: "old", seriesId: "subscription", date: "2026-01-15", endsAt: "2026-10-21", amountIncludingTax: 10_000 };
+    const newPrice = { ...monthly, id: "new", seriesId: "subscription", date: "2026-10-22", amountIncludingTax: 12_000 };
+    const summary = expenseMonthSummary([oldPrice, newPrice], "2026-10", new Date("2026-10-31T12:00:00"));
+
+    expect(summary.total).toBe(12_000);
+    expect(summary.occurrences).toHaveLength(1);
+    expect(summary.occurrences[0]).toMatchObject({ expense: { id: "new" }, dueDate: "2026-10-22" });
+
+    const expenseDetails = {
+      ...base,
+      family: "fixed" as const,
+      category: "Logiciel",
+      supplier: "Éditeur",
+      description: "Abonnement",
+      amountExcludingTax: 0,
+      vatAmount: 0,
+      vatRecoverable: true,
+      recurrence: "monthly" as const,
+      allocatedMonth: "2026-01",
+      paid: true,
+    };
+    expect(cashBalance(0, [], [
+      { ...expenseDetails, ...oldPrice },
+      { ...expenseDetails, ...newPrice },
+    ] satisfies Expense[], new Date("2026-10-31T12:00:00"))).toBe(-102_000);
   });
 
   it("propose la prochaine échéance disponible pour un nouveau tarif", () => {

@@ -28,12 +28,13 @@ import { ALBAN_ID, demoSeed, DEMO_LOCATION_ID, DEMO_ORG_ID } from "./seed";
 
 const createId = () => crypto.randomUUID();
 const nowIso = () => new Date().toISOString();
-const endOfPreviousMonth = (value: string) => {
+const previousDay = (value: string) => {
   const date = value.slice(0, 10);
   const year = Number(date.slice(0, 4));
   const month = Number(date.slice(5, 7));
-  const previousMonthEnd = new Date(year, month - 1, 0, 12);
-  return `${previousMonthEnd.getFullYear()}-${String(previousMonthEnd.getMonth() + 1).padStart(2, "0")}-${String(previousMonthEnd.getDate()).padStart(2, "0")}`;
+  const day = Number(date.slice(8, 10));
+  const previous = new Date(year, month - 1, day - 1, 12);
+  return `${previous.getFullYear()}-${String(previous.getMonth() + 1).padStart(2, "0")}-${String(previous.getDate()).padStart(2, "0")}`;
 };
 const persistMutation = (mutation: WorkspaceMutation) => {
   if (isSupabaseConfigured) queueWorkspaceMutation(mutation);
@@ -409,7 +410,7 @@ export const useDemoStore = create<DemoStore>()(
           };
           set((state) => ({
             expenses: [revision, ...state.expenses.map((expense) => expense.id === expenseId
-              ? { ...expense, endsAt: endOfPreviousMonth(normalizedDate), updatedAt: nowIso() }
+              ? { ...expense, seriesId: expense.seriesId ?? expense.id, endsAt: previousDay(normalizedDate), updatedAt: nowIso() }
               : expense)],
           }));
           persistMutation({ action: "reviseExpense", expenseId, ...input, date: normalizedDate });

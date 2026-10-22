@@ -49,6 +49,12 @@ function formatMonth(month: string, style: "long" | "short" = "long") {
   return `${label.charAt(0).toUpperCase()}${label.slice(1)}`;
 }
 
+function previousDateKey(value: string) {
+  const date = new Date(`${value}T12:00:00`);
+  date.setDate(date.getDate() - 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 function vatRateForExpense(expense: Expense) {
   if (expense.amountExcludingTax <= 0) return 0;
   return Math.round(expense.vatAmount / expense.amountExcludingTax * 1_000) / 10;
@@ -93,11 +99,11 @@ function ExpenseEditor({ expense, onCancel, onSave }: { expense: Expense; onCanc
     <form className="grid gap-4" onSubmit={submit}>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Fréquence"><Select autoFocus value={recurrence} onChange={(event) => setRecurrence(event.target.value as Expense["recurrence"])}><option value="one_off">Ponctuelle</option><option value="monthly">Tous les mois</option><option value="annual">Tous les ans</option></Select></Field>
-        <Field label={isRecurringRevision ? "Première échéance au nouveau tarif" : recurrence === "one_off" ? "Date de la dépense" : "Première échéance"}><Input type="date" min={isRecurringRevision ? expense.date.slice(0, 10) : undefined} value={date} onChange={(event) => setDate(event.target.value)} /></Field>
+        <Field label={isRecurringRevision ? "Date de début du nouveau montant" : recurrence === "one_off" ? "Date de la dépense" : "Première échéance"} hint={isRecurringRevision ? "Choisissez librement le jour exact d’application." : undefined}><Input type="date" min={isRecurringRevision ? expense.date.slice(0, 10) : undefined} value={date} onChange={(event) => setDate(event.target.value)} /></Field>
       </div>
       <div className="rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-xs text-violet-800">
         {isRecurringRevision
-          ? `Les mois antérieurs à ${date ? formatMonth(date.slice(0, 7)) : "la date choisie"} conserveront l’ancien montant de ${formatMoney(expense.amountIncludingTax)}. Une nouvelle version sera créée pour la suite.`
+          ? date ? `L’ancien montant de ${formatMoney(expense.amountIncludingTax)} restera valable jusqu’au ${formatDate(previousDateKey(date))}. Le nouveau montant commencera exactement le ${formatDate(date)}.` : "Choisissez la date exacte à laquelle le nouveau montant doit commencer."
           : recurrence === "monthly" ? "Cette charge sera ajoutée automatiquement au total de chaque mois à cette date." : recurrence === "annual" ? "Cette charge sera ajoutée automatiquement au total du mois de cette échéance, chaque année." : "Cette charge ne sera comptée qu’une seule fois."}
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
@@ -180,7 +186,7 @@ export default function FinancesPage() {
         )}
       />
 
-      <Modal open={Boolean(editingExpense)} onClose={() => setEditingExpense(null)} title="Modifier la charge" description={editingExpense ? `${recurrenceLabels[editingExpense.recurrence]} · ${editingExpense.description}` : undefined}>
+      <Modal open={Boolean(editingExpense)} onClose={() => setEditingExpense(null)} title={editingExpense?.recurrence === "one_off" ? "Modifier la charge" : "Modifier le montant de l’abonnement"} description={editingExpense ? `${recurrenceLabels[editingExpense.recurrence]} · ${editingExpense.description}` : undefined}>
         {editingExpense && <ExpenseEditor key={editingExpense.id} expense={editingExpense} onCancel={() => setEditingExpense(null)} onSave={(input) => saveExpense(editingExpense, input)} />}
       </Modal>
 
