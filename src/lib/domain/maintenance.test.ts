@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { maintenanceAnnualValue, maintenanceCollectionSummary, maintenanceMonthlyRevenue, maintenanceRenewalStatus, maintenanceSchedule, maintenanceTermEndDate } from "./maintenance";
 
 describe("entretiens mensuels", () => {
+  it("tolère une date temporairement vide pendant la saisie du formulaire", () => {
+    expect(maintenanceTermEndDate("", 6)).toBe("");
+    expect(maintenanceTermEndDate("date-invalide", 6)).toBe("");
+  });
+
   it("reconnaît chaque mois un douzième d’un paiement annuel", () => {
     expect(maintenanceMonthlyRevenue({ billingFrequency: "annual", billingAmount: 120_000 })).toBe(10_000);
     expect(maintenanceAnnualValue({ billingFrequency: "monthly", billingAmount: 10_000 })).toBe(120_000);

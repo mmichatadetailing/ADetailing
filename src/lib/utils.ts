@@ -16,8 +16,10 @@ export function formatMoney(cents: number, compact = false) {
 
 export function formatDate(value?: string, options?: Intl.DateTimeFormatOptions) {
   if (!value) return "À définir";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "À définir";
   return new Intl.DateTimeFormat("fr-FR", options ?? { day: "2-digit", month: "short" }).format(
-    new Date(value),
+    date,
   );
 }
 

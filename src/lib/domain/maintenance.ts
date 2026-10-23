@@ -26,7 +26,9 @@ function monthOffset(month: string, offset: number) {
 }
 
 export function maintenanceTermEndDate(firstVisitOn: string, termMonths: number) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(firstVisitOn) || !Number.isInteger(termMonths) || termMonths < 1) return "";
   const source = new Date(`${firstVisitOn}T12:00:00`);
+  if (Number.isNaN(source.getTime())) return "";
   const target = new Date(source.getFullYear(), source.getMonth() + termMonths - 1, 1, 12);
   const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
   target.setDate(Math.min(source.getDate(), lastDay));

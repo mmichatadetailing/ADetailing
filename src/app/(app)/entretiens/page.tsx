@@ -107,7 +107,7 @@ function ContractForm({ contract, onCancel, onSave }: { contract?: MaintenanceCo
   const selectedService = services.find((service) => service.id === serviceId);
   const suggestion = suggestedServicePrice(selectedService, { vehicleCount });
   const suggestedPeriodAmount = suggestion ? suggestion.minimumAmount / 100 * billingMonths(billingFrequency, termMonths) : 0;
-  const fixedTermEnd = billingFrequency === "prepaid"
+  const fixedTermEnd = billingFrequency === "prepaid" && firstVisitOn
     ? contract?.billingFrequency === "prepaid" && contract.firstVisitOn === firstVisitOn && contract.termMonths === termMonths && contract.endsOn
       ? contract.endsOn
       : maintenanceTermEndDate(firstVisitOn, termMonths)
