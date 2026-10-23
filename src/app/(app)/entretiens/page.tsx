@@ -13,6 +13,7 @@ import {
   Repeat2,
   Route,
   Save,
+  Trash2,
   TriangleAlert,
 } from "lucide-react";
 import Link from "next/link";
@@ -78,6 +79,10 @@ function ContractForm({ contract, onCancel, onSave }: { contract?: MaintenanceCo
   const clients = data.clients.filter((client) => !client.archivedAt);
   const services = data.services.filter((service) => service.active && service.kind === "subscription");
   const members = data.team.filter((member) => member.active);
+  const financialTermsLocked = Boolean(contract && (
+    data.maintenanceBillingPeriods.some((period) => period.contractId === contract.id && period.status === "paid")
+    || data.interventions.some((intervention) => intervention.maintenanceContractId === contract.id && (intervention.status === "completed" || Boolean(intervention.startAt && intervention.startAt.slice(0, 10) < localDateKey())))
+  ));
   const defaultClient = clients.find((client) => client.id === contract?.clientId) ?? clients[0];
   const defaultService = services.find((service) => service.id === contract?.serviceId) ?? services[0];
   const defaultPrice = suggestedServicePrice(defaultService, { vehicleCount: contract?.vehicleCount ?? 1 });
@@ -102,7 +107,11 @@ function ContractForm({ contract, onCancel, onSave }: { contract?: MaintenanceCo
   const selectedService = services.find((service) => service.id === serviceId);
   const suggestion = suggestedServicePrice(selectedService, { vehicleCount });
   const suggestedPeriodAmount = suggestion ? suggestion.minimumAmount / 100 * billingMonths(billingFrequency, termMonths) : 0;
-  const fixedTermEnd = billingFrequency === "prepaid" ? maintenanceTermEndDate(firstVisitOn, termMonths) : undefined;
+  const fixedTermEnd = billingFrequency === "prepaid"
+    ? contract?.billingFrequency === "prepaid" && contract.firstVisitOn === firstVisitOn && contract.termMonths === termMonths && contract.endsOn
+      ? contract.endsOn
+      : maintenanceTermEndDate(firstVisitOn, termMonths)
+    : undefined;
 
   const selectClient = (nextClientId: string) => {
     setClientId(nextClientId);
@@ -181,17 +190,17 @@ function ContractForm({ contract, onCancel, onSave }: { contract?: MaintenanceCo
         <p className="text-sm font-bold text-sky-950">Facturation du contrat</p>
         <p className="mt-1 text-xs leading-5 text-sky-800">La visite reste mensuelle. Le client peut payer chaque mois, chaque année ou une seule fois pour une période fixe.</p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          <Field label="Rythme de paiement"><Select value={billingFrequency} onChange={(event) => selectBillingFrequency(event.target.value as MaintenanceContract["billingFrequency"])}><option value="monthly">Le client paie chaque mois</option><option value="annual">Le client paie une fois par an · renouvellement continu</option><option value="prepaid">Paiement unique · durée fixe</option></Select></Field>
+          <Field label="Rythme de paiement" hint={financialTermsLocked ? "Verrouillé car le contrat possède déjà un historique." : undefined}><Select disabled={financialTermsLocked} value={billingFrequency} onChange={(event) => selectBillingFrequency(event.target.value as MaintenanceContract["billingFrequency"])}><option value="monthly">Le client paie chaque mois</option><option value="annual">Le client paie une fois par an · renouvellement continu</option><option value="prepaid">Paiement unique · durée fixe</option></Select></Field>
           <Field label={billingFrequency === "monthly" ? "Montant TTC par mois (€)" : billingFrequency === "annual" ? "Montant TTC par an (€)" : `Montant TTC pour ${termMonths} mois (€)`}><Input type="number" min="0.01" step="0.01" value={billingAmountEuros} onChange={(event) => setBillingAmountEuros(Number(event.target.value))} /></Field>
         </div>
-        {billingFrequency === "prepaid" && <div className="mt-4 grid gap-4 rounded-xl border border-violet-200 bg-violet-50/80 p-4 sm:grid-cols-2"><Field label="Durée couverte"><Select value={termMonths} onChange={(event) => selectTermMonths(Number(event.target.value) as 6 | 12)}><option value={6}>6 mois · 6 visites</option><option value={12}>1 an · 12 visites</option></Select></Field><Field label="Relancer le client avant la fin"><Select value={renewalReminderDays} onChange={(event) => setRenewalReminderDays(Number(event.target.value))}><option value={15}>15 jours avant</option><option value={30}>30 jours avant</option><option value={45}>45 jours avant</option><option value={60}>60 jours avant</option><option value={90}>90 jours avant</option></Select></Field><div className="sm:col-span-2 rounded-lg bg-white/80 px-3 py-2 text-xs text-violet-900"><strong>Période couverte :</strong> du {formatDate(firstVisitOn)} au {fixedTermEnd ? formatDate(fixedTermEnd) : "—"}. Une seule échéance sera créée.</div></div>}
+        {billingFrequency === "prepaid" && <div className="mt-4 grid gap-4 rounded-xl border border-violet-200 bg-violet-50/80 p-4 sm:grid-cols-2"><Field label="Durée couverte" hint={financialTermsLocked ? "La durée du cycle payé ne peut plus être modifiée." : undefined}><Select disabled={financialTermsLocked} value={termMonths} onChange={(event) => selectTermMonths(Number(event.target.value) as 6 | 12)}><option value={6}>6 mois · 6 visites</option><option value={12}>1 an · 12 visites</option></Select></Field><Field label="Relancer le client avant la fin"><Select value={renewalReminderDays} onChange={(event) => setRenewalReminderDays(Number(event.target.value))}><option value={15}>15 jours avant</option><option value={30}>30 jours avant</option><option value={45}>45 jours avant</option><option value={60}>60 jours avant</option><option value={90}>90 jours avant</option></Select></Field><div className="sm:col-span-2 rounded-lg bg-white/80 px-3 py-2 text-xs text-violet-900"><strong>Période couverte :</strong> du {formatDate(firstVisitOn)} au {fixedTermEnd ? formatDate(fixedTermEnd) : "—"}. Une seule échéance sera créée.</div></div>}
         {suggestion && <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-200 bg-white/70 px-3 py-2 text-xs text-sky-900"><span>Suggestion Catalogue : <strong>{formatMoney(Math.round(suggestedPeriodAmount * 100))}</strong> {billingFrequency === "monthly" ? "par mois" : billingFrequency === "annual" ? "par an" : `pour ${termMonths} mois`}</span><Button size="sm" variant="secondary" onClick={() => setBillingAmountEuros(suggestedPeriodAmount)}>Utiliser ce montant</Button></div>}
       </div>
       <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
         <p className="text-sm font-bold text-emerald-950">Organisation des visites mensuelles</p>
         <p className="mt-1 text-xs leading-5 text-emerald-800">{billingFrequency === "prepaid" ? `${termMonths} prestations seront préparées, exactement sur la période payée.` : "Douze prestations seront préparées dans le planning."} Elles resteront déplaçables individuellement.</p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Field label="Première visite" hint="Du 1er au 28 du mois"><Input type="date" value={firstVisitOn} onChange={(event) => setFirstVisitOn(event.target.value)} /></Field>
+          <Field label="Première visite" hint={financialTermsLocked ? "La date d’origine est conservée pour protéger l’historique." : "Du 1er au 28 du mois"}><Input disabled={financialTermsLocked} type="date" value={firstVisitOn} onChange={(event) => setFirstVisitOn(event.target.value)} /></Field>
           <Field label="Heure habituelle"><Input type="time" value={preferredStartTime} onChange={(event) => setPreferredStartTime(event.target.value)} /></Field>
           <Field label="Durée par visite (h)"><Input type="number" min="0.25" max="24" step="0.25" value={durationHours} onChange={(event) => setDurationHours(Number(event.target.value))} /></Field>
           <Field label="Collaborateur principal"><Select value={memberId} onChange={(event) => setMemberId(event.target.value)}><option value="">Sélectionner…</option>{members.map((member) => <option key={member.id} value={member.id}>{member.firstName} {member.lastName}</option>)}</Select></Field>
@@ -210,6 +219,7 @@ export default function EntretiensPage() {
   const { mode, workspace, refresh } = useWorkspace();
   const canManage = mode === "demo" || Boolean(workspace?.canManageBusiness);
   const [editingContract, setEditingContract] = useState<MaintenanceContract | "new" | null>(null);
+  const [deletingContract, setDeletingContract] = useState<MaintenanceContract | null>(null);
   const [paymentPeriod, setPaymentPeriod] = useState<MaintenanceBillingPeriod | null>(null);
   const [paymentDate, setPaymentDate] = useState(localDateKey());
   const [paymentMethod, setPaymentMethod] = useState("Virement");
@@ -221,7 +231,7 @@ export default function EntretiensPage() {
     : data.maintenanceContracts.filter((contract) => contract.assignedMemberIds.includes(workspace.userId));
   const visibleContractIds = new Set(visibleContracts.map((contract) => contract.id));
   const visibleBillingPeriods = data.maintenanceBillingPeriods.filter((period) => visibleContractIds.has(period.contractId));
-  const activeContracts = visibleContracts.filter((contract) => contract.status === "active");
+  const activeContracts = visibleContracts.filter((contract) => contract.status === "active" && (contract.billingFrequency !== "prepaid" || !contract.endsOn || contract.endsOn >= today));
   const mrr = activeContracts.reduce((sum, contract) => sum + maintenanceMonthlyRevenue(contract), 0);
   const annualValue = activeContracts.reduce((sum, contract) => sum + maintenanceAnnualValue(contract), 0);
   const monthlyVisits = data.interventions.filter((intervention) => intervention.maintenanceContractId && visibleContractIds.has(intervention.maintenanceContractId) && intervention.startAt?.slice(0, 7) === currentMonth && intervention.status !== "cancelled");
@@ -281,6 +291,17 @@ export default function EntretiensPage() {
     finally { setBusyId(null); }
   };
 
+  const removeContract = async (contract: MaintenanceContract) => {
+    setBusyId(contract.id);
+    try {
+      if (mode === "demo") data.removeMaintenanceContract(contract.id);
+      else await request({ action: "archive", contractId: contract.id });
+      setDeletingContract(null);
+      toast.success("Entretien mensuel supprimé", { description: "Les rendez-vous futurs et les échéances non encaissées ont été annulés. L’historique réalisé et les paiements restent conservés." });
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Suppression impossible."); }
+    finally { setBusyId(null); }
+  };
+
   const setPaid = async (period: MaintenanceBillingPeriod, paid: boolean) => {
     if (paid && !paymentDate) return toast.error("Choisissez la date du paiement.");
     setBusyId(period.id);
@@ -329,7 +350,7 @@ export default function EntretiensPage() {
               <div><p className="text-[10px] font-bold text-zinc-500 uppercase">Paiement</p><p className="mt-1 text-sm font-bold text-zinc-900">{formatMoney(contract.billingAmount)}</p><p className="mt-1 text-[10px] text-zinc-500">{billingLabel(contract)}</p>{contract.billingFrequency === "prepaid" && contract.endsOn && <p className={`mt-1 text-[10px] ${renewalAlert ? "font-bold text-amber-700" : "text-zinc-500"}`}>Couvert jusqu’au {formatDate(contract.endsOn)}</p>}</div>
               <div><p className="text-[10px] font-bold text-zinc-500 uppercase">Prochaine visite</p><p className="mt-1 text-sm font-bold text-zinc-900">{nextVisit?.startAt ? formatDate(nextVisit.startAt, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "À prolonger"}</p><p className="mt-1 text-[10px] text-zinc-500">{member ? `${member.firstName} ${member.lastName}` : "Équipe à vérifier"}</p></div>
               <div><p className="text-[10px] font-bold text-zinc-500 uppercase">Encaissements</p><p className="mt-1 text-sm font-bold text-emerald-700">{formatMoney(contractCollection.paid)}</p><p className={`mt-1 text-[10px] ${contractCollection.overdue ? "font-bold text-red-600" : "text-zinc-500"}`}>{contractCollection.overdue ? `${formatMoney(contractCollection.overdue)} en retard` : "Aucun retard"}</p></div>
-              {canManage && <div className="flex flex-wrap justify-end gap-2"><Button size="sm" variant="secondary" onClick={() => setEditingContract(contract)}><Pencil className="size-3.5" /> Modifier</Button>{contract.billingFrequency === "prepaid" ? renewalAlert && <Button size="sm" variant="ghost" disabled={busyId === contract.id} onClick={() => void renewContract(contract)}><RefreshCw className={`size-3.5 ${busyId === contract.id ? "animate-spin" : ""}`} /> +{contract.termMonths} mois</Button> : <Button size="sm" variant="ghost" disabled={busyId === contract.id || contract.status !== "active"} onClick={() => void extendContract(contract)}><RefreshCw className={`size-3.5 ${busyId === contract.id ? "animate-spin" : ""}`} /> +12 mois</Button>}</div>}
+              {canManage && <div className="flex flex-wrap justify-end gap-2"><Button size="sm" variant="secondary" onClick={() => setEditingContract(contract)}><Pencil className="size-3.5" /> Modifier</Button>{contract.billingFrequency === "prepaid" ? renewalAlert && <Button size="sm" variant="ghost" disabled={busyId === contract.id} onClick={() => void renewContract(contract)}><RefreshCw className={`size-3.5 ${busyId === contract.id ? "animate-spin" : ""}`} /> +{contract.termMonths} mois</Button> : <Button size="sm" variant="ghost" disabled={busyId === contract.id || contract.status !== "active"} onClick={() => void extendContract(contract)}><RefreshCw className={`size-3.5 ${busyId === contract.id ? "animate-spin" : ""}`} /> +12 mois</Button>}<Button size="icon" variant="danger" aria-label={`Supprimer ${contract.title}`} onClick={() => setDeletingContract(contract)}><Trash2 className="size-3.5" /></Button></div>}
             </div>;
           })}
           {visibleContracts.length === 0 && <div className="rounded-2xl border border-dashed border-zinc-300 bg-zinc-50 p-10 text-center"><Repeat2 className="mx-auto size-7 text-zinc-400" /><p className="mt-3 text-sm font-bold text-zinc-800">Aucun entretien mensuel</p><p className="mt-1 text-xs text-zinc-500">{canManage ? "Créez un contrat : les visites et échéances seront préparées automatiquement." : "Aucun contrat d’entretien ne vous est affecté."}</p>{canManage && <Button className="mt-4" onClick={() => setEditingContract("new")}>Créer le premier contrat</Button>}</div>}
@@ -375,6 +396,10 @@ export default function EntretiensPage() {
 
       <Modal open={editingContract !== null} onClose={() => setEditingContract(null)} title={editingContract === "new" ? "Créer un entretien mensuel" : "Modifier le contrat"} description="Visites mensuelles · paiement mensuel, annuel ou unique" className="sm:max-w-4xl">
         {editingContract && <ContractForm key={editingContract === "new" ? "new" : editingContract.id} contract={editingContract === "new" ? undefined : editingContract} onCancel={() => setEditingContract(null)} onSave={(input) => saveContract(editingContract === "new" ? undefined : editingContract, input)} />}
+      </Modal>
+
+      <Modal open={Boolean(deletingContract)} onClose={() => setDeletingContract(null)} title="Supprimer cet entretien mensuel ?" description={deletingContract ? `${deletingContract.title} · ${clientName(data.clients.find((client) => client.id === deletingContract.clientId))}` : undefined}>
+        <div className="grid gap-4"><div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm leading-6 text-red-900"><p className="font-bold">Cette action arrête définitivement ce contrat.</p><ul className="mt-2 list-disc space-y-1 pl-5 text-xs"><li>les rendez-vous futurs non réalisés seront supprimés du planning ;</li><li>les échéances non encaissées seront annulées ;</li><li>les prestations déjà réalisées et les paiements encaissés resteront dans les statistiques et l’historique.</li></ul></div><div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => setDeletingContract(null)}>Conserver</Button><Button variant="danger" disabled={!deletingContract || busyId === deletingContract.id} onClick={() => deletingContract && void removeContract(deletingContract)}><Trash2 className="size-4" /> {busyId === deletingContract?.id ? "Suppression…" : "Supprimer l’entretien"}</Button></div></div>
       </Modal>
 
       <Modal open={Boolean(paymentPeriod)} onClose={() => setPaymentPeriod(null)} title="Enregistrer l’encaissement" description={paymentPeriod ? `${formatMoney(paymentPeriod.amount)} · échéance du ${formatDate(paymentPeriod.dueOn)}` : undefined}>

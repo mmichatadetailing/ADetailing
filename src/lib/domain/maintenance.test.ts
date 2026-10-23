@@ -29,10 +29,16 @@ describe("entretiens mensuels", () => {
   });
 
   it("déclenche la relance dans le délai configuré puis signale l’expiration", () => {
-    const contract = { billingFrequency: "prepaid" as const, endsOn: "2027-03-23", renewalReminderDays: 30 };
+    const contract = { status: "active" as const, billingFrequency: "prepaid" as const, endsOn: "2027-03-23", renewalReminderDays: 30 };
     expect(maintenanceRenewalStatus(contract, new Date("2027-02-20T12:00:00")).state).toBe("later");
     expect(maintenanceRenewalStatus(contract, new Date("2027-03-01T12:00:00")).state).toBe("due");
     expect(maintenanceRenewalStatus(contract, new Date("2027-03-24T12:00:00")).state).toBe("expired");
+  });
+
+  it("ne relance jamais un contrat mis en pause ou terminé", () => {
+    const contract = { billingFrequency: "prepaid" as const, endsOn: "2026-10-23", renewalReminderDays: 30 };
+    expect(maintenanceRenewalStatus({ ...contract, status: "paused" }, new Date("2026-10-20T12:00:00")).state).toBe("not_applicable");
+    expect(maintenanceRenewalStatus({ ...contract, status: "ended" }, new Date("2026-10-24T12:00:00")).state).toBe("not_applicable");
   });
 
   it("sépare les échéances encaissées, à venir et en retard", () => {

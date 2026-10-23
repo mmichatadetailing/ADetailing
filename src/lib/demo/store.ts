@@ -206,6 +206,7 @@ interface DemoActions {
   saveMaintenanceContract: (contractId: string | undefined, input: MaintenanceContractInput) => string;
   generateMaintenanceSchedule: (contractId: string, through: string) => number;
   renewMaintenanceContract: (contractId: string) => number;
+  removeMaintenanceContract: (contractId: string) => void;
   setMaintenanceBillingPaid: (periodId: string, paid: boolean, paidAt: string, method: string) => void;
   addService: (input: NewServiceInput) => string;
   updateService: (serviceId: string, input: NewServiceInput) => void;
@@ -857,7 +858,14 @@ export const useDemoStore = create<DemoStore>()(
         const existing = contractId ? get().maintenanceContracts.find((contract) => contract.id === contractId) : undefined;
         const contractBase = existing ?? entityBase();
         const termMonths = input.billingFrequency === "prepaid" ? input.termMonths ?? 6 : undefined;
-        const endsOn = input.billingFrequency === "prepaid" ? maintenanceTermEndDate(input.firstVisitOn, termMonths!) : input.endsOn;
+        const preserveFixedTermEnd = existing?.billingFrequency === "prepaid"
+          && input.billingFrequency === "prepaid"
+          && existing.firstVisitOn === input.firstVisitOn
+          && existing.termMonths === termMonths
+          && existing.endsOn;
+        const endsOn = input.billingFrequency === "prepaid"
+          ? preserveFixedTermEnd || maintenanceTermEndDate(input.firstVisitOn, termMonths!)
+          : input.endsOn;
         const through = input.billingFrequency === "prepaid" ? endsOn! : existing?.generatedThrough ?? addMonthsToDate(input.firstVisitOn, 11);
         const contract: MaintenanceContract = {
           ...contractBase,
@@ -930,6 +938,14 @@ export const useDemoStore = create<DemoStore>()(
           };
         });
         return generatedCount;
+      },
+      removeMaintenanceContract: (contractId) => {
+        const today = new Date().toISOString().slice(0, 10);
+        set((state) => ({
+          maintenanceContracts: state.maintenanceContracts.filter((contract) => contract.id !== contractId),
+          interventions: state.interventions.filter((intervention) => intervention.maintenanceContractId !== contractId || intervention.status === "completed" || intervention.status === "cancelled" || (intervention.startAt?.slice(0, 10) ?? "") < today),
+          maintenanceBillingPeriods: state.maintenanceBillingPeriods.map((period) => period.contractId === contractId && period.status === "due" ? { ...period, status: "cancelled" as const, updatedAt: nowIso() } : period),
+        }));
       },
       setMaintenanceBillingPaid: (periodId, paid, paidAt, method) => {
         set((state) => {

@@ -68,10 +68,10 @@ export function maintenanceSchedule(
 }
 
 export function maintenanceRenewalStatus(
-  contract: Pick<MaintenanceContract, "billingFrequency" | "endsOn" | "renewalReminderDays">,
+  contract: Pick<MaintenanceContract, "billingFrequency" | "endsOn" | "renewalReminderDays" | "status">,
   reference = new Date(),
 ) {
-  if (contract.billingFrequency !== "prepaid" || !contract.endsOn) {
+  if (contract.status !== "active" || contract.billingFrequency !== "prepaid" || !contract.endsOn) {
     return { state: "not_applicable" as const, daysRemaining: null, reminderOn: undefined };
   }
   const today = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate(), 12);

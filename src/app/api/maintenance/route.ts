@@ -28,6 +28,7 @@ const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("update"), contractId: z.uuid(), ...contractFields }),
   z.object({ action: z.literal("generate"), contractId: z.uuid(), through: z.iso.date() }),
   z.object({ action: z.literal("renew"), contractId: z.uuid() }),
+  z.object({ action: z.literal("archive"), contractId: z.uuid() }),
   z.object({ action: z.literal("setPayment"), periodId: z.uuid(), paid: z.boolean(), paidAt: z.iso.datetime(), method: z.string().trim().min(2).max(80) }),
 ]);
 
@@ -80,6 +81,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, generated: renewal?.generated_count ?? 0, endsOn: renewal?.new_ends_on });
     }
 
+    if (input.action === "archive") {
+      const { data, error } = await supabase.rpc("archive_maintenance_contract", { target_contract: input.contractId });
+      ensureNoError(error);
+      return NextResponse.json({ ok: true, id: data });
+    }
+
     const { data: client, error: clientError } = await supabase.from("clients")
       .select("id")
       .eq("organization_id", workspace.organizationId)
@@ -115,8 +122,42 @@ export async function POST(request: Request) {
     const visitDay = Number(input.firstVisitOn.slice(8, 10));
     if (visitDay < 1 || visitDay > 28) throw new Error("La première visite doit être fixée entre le 1er et le 28 du mois.");
 
+    let existing: Record<string, unknown> | null = null;
+    if (input.action === "update") {
+      const { data, error } = await supabase.from("maintenance_contracts")
+        .select("id,generated_through,billing_frequency,term_months,first_visit_on,ends_on")
+        .eq("organization_id", workspace.organizationId)
+        .eq("id", input.contractId)
+        .is("archived_at", null)
+        .maybeSingle();
+      ensureNoError(error);
+      if (!data) throw new Error("Contrat d’entretien introuvable.");
+      existing = data;
+
+      const structuralTermsChanged = data.billing_frequency !== input.billingFrequency
+        || Number(data.term_months ?? 0) !== Number(input.termMonths ?? 0)
+        || data.first_visit_on !== input.firstVisitOn;
+      if (structuralTermsChanged) {
+        const [visitsResult, billingResult] = await Promise.all([
+          supabase.from("interventions").select("id,status,start_at").eq("organization_id", workspace.organizationId).eq("maintenance_contract_id", input.contractId).is("archived_at", null),
+          supabase.from("maintenance_billing_periods").select("id,status").eq("organization_id", workspace.organizationId).eq("contract_id", input.contractId),
+        ]);
+        ensureNoError(visitsResult.error);
+        ensureNoError(billingResult.error);
+        const now = new Date().toISOString();
+        const hasHistory = (visitsResult.data ?? []).some((visit) => visit.status === "completed" || Boolean(visit.start_at && visit.start_at < now))
+          || (billingResult.data ?? []).some((period) => period.status === "paid");
+        if (hasHistory) throw new Error("Le rythme, la durée et la date d’origine sont verrouillés car ce contrat possède déjà un historique. Créez un nouveau contrat pour changer ces éléments.");
+      }
+    }
+
+    const preserveFixedTermEnd = existing?.billing_frequency === "prepaid"
+      && input.billingFrequency === "prepaid"
+      && existing.first_visit_on === input.firstVisitOn
+      && Number(existing.term_months) === Number(input.termMonths)
+      && typeof existing.ends_on === "string";
     const fixedTermEnd = input.billingFrequency === "prepaid"
-      ? maintenanceTermEndDate(input.firstVisitOn, input.termMonths!)
+      ? preserveFixedTermEnd ? existing!.ends_on as string : maintenanceTermEndDate(input.firstVisitOn, input.termMonths!)
       : input.endsOn || null;
     const row = {
       organization_id: workspace.organizationId,
@@ -153,22 +194,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, id: contract.id }, { status: 201 });
     }
 
-    const { data: existing, error: existingError } = await supabase.from("maintenance_contracts")
-      .select("id,generated_through")
-      .eq("organization_id", workspace.organizationId)
-      .eq("id", input.contractId)
-      .is("archived_at", null)
-      .maybeSingle();
-    ensureNoError(existingError);
-    if (!existing) throw new Error("Contrat d’entretien introuvable.");
-
     const { error } = await supabase.from("maintenance_contracts")
       .update(row)
       .eq("organization_id", workspace.organizationId)
       .eq("id", input.contractId);
     ensureNoError(error);
-    const through = input.billingFrequency === "prepaid" ? fixedTermEnd! : existing.generated_through && existing.generated_through > input.firstVisitOn
-      ? existing.generated_through
+    const existingGeneratedThrough = typeof existing?.generated_through === "string" ? existing.generated_through : undefined;
+    const through = input.billingFrequency === "prepaid" ? fixedTermEnd! : existingGeneratedThrough && existingGeneratedThrough > input.firstVisitOn
+      ? existingGeneratedThrough
       : addMonths(input.firstVisitOn, 11);
     const { error: refreshError } = await supabase.rpc("refresh_maintenance_schedule", { target_contract: input.contractId, target_through: through });
     ensureNoError(refreshError);
