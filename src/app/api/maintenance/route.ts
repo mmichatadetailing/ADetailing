@@ -11,7 +11,7 @@ const contractFields = {
   status: z.enum(["active", "paused", "ended"]),
   billingFrequency: z.enum(["monthly", "annual", "prepaid"]),
   billingAmount: z.number().int().positive().max(100_000_000_000),
-  termMonths: z.union([z.literal(6), z.literal(12)]).nullable().optional(),
+  termMonths: z.number().int().min(1).max(36).nullable().optional(),
   renewalReminderDays: z.number().int().min(7).max(90),
   vehicleCount: z.number().int().min(1).max(1000),
   firstVisitOn: z.iso.date(),
@@ -118,7 +118,7 @@ export async function POST(request: Request) {
       throw new Error("Un collaborateur sélectionné n’est plus actif dans cette équipe.");
     }
     if (input.endsOn && input.endsOn < input.firstVisitOn) throw new Error("La date de fin doit suivre la première visite.");
-    if (input.billingFrequency === "prepaid" && !input.termMonths) throw new Error("Choisissez une durée de 6 ou 12 mois.");
+    if (input.billingFrequency === "prepaid" && !input.termMonths) throw new Error("Choisissez une durée comprise entre 1 et 36 mois.");
     const visitDay = Number(input.firstVisitOn.slice(8, 10));
     if (visitDay < 1 || visitDay > 28) throw new Error("La première visite doit être fixée entre le 1er et le 28 du mois.");
 

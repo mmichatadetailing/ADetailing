@@ -245,7 +245,7 @@ export interface MaintenanceContract extends BaseEntity {
   status: MaintenanceContractStatus;
   billingFrequency: MaintenanceBillingFrequency;
   billingAmount: Money;
-  termMonths?: 6 | 12;
+  termMonths?: number;
   renewalReminderDays: number;
   vehicleCount: number;
   firstVisitOn: string;

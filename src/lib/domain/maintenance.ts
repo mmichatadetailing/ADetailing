@@ -25,7 +25,7 @@ function monthOffset(month: string, offset: number) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
-export function maintenanceTermEndDate(firstVisitOn: string, termMonths: 6 | 12) {
+export function maintenanceTermEndDate(firstVisitOn: string, termMonths: number) {
   const source = new Date(`${firstVisitOn}T12:00:00`);
   const target = new Date(source.getFullYear(), source.getMonth() + termMonths - 1, 1, 12);
   const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();

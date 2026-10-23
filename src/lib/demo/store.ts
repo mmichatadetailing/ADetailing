@@ -161,7 +161,7 @@ export interface MaintenanceContractInput {
   status: MaintenanceContract["status"];
   billingFrequency: MaintenanceContract["billingFrequency"];
   billingAmount: number;
-  termMonths?: 6 | 12;
+  termMonths?: number;
   renewalReminderDays: number;
   vehicleCount: number;
   firstVisitOn: string;

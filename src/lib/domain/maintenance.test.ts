@@ -28,6 +28,15 @@ describe("entretiens mensuels", () => {
     expect(schedule.reduce((sum, entry) => sum + entry.recognizedRevenue, 0)).toBe(60_000);
   });
 
+  it("adapte exactement le nombre de prestations à toute durée payée", () => {
+    const endsOn = maintenanceTermEndDate("2026-10-23", 9);
+    const schedule = maintenanceSchedule({ firstVisitOn: "2026-10-23", visitDay: 23, endsOn, billingFrequency: "prepaid", billingAmount: 90_000, termMonths: 9 }, endsOn);
+    expect(endsOn).toBe("2027-06-23");
+    expect(schedule).toHaveLength(9);
+    expect(schedule.filter((entry) => entry.billingDue)).toHaveLength(1);
+    expect(schedule.reduce((sum, entry) => sum + entry.recognizedRevenue, 0)).toBe(90_000);
+  });
+
   it("déclenche la relance dans le délai configuré puis signale l’expiration", () => {
     const contract = { status: "active" as const, billingFrequency: "prepaid" as const, endsOn: "2027-03-23", renewalReminderDays: 30 };
     expect(maintenanceRenewalStatus(contract, new Date("2027-02-20T12:00:00")).state).toBe("later");

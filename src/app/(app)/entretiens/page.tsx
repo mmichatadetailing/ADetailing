@@ -49,7 +49,7 @@ function billingLabel(contract: Pick<MaintenanceContract, "billingFrequency" | "
     : billingLabels[contract.billingFrequency];
 }
 
-function billingMonths(frequency: MaintenanceContract["billingFrequency"], termMonths: 6 | 12) {
+function billingMonths(frequency: MaintenanceContract["billingFrequency"], termMonths: number) {
   return frequency === "monthly" ? 1 : frequency === "prepaid" ? termMonths : 12;
 }
 
@@ -91,7 +91,7 @@ function ContractForm({ contract, onCancel, onSave }: { contract?: MaintenanceCo
   const [title, setTitle] = useState(contract?.title ?? defaultService?.name ?? "Entretien mensuel");
   const [status, setStatus] = useState<MaintenanceContract["status"]>(contract?.status ?? "active");
   const [billingFrequency, setBillingFrequency] = useState<MaintenanceContract["billingFrequency"]>(contract?.billingFrequency ?? "monthly");
-  const [termMonths, setTermMonths] = useState<6 | 12>(contract?.termMonths ?? 6);
+  const [termMonths, setTermMonths] = useState(contract?.termMonths ?? 6);
   const [renewalReminderDays, setRenewalReminderDays] = useState(contract?.renewalReminderDays ?? 30);
   const [billingAmountEuros, setBillingAmountEuros] = useState((contract?.billingAmount ?? defaultPrice?.minimumAmount ?? 0) / 100);
   const [vehicleCount, setVehicleCount] = useState(contract?.vehicleCount ?? 1);
@@ -134,11 +134,12 @@ function ContractForm({ contract, onCancel, onSave }: { contract?: MaintenanceCo
     setBillingAmountEuros((amount) => Math.round(amount / previousMonths * nextMonths * 100) / 100);
     setBillingFrequency(nextFrequency);
   };
-  const selectTermMonths = (nextTerm: 6 | 12) => {
+  const selectTermMonths = (nextTerm: number) => {
+    const safeTerm = Math.min(36, Math.max(1, Math.round(nextTerm)));
     if (billingFrequency === "prepaid") {
-      setBillingAmountEuros((amount) => Math.round(amount / termMonths * nextTerm * 100) / 100);
+      setBillingAmountEuros((amount) => Math.round(amount / termMonths * safeTerm * 100) / 100);
     }
-    setTermMonths(nextTerm);
+    setTermMonths(safeTerm);
   };
 
   const submit = async (event: FormEvent) => {
@@ -193,7 +194,7 @@ function ContractForm({ contract, onCancel, onSave }: { contract?: MaintenanceCo
           <Field label="Rythme de paiement" hint={financialTermsLocked ? "Verrouillé car le contrat possède déjà un historique." : undefined}><Select disabled={financialTermsLocked} value={billingFrequency} onChange={(event) => selectBillingFrequency(event.target.value as MaintenanceContract["billingFrequency"])}><option value="monthly">Le client paie chaque mois</option><option value="annual">Le client paie une fois par an · renouvellement continu</option><option value="prepaid">Paiement unique · durée fixe</option></Select></Field>
           <Field label={billingFrequency === "monthly" ? "Montant TTC par mois (€)" : billingFrequency === "annual" ? "Montant TTC par an (€)" : `Montant TTC pour ${termMonths} mois (€)`}><Input type="number" min="0.01" step="0.01" value={billingAmountEuros} onChange={(event) => setBillingAmountEuros(Number(event.target.value))} /></Field>
         </div>
-        {billingFrequency === "prepaid" && <div className="mt-4 grid gap-4 rounded-xl border border-violet-200 bg-violet-50/80 p-4 sm:grid-cols-2"><Field label="Durée couverte" hint={financialTermsLocked ? "La durée du cycle payé ne peut plus être modifiée." : undefined}><Select disabled={financialTermsLocked} value={termMonths} onChange={(event) => selectTermMonths(Number(event.target.value) as 6 | 12)}><option value={6}>6 mois · 6 visites</option><option value={12}>1 an · 12 visites</option></Select></Field><Field label="Relancer le client avant la fin"><Select value={renewalReminderDays} onChange={(event) => setRenewalReminderDays(Number(event.target.value))}><option value={15}>15 jours avant</option><option value={30}>30 jours avant</option><option value={45}>45 jours avant</option><option value={60}>60 jours avant</option><option value={90}>90 jours avant</option></Select></Field><div className="sm:col-span-2 rounded-lg bg-white/80 px-3 py-2 text-xs text-violet-900"><strong>Période couverte :</strong> du {formatDate(firstVisitOn)} au {fixedTermEnd ? formatDate(fixedTermEnd) : "—"}. Une seule échéance sera créée.</div></div>}
+        {billingFrequency === "prepaid" && <div className="mt-4 grid gap-4 rounded-xl border border-violet-200 bg-violet-50/80 p-4 sm:grid-cols-2"><Field label="Nombre de mois payés" hint={financialTermsLocked ? "La durée du cycle payé ne peut plus être modifiée." : "Chaque mois payé crée exactement une prestation."}><Input disabled={financialTermsLocked} type="number" min={1} max={36} step={1} value={termMonths} onChange={(event) => selectTermMonths(Number(event.target.value))} /></Field><Field label="Relancer le client avant la fin"><Select value={renewalReminderDays} onChange={(event) => setRenewalReminderDays(Number(event.target.value))}><option value={15}>15 jours avant</option><option value={30}>30 jours avant</option><option value={45}>45 jours avant</option><option value={60}>60 jours avant</option><option value={90}>90 jours avant</option></Select></Field><div className="sm:col-span-2 rounded-lg bg-white/80 px-3 py-2 text-xs text-violet-900"><strong>{termMonths} mois payés = {termMonths} prestations créées.</strong><span className="ml-1">Période couverte du {formatDate(firstVisitOn)} au {fixedTermEnd ? formatDate(fixedTermEnd) : "—"}, avec une seule échéance.</span></div></div>}
         {suggestion && <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-200 bg-white/70 px-3 py-2 text-xs text-sky-900"><span>Suggestion Catalogue : <strong>{formatMoney(Math.round(suggestedPeriodAmount * 100))}</strong> {billingFrequency === "monthly" ? "par mois" : billingFrequency === "annual" ? "par an" : `pour ${termMonths} mois`}</span><Button size="sm" variant="secondary" onClick={() => setBillingAmountEuros(suggestedPeriodAmount)}>Utiliser ce montant</Button></div>}
       </div>
       <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
