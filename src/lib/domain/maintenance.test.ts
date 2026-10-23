@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { maintenanceAnnualValue, maintenanceCollectionSummary, maintenanceMonthlyRevenue, maintenanceSchedule } from "./maintenance";
+import { maintenanceAnnualValue, maintenanceCollectionSummary, maintenanceMonthlyRevenue, maintenanceRenewalStatus, maintenanceSchedule, maintenanceTermEndDate } from "./maintenance";
 
 describe("entretiens mensuels", () => {
   it("reconnaît chaque mois un douzième d’un paiement annuel", () => {
@@ -17,6 +17,22 @@ describe("entretiens mensuels", () => {
   it("répartit les centimes annuels sans écart sur les douze visites", () => {
     const schedule = maintenanceSchedule({ firstVisitOn: "2026-01-10", visitDay: 10, billingFrequency: "annual", billingAmount: 10_000 }, "2026-12-31");
     expect(schedule.reduce((sum, entry) => sum + entry.recognizedRevenue, 0)).toBe(10_000);
+  });
+
+  it("prépare exactement six visites et un seul paiement pour un forfait de six mois", () => {
+    const endsOn = maintenanceTermEndDate("2026-10-23", 6);
+    const schedule = maintenanceSchedule({ firstVisitOn: "2026-10-23", visitDay: 23, endsOn, billingFrequency: "prepaid", billingAmount: 60_000, termMonths: 6 }, endsOn);
+    expect(endsOn).toBe("2027-03-23");
+    expect(schedule).toHaveLength(6);
+    expect(schedule.filter((entry) => entry.billingDue)).toHaveLength(1);
+    expect(schedule.reduce((sum, entry) => sum + entry.recognizedRevenue, 0)).toBe(60_000);
+  });
+
+  it("déclenche la relance dans le délai configuré puis signale l’expiration", () => {
+    const contract = { billingFrequency: "prepaid" as const, endsOn: "2027-03-23", renewalReminderDays: 30 };
+    expect(maintenanceRenewalStatus(contract, new Date("2027-02-20T12:00:00")).state).toBe("later");
+    expect(maintenanceRenewalStatus(contract, new Date("2027-03-01T12:00:00")).state).toBe("due");
+    expect(maintenanceRenewalStatus(contract, new Date("2027-03-24T12:00:00")).state).toBe("expired");
   });
 
   it("sépare les échéances encaissées, à venir et en retard", () => {

@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { paymentStatusForInvoice } from "@/lib/domain/calculations";
-import { maintenanceSchedule } from "@/lib/domain/maintenance";
+import { maintenanceSchedule, maintenanceTermEndDate } from "@/lib/domain/maintenance";
 import type {
   AppData,
   AppSettings,
@@ -161,6 +161,8 @@ export interface MaintenanceContractInput {
   status: MaintenanceContract["status"];
   billingFrequency: MaintenanceContract["billingFrequency"];
   billingAmount: number;
+  termMonths?: 6 | 12;
+  renewalReminderDays: number;
   vehicleCount: number;
   firstVisitOn: string;
   preferredStartTime: string;
@@ -203,6 +205,7 @@ interface DemoActions {
   removePlanningEvent: (eventId: string) => void;
   saveMaintenanceContract: (contractId: string | undefined, input: MaintenanceContractInput) => string;
   generateMaintenanceSchedule: (contractId: string, through: string) => number;
+  renewMaintenanceContract: (contractId: string) => number;
   setMaintenanceBillingPaid: (periodId: string, paid: boolean, paidAt: string, method: string) => void;
   addService: (input: NewServiceInput) => string;
   updateService: (serviceId: string, input: NewServiceInput) => void;
@@ -853,7 +856,9 @@ export const useDemoStore = create<DemoStore>()(
       saveMaintenanceContract: (contractId, input) => {
         const existing = contractId ? get().maintenanceContracts.find((contract) => contract.id === contractId) : undefined;
         const contractBase = existing ?? entityBase();
-        const through = existing?.generatedThrough ?? addMonthsToDate(input.firstVisitOn, 11);
+        const termMonths = input.billingFrequency === "prepaid" ? input.termMonths ?? 6 : undefined;
+        const endsOn = input.billingFrequency === "prepaid" ? maintenanceTermEndDate(input.firstVisitOn, termMonths!) : input.endsOn;
+        const through = input.billingFrequency === "prepaid" ? endsOn! : existing?.generatedThrough ?? addMonthsToDate(input.firstVisitOn, 11);
         const contract: MaintenanceContract = {
           ...contractBase,
           clientId: input.clientId,
@@ -862,6 +867,8 @@ export const useDemoStore = create<DemoStore>()(
           status: input.status,
           billingFrequency: input.billingFrequency,
           billingAmount: input.billingAmount,
+          termMonths,
+          renewalReminderDays: input.renewalReminderDays,
           vehicleCount: input.vehicleCount,
           firstVisitOn: input.firstVisitOn,
           visitDay: Number(input.firstVisitOn.slice(8, 10)),
@@ -870,7 +877,7 @@ export const useDemoStore = create<DemoStore>()(
           assignedMemberIds: [...new Set(input.assignedMemberIds)],
           address: input.address.trim(),
           notes: input.notes.trim(),
-          endsOn: input.endsOn,
+          endsOn,
           generatedThrough: through,
           updatedAt: nowIso(),
         };
@@ -903,6 +910,23 @@ export const useDemoStore = create<DemoStore>()(
             interventions: generated.interventions,
             maintenanceBillingPeriods: generated.maintenanceBillingPeriods,
             maintenanceContracts: state.maintenanceContracts.map((item) => item.id === contractId ? { ...item, generatedThrough: through, updatedAt: nowIso() } : item),
+          };
+        });
+        return generatedCount;
+      },
+      renewMaintenanceContract: (contractId) => {
+        let generatedCount = 0;
+        set((state) => {
+          const contract = state.maintenanceContracts.find((item) => item.id === contractId);
+          if (!contract || contract.billingFrequency !== "prepaid" || !contract.termMonths || !contract.endsOn) return state;
+          const endsOn = addMonthsToDate(contract.endsOn, contract.termMonths);
+          const renewed = { ...contract, status: "active" as const, endsOn, generatedThrough: endsOn, updatedAt: nowIso() };
+          const generated = addDemoMaintenanceSchedule(state, renewed, endsOn);
+          generatedCount = generated.generated;
+          return {
+            interventions: generated.interventions,
+            maintenanceBillingPeriods: generated.maintenanceBillingPeriods,
+            maintenanceContracts: state.maintenanceContracts.map((item) => item.id === contractId ? renewed : item),
           };
         });
         return generatedCount;

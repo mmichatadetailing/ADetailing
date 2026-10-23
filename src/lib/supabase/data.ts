@@ -249,6 +249,8 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User):
     status: text(row, "status", "active") as MaintenanceContract["status"],
     billingFrequency: text(row, "billing_frequency", "monthly") as MaintenanceContract["billingFrequency"],
     billingAmount: number(row, "billing_amount_cents"),
+    termMonths: nullableNumber(row, "term_months") as MaintenanceContract["termMonths"],
+    renewalReminderDays: number(row, "renewal_reminder_days", 30),
     vehicleCount: number(row, "vehicle_count", 1),
     firstVisitOn: text(row, "first_visit_on"),
     visitDay: number(row, "visit_day", 1),

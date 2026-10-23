@@ -3,6 +3,7 @@
 import {
   ArrowRight,
   Banknote,
+  BellRing,
   CalendarClock,
   CheckCircle2,
   ChevronRight,
@@ -39,6 +40,7 @@ import {
 import { interventionStatusLabels } from "@/lib/domain/labels";
 import { buildDashboardChartData } from "@/lib/domain/dashboard-charts";
 import { getInterventionWorkflow } from "@/lib/domain/intervention-workflow";
+import { maintenanceRenewalStatus } from "@/lib/domain/maintenance";
 import { getCompanyStatsPeriod, getCompanyStatsPeriodOptions, getPreviousCompanyStatsPeriodKey, isDateInRange, type CompanyStatsPeriodKey } from "@/lib/domain/periods";
 import { useDemoStore } from "@/lib/demo/store";
 import { formatDate, formatMoney } from "@/lib/utils";
@@ -133,6 +135,13 @@ export default function DashboardPage() {
   const expenseRanking = rankExpensesForMonths(data.expenses, statisticsPeriod.monthKeys, periodReference).slice(0, 8);
   const largestExpense = expenseRanking[0]?.total ?? 0;
   const recurrenceLabels = { monthly: "Mensuelle", annual: "Annuelle", one_off: "Ponctuelle" } as const;
+  const visibleMaintenanceContracts = workspace?.canManageBusiness || !workspace
+    ? data.maintenanceContracts
+    : data.maintenanceContracts.filter((contract) => contract.assignedMemberIds.includes(workspace.userId));
+  const maintenanceRenewals = visibleMaintenanceContracts.filter((contract) => {
+    const renewal = maintenanceRenewalStatus(contract, now);
+    return renewal.state === "due" || renewal.state === "expired";
+  });
   const kpis = [
     { label: "CA encaissé", value: formatMoney(collected), detail: statisticsPeriod.label, comparison: evolutionLabel(collected, previousCollected, previousLabel), icon: Banknote, color: "text-emerald-600", tone: "from-emerald-50/90 to-white", href: "/finances" },
     { label: statisticsPeriod.kind === "year" ? "Objectif annuel" : "Objectif du mois", value: objective > 0 ? `${Math.round(collected / objective * 100)} %` : "À définir", detail: objective > 0 ? `${formatMoney(Math.max(objective - collected, 0))} restant sur ${formatMoney(objective)}` : "Renseignez vos objectifs dans Paramètres", comparison: evolutionLabel(collected, previousCollected, previousLabel), icon: Target, color: "text-sky-600", tone: "from-sky-50/90 to-white", href: "/parametres#objectifs-chiffre-affaires" },
@@ -252,6 +261,7 @@ export default function DashboardPage() {
           <CardContent className="grid gap-3">
             <div className="rounded-xl border border-amber-400/15 bg-amber-400/[0.055] p-4"><div className="flex items-center gap-2 text-sm font-semibold text-amber-200"><CalendarClock className="size-4" /> Planning sous-rempli</div><p className="mt-2 text-xs leading-5 text-zinc-500">Le taux de remplissage des 5 prochains jours est de {Math.round(fillRate * 100)} %. Planifiez d’abord les prestations sans créneau avant d’ouvrir de nouvelles disponibilités.</p><Progress value={fillRate * 100} className="mt-3" /></div>
             <div className="rounded-xl border border-sky-400/15 bg-sky-400/[0.045] p-4"><div className="flex items-center gap-2 text-sm font-semibold text-sky-200"><CheckCircle2 className="size-4" /> Avis à consolider</div><p className="mt-2 text-xs leading-5 text-zinc-500">{receivedReviews} avis reçu(s) sur {statisticsPeriod.label.toLocaleLowerCase("fr-FR")} pour un objectif de {reviewTarget}. Les prestations terminées sans avis peuvent encore être sollicitées.</p></div>
+            <Link href="/entretiens" className={`focus-ring rounded-xl border p-4 transition hover:-translate-y-0.5 ${maintenanceRenewals.length ? "border-amber-300 bg-amber-50 hover:bg-amber-100/70" : "border-emerald-200 bg-emerald-50/70"}`}><div className={`flex items-center gap-2 text-sm font-semibold ${maintenanceRenewals.length ? "text-amber-800" : "text-emerald-800"}`}><BellRing className="size-4" /> Renouvellements d’entretien</div><p className="mt-2 text-xs leading-5 text-zinc-600">{maintenanceRenewals.length ? `${maintenanceRenewals.length} client(s) sont à relancer pour prolonger leur forfait de 6 mois ou 1 an.` : "Aucun forfait d’entretien n’arrive prochainement à échéance."}</p></Link>
           </CardContent>
         </Card>
         <Card>

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { maintenanceTermEndDate } from "@/lib/domain/maintenance";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { canManageBusiness, requireAuthenticatedWorkspace } from "@/lib/supabase/workspace";
 
@@ -8,8 +9,10 @@ const contractFields = {
   serviceId: z.uuid().nullable().optional(),
   title: z.string().trim().min(2).max(160),
   status: z.enum(["active", "paused", "ended"]),
-  billingFrequency: z.enum(["monthly", "annual"]),
+  billingFrequency: z.enum(["monthly", "annual", "prepaid"]),
   billingAmount: z.number().int().positive().max(100_000_000_000),
+  termMonths: z.union([z.literal(6), z.literal(12)]).nullable().optional(),
+  renewalReminderDays: z.number().int().min(7).max(90),
   vehicleCount: z.number().int().min(1).max(1000),
   firstVisitOn: z.iso.date(),
   preferredStartTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
@@ -24,6 +27,7 @@ const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("create"), ...contractFields }),
   z.object({ action: z.literal("update"), contractId: z.uuid(), ...contractFields }),
   z.object({ action: z.literal("generate"), contractId: z.uuid(), through: z.iso.date() }),
+  z.object({ action: z.literal("renew"), contractId: z.uuid() }),
   z.object({ action: z.literal("setPayment"), periodId: z.uuid(), paid: z.boolean(), paidAt: z.iso.datetime(), method: z.string().trim().min(2).max(80) }),
 ]);
 
@@ -69,6 +73,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, generated: data ?? 0 });
     }
 
+    if (input.action === "renew") {
+      const { data, error } = await supabase.rpc("renew_maintenance_contract", { target_contract: input.contractId });
+      ensureNoError(error);
+      const renewal = Array.isArray(data) ? data[0] : data;
+      return NextResponse.json({ ok: true, generated: renewal?.generated_count ?? 0, endsOn: renewal?.new_ends_on });
+    }
+
     const { data: client, error: clientError } = await supabase.from("clients")
       .select("id")
       .eq("organization_id", workspace.organizationId)
@@ -100,9 +111,13 @@ export async function POST(request: Request) {
       throw new Error("Un collaborateur sélectionné n’est plus actif dans cette équipe.");
     }
     if (input.endsOn && input.endsOn < input.firstVisitOn) throw new Error("La date de fin doit suivre la première visite.");
+    if (input.billingFrequency === "prepaid" && !input.termMonths) throw new Error("Choisissez une durée de 6 ou 12 mois.");
     const visitDay = Number(input.firstVisitOn.slice(8, 10));
     if (visitDay < 1 || visitDay > 28) throw new Error("La première visite doit être fixée entre le 1er et le 28 du mois.");
 
+    const fixedTermEnd = input.billingFrequency === "prepaid"
+      ? maintenanceTermEndDate(input.firstVisitOn, input.termMonths!)
+      : input.endsOn || null;
     const row = {
       organization_id: workspace.organizationId,
       location_id: workspace.locationId,
@@ -112,6 +127,8 @@ export async function POST(request: Request) {
       status: input.status,
       billing_frequency: input.billingFrequency,
       billing_amount_cents: input.billingAmount,
+      term_months: input.billingFrequency === "prepaid" ? input.termMonths : null,
+      renewal_reminder_days: input.renewalReminderDays,
       vehicle_count: input.vehicleCount,
       first_visit_on: input.firstVisitOn,
       visit_day: visitDay,
@@ -120,7 +137,7 @@ export async function POST(request: Request) {
       assigned_member_ids: input.assignedMemberIds,
       address: input.address,
       notes: input.notes,
-      ends_on: input.endsOn || null,
+      ends_on: fixedTermEnd,
     };
 
     if (input.action === "create") {
@@ -130,7 +147,7 @@ export async function POST(request: Request) {
         .single();
       ensureNoError(error);
       if (!contract) throw new Error("Contrat d’entretien introuvable après création.");
-      const through = addMonths(input.firstVisitOn, 11);
+      const through = input.billingFrequency === "prepaid" ? fixedTermEnd! : addMonths(input.firstVisitOn, 11);
       const { error: generationError } = await supabase.rpc("generate_maintenance_schedule", { target_contract: contract.id, target_through: through });
       ensureNoError(generationError);
       return NextResponse.json({ ok: true, id: contract.id }, { status: 201 });
@@ -150,7 +167,7 @@ export async function POST(request: Request) {
       .eq("organization_id", workspace.organizationId)
       .eq("id", input.contractId);
     ensureNoError(error);
-    const through = existing.generated_through && existing.generated_through > input.firstVisitOn
+    const through = input.billingFrequency === "prepaid" ? fixedTermEnd! : existing.generated_through && existing.generated_through > input.firstVisitOn
       ? existing.generated_through
       : addMonths(input.firstVisitOn, 11);
     const { error: refreshError } = await supabase.rpc("refresh_maintenance_schedule", { target_contract: input.contractId, target_through: through });

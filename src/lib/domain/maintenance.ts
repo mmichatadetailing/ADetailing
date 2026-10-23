@@ -25,16 +25,28 @@ function monthOffset(month: string, offset: number) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
-export function maintenanceMonthlyRevenue(contract: Pick<MaintenanceContract, "billingFrequency" | "billingAmount">) {
-  return contract.billingFrequency === "monthly" ? contract.billingAmount : Math.round(contract.billingAmount / 12);
+export function maintenanceTermEndDate(firstVisitOn: string, termMonths: 6 | 12) {
+  const source = new Date(`${firstVisitOn}T12:00:00`);
+  const target = new Date(source.getFullYear(), source.getMonth() + termMonths - 1, 1, 12);
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  target.setDate(Math.min(source.getDate(), lastDay));
+  return dateKey(target);
 }
 
-export function maintenanceAnnualValue(contract: Pick<MaintenanceContract, "billingFrequency" | "billingAmount">) {
-  return contract.billingFrequency === "monthly" ? contract.billingAmount * 12 : contract.billingAmount;
+function recognitionMonths(contract: Pick<MaintenanceContract, "billingFrequency" | "termMonths">) {
+  return contract.billingFrequency === "monthly" ? 1 : contract.billingFrequency === "prepaid" ? contract.termMonths ?? 12 : 12;
+}
+
+export function maintenanceMonthlyRevenue(contract: Pick<MaintenanceContract, "billingFrequency" | "billingAmount" | "termMonths">) {
+  return Math.round(contract.billingAmount / recognitionMonths(contract));
+}
+
+export function maintenanceAnnualValue(contract: Pick<MaintenanceContract, "billingFrequency" | "billingAmount" | "termMonths">) {
+  return maintenanceMonthlyRevenue(contract) * 12;
 }
 
 export function maintenanceSchedule(
-  contract: Pick<MaintenanceContract, "firstVisitOn" | "visitDay" | "endsOn" | "billingFrequency" | "billingAmount">,
+  contract: Pick<MaintenanceContract, "firstVisitOn" | "visitDay" | "endsOn" | "billingFrequency" | "billingAmount" | "termMonths">,
   through: string,
 ): MaintenanceScheduleEntry[] {
   const firstMonth = contract.firstVisitOn.slice(0, 7);
@@ -45,13 +57,33 @@ export function maintenanceSchedule(
     const lastDay = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
     const visitOn = `${month}-${String(Math.min(contract.visitDay, lastDay)).padStart(2, "0")}`;
     if (visitOn < contract.firstVisitOn || (contract.endsOn && visitOn > contract.endsOn)) continue;
-    const billingDue = contract.billingFrequency === "monthly" || index % 12 === 0;
-    const recognizedRevenue = contract.billingFrequency === "monthly"
+    const monthsCovered = recognitionMonths(contract);
+    const billingDue = contract.billingFrequency === "monthly" || index % monthsCovered === 0;
+    const recognizedRevenue = monthsCovered === 1
       ? contract.billingAmount
-      : Math.floor(contract.billingAmount / 12) + (index % 12 < contract.billingAmount % 12 ? 1 : 0);
+      : Math.floor(contract.billingAmount / monthsCovered) + (index % monthsCovered < contract.billingAmount % monthsCovered ? 1 : 0);
     result.push({ month, visitOn, billingDue, billingAmount: billingDue ? contract.billingAmount : 0, recognizedRevenue });
   }
   return result;
+}
+
+export function maintenanceRenewalStatus(
+  contract: Pick<MaintenanceContract, "billingFrequency" | "endsOn" | "renewalReminderDays">,
+  reference = new Date(),
+) {
+  if (contract.billingFrequency !== "prepaid" || !contract.endsOn) {
+    return { state: "not_applicable" as const, daysRemaining: null, reminderOn: undefined };
+  }
+  const today = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate(), 12);
+  const end = new Date(`${contract.endsOn}T12:00:00`);
+  const reminder = new Date(end);
+  reminder.setDate(reminder.getDate() - contract.renewalReminderDays);
+  const daysRemaining = Math.ceil((end.getTime() - today.getTime()) / 86_400_000);
+  return {
+    state: end < today ? "expired" as const : reminder <= today ? "due" as const : "later" as const,
+    daysRemaining,
+    reminderOn: dateKey(reminder),
+  };
 }
 
 export function nextMaintenanceVisit(

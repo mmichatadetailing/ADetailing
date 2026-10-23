@@ -31,7 +31,7 @@ export type PaymentStatus = "unpaid" | "partial" | "paid" | "overdue";
 export type ServiceKind = "formula" | "option" | "subscription" | "pack";
 export type ServicePricingMode = "vehicle_format" | "vehicle_count" | "custom";
 export type PlanningEventKind = "meeting" | "unavailability" | "absence" | "personal";
-export type MaintenanceBillingFrequency = "monthly" | "annual";
+export type MaintenanceBillingFrequency = "monthly" | "annual" | "prepaid";
 export type MaintenanceContractStatus = "active" | "paused" | "ended";
 export type MaintenanceBillingStatus = "due" | "paid" | "cancelled";
 
@@ -245,6 +245,8 @@ export interface MaintenanceContract extends BaseEntity {
   status: MaintenanceContractStatus;
   billingFrequency: MaintenanceBillingFrequency;
   billingAmount: Money;
+  termMonths?: 6 | 12;
+  renewalReminderDays: number;
   vehicleCount: number;
   firstVisitOn: string;
   visitDay: number;
