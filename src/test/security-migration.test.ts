@@ -10,6 +10,7 @@ const googleCalendarMigration = readFileSync(resolve(process.cwd(), "supabase/mi
 const planningEventsMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/202609040013_planning_events.sql"), "utf8");
 const sharedGoogleEventsMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/202609080014_shared_google_calendar_events.sql"), "utf8");
 const roleWriteMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/202610150015_role_write_permissions.sql"), "utf8");
+const maintenancePaymentFixMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/202610240022_fix_maintenance_payment_upsert.sql"), "utf8");
 
 describe("migration de sécurité", () => {
   it("active la RLS et isole les données par organisation", () => {
@@ -119,5 +120,18 @@ describe("droits d’écriture métier", () => {
     expect(roleWriteMigration).toContain("interventions_assigned_update");
     expect(roleWriteMigration).toContain("public.is_assigned_to_intervention(intervention_id)");
     expect(roleWriteMigration).toContain("enforce_employee_intervention_fields");
+  });
+});
+
+describe("encaissements des entretiens mensuels", () => {
+  it("crée ou met à jour le paiement sans ON CONFLICT incompatible", () => {
+    expect(maintenancePaymentFixMigration).not.toContain("on conflict (maintenance_billing_period_id)");
+    expect(maintenancePaymentFixMigration).toContain("select id into payment_id");
+    expect(maintenancePaymentFixMigration).toContain("where id = payment_id");
+  });
+
+  it("permet toujours d’annuler manuellement l’encaissement", () => {
+    expect(maintenancePaymentFixMigration).toContain("delete from public.payments");
+    expect(maintenancePaymentFixMigration).toContain("set status = 'due'");
   });
 });
