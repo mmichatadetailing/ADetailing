@@ -583,6 +583,7 @@ export const useDemoStore = create<DemoStore>()(
         return payment.id;
       },
       addInterventionPayment: (interventionId, amount, method, paidAt) => {
+        if (get().interventions.some((intervention) => intervention.id === interventionId && intervention.maintenanceContractId)) return "";
         const payment: Payment = {
           ...entityBase(),
           interventionId,
@@ -720,6 +721,7 @@ export const useDemoStore = create<DemoStore>()(
         persistMutation({ action: "linkInvoiceToQuote", invoiceId, quoteId });
       },
       linkInvoiceToIntervention: (interventionId, invoiceId) => {
+        if (invoiceId && get().interventions.some((intervention) => intervention.id === interventionId && intervention.maintenanceContractId)) return;
         set((state) => ({
           interventions: state.interventions.map((item) => item.id === interventionId ? { ...item, invoiceId, updatedAt: nowIso() } : item),
         }));

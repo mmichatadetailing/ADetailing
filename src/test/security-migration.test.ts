@@ -11,6 +11,7 @@ const planningEventsMigration = readFileSync(resolve(process.cwd(), "supabase/mi
 const sharedGoogleEventsMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/202609080014_shared_google_calendar_events.sql"), "utf8");
 const roleWriteMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/202610150015_role_write_permissions.sql"), "utf8");
 const maintenancePaymentFixMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/202610240022_fix_maintenance_payment_upsert.sql"), "utf8");
+const maintenanceDoublePaymentGuardMigration = readFileSync(resolve(process.cwd(), "supabase/migrations/202610240023_prevent_maintenance_visit_double_payment.sql"), "utf8");
 
 describe("migration de sécurité", () => {
   it("active la RLS et isole les données par organisation", () => {
@@ -133,5 +134,11 @@ describe("encaissements des entretiens mensuels", () => {
   it("permet toujours d’annuler manuellement l’encaissement", () => {
     expect(maintenancePaymentFixMigration).toContain("delete from public.payments");
     expect(maintenancePaymentFixMigration).toContain("set status = 'due'");
+  });
+
+  it("interdit un second paiement directement sur une visite incluse", () => {
+    expect(maintenanceDoublePaymentGuardMigration).toContain("prevent_maintenance_visit_direct_payment");
+    expect(maintenanceDoublePaymentGuardMigration).toContain("maintenance_contract_id is not null");
+    expect(maintenanceDoublePaymentGuardMigration).toContain("before insert or update of intervention_id");
   });
 });

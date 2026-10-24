@@ -619,9 +619,10 @@ export async function POST(request: Request) {
 
     if (input.action === "addInterventionPayment") {
       if (new Date(input.paidAt).getTime() > Date.now()) throw new Error("La date du paiement ne peut pas être dans le futur.");
-      const { data: intervention, error: interventionError } = await supabase.from("interventions").select("id,status,invoice_id").eq("organization_id", organizationId).eq("id", input.interventionId).single();
+      const { data: intervention, error: interventionError } = await supabase.from("interventions").select("id,status,invoice_id,maintenance_contract_id").eq("organization_id", organizationId).eq("id", input.interventionId).single();
       ensureNoError(interventionError);
       if (!intervention) throw new Error("Prestation introuvable.");
+      if (intervention.maintenance_contract_id) throw new Error("Cette visite est incluse dans un entretien mensuel. Son paiement doit être enregistré une seule fois depuis le contrat.");
       if (intervention.status !== "completed") throw new Error("La prestation doit être terminée avant d’enregistrer son paiement.");
       if (intervention.invoice_id) throw new Error("Cette prestation possède déjà une facture : enregistrez le paiement sur la facture.");
       const { data: items, error: itemsError } = await supabase.from("intervention_items").select("revenue_allocated_cents").eq("organization_id", organizationId).eq("intervention_id", input.interventionId);
@@ -675,9 +676,10 @@ export async function POST(request: Request) {
     }
 
     if (input.action === "linkInvoiceToIntervention") {
-      const { data: intervention, error: interventionError } = await supabase.from("interventions").select("id,client_id").eq("organization_id", organizationId).eq("id", input.interventionId).single();
+      const { data: intervention, error: interventionError } = await supabase.from("interventions").select("id,client_id,maintenance_contract_id").eq("organization_id", organizationId).eq("id", input.interventionId).single();
       ensureNoError(interventionError);
       if (!intervention) throw new Error("Prestation introuvable.");
+      if (input.invoiceId && intervention.maintenance_contract_id) throw new Error("Cette visite est déjà incluse dans un contrat d’entretien. Gérez son paiement unique depuis la page Entretiens.");
       if (input.invoiceId) {
         const { data: invoice, error: invoiceError } = await supabase.from("invoices").select("id,client_id").eq("organization_id", organizationId).eq("id", input.invoiceId).single();
         ensureNoError(invoiceError);

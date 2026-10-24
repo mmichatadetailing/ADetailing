@@ -45,7 +45,7 @@ export function getInterventionWorkflow(
   return {
     steps,
     currentStep: intervention.status === "cancelled" ? null : (steps.find((step) => step.state === "current")?.id ?? null),
-    isComplete: paid,
+    isComplete: completed.every(Boolean),
     isCancelled: intervention.status === "cancelled",
     paidAmount,
     outstanding,

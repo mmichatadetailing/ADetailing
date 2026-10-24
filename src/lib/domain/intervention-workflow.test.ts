@@ -52,5 +52,10 @@ describe("parcours d’une prestation", () => {
     expect(result.paymentMode).toBe("maintenance");
     expect(result.steps[2]?.detail).toBe("Géré par l’entretien mensuel");
     expect(result.currentStep).toBe("service");
+    expect(result.isComplete).toBe(false);
+
+    const completed = getInterventionWorkflow({ ...intervention, maintenanceContractId: "contract" }, undefined, []);
+    expect(completed.isComplete).toBe(true);
+    expect(completed.currentStep).toBeNull();
   });
 });
