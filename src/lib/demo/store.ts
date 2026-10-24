@@ -943,8 +943,9 @@ export const useDemoStore = create<DemoStore>()(
       },
       removeMaintenanceContract: (contractId) => {
         const today = new Date().toISOString().slice(0, 10);
+        const archivedAt = nowIso();
         set((state) => ({
-          maintenanceContracts: state.maintenanceContracts.filter((contract) => contract.id !== contractId),
+          maintenanceContracts: state.maintenanceContracts.map((contract) => contract.id === contractId ? { ...contract, status: "ended" as const, archivedAt, updatedAt: archivedAt } : contract),
           interventions: state.interventions.filter((intervention) => intervention.maintenanceContractId !== contractId || intervention.status === "completed" || intervention.status === "cancelled" || (intervention.startAt?.slice(0, 10) ?? "") < today),
           maintenanceBillingPeriods: state.maintenanceBillingPeriods.map((period) => period.contractId === contractId && period.status === "due" ? { ...period, status: "cancelled" as const, updatedAt: nowIso() } : period),
         }));

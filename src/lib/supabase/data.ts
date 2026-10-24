@@ -139,7 +139,9 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User):
     supabase.from("payments").select("*").eq("organization_id", organizationId).order("paid_at", { ascending: false }),
     supabase.from("interventions").select("*,intervention_items(*),intervention_workers(*),intervention_checklist_items(*)").eq("organization_id", organizationId).is("archived_at", null).order("start_at"),
     supabase.from("planning_events").select("*").eq("organization_id", organizationId).is("archived_at", null).order("starts_at"),
-    supabase.from("maintenance_contracts").select("*").eq("organization_id", organizationId).is("archived_at", null).order("first_visit_on"),
+    // Les contrats archivés restent chargés pour rattacher leurs encaissements
+    // historiques au bon client, sans les réafficher dans la gestion courante.
+    supabase.from("maintenance_contracts").select("*").eq("organization_id", organizationId).order("first_visit_on"),
     supabase.from("maintenance_billing_periods").select("*").eq("organization_id", organizationId).order("due_on"),
     supabase.from("expenses").select("*").eq("organization_id", organizationId).is("archived_at", null).order("expense_date", { ascending: false }),
     supabase.from("assets").select("*").eq("organization_id", organizationId).is("archived_at", null).order("created_at", { ascending: false }),
@@ -243,6 +245,7 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User):
   }));
   const maintenanceContracts: MaintenanceContract[] = maintenanceContractRows.map((row) => ({
     ...base(row),
+    archivedAt: optionalText(row, "archived_at"),
     clientId: text(row, "client_id"),
     serviceId: optionalText(row, "service_id"),
     title: text(row, "title"),

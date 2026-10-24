@@ -75,20 +75,30 @@ describe("calculs financiers", () => {
     const direct = { ...base, id: "direct", interventionId: "i1", amount: 8_000, paidAt: "2026-07-10", method: "Carte" } satisfies Payment;
     expect(paymentsForIntervention("i1", [payment("invoice", 5_000), direct])).toBe(8_000);
   });
-  it("compte dans les objectifs uniquement les paiements rattachés à une prestation", () => {
+  it("compte dans les objectifs les paiements de prestations et d’entretiens, une seule fois", () => {
     const direct = { ...base, id: "direct", interventionId: "i1", amount: 8_000, paidAt: "2026-07-10", method: "Carte" } satisfies Payment;
     const linkedInvoice = payment("linked", 5_000);
+    const maintenancePayment = { ...base, id: "maintenance", maintenanceContractId: "contract-1", maintenanceBillingPeriodId: "period-1", amount: 11_000, paidAt: "2026-07-10", method: "Virement" } satisfies Payment;
     const unrelatedInvoice = { ...payment("unrelated", 90_000), invoiceId: "other-invoice" };
-    expect(collectedInterventionRevenue([{ id: "i1" }, { id: "i2", invoiceId: "f1" }], [direct, linkedInvoice, unrelatedInvoice])).toBe(13_000);
+    expect(collectedInterventionRevenue([{ id: "i1" }, { id: "i2", invoiceId: "f1" }], [direct, linkedInvoice, maintenancePayment, unrelatedInvoice])).toBe(24_000);
   });
-  it("agrège les revenus d'un client avec et sans facture sans double comptage", () => {
+  it("agrège les revenus d'un client avec facture, paiement direct et entretien sans double comptage", () => {
     const linkedIntervention = { ...intervention, invoiceId: invoice.id };
     const directIntervention = { ...intervention, id: "i2", invoiceId: undefined, items: [{ ...intervention.items[0]!, id: "l2", revenueAllocated: 8_000 }] };
     const scheduledIntervention = { ...intervention, id: "i3", status: "scheduled" as const, items: [{ ...intervention.items[0]!, id: "l3", revenueAllocated: 5_000 }] };
     const directPayment = { ...base, id: "direct", interventionId: "i2", amount: 8_000, paidAt: "2026-07-10", method: "Carte" } satisfies Payment;
-    const metrics = clientRevenueMetrics("c1", [invoice], [linkedIntervention, directIntervention, scheduledIntervention], [payment("invoice", 5_000), directPayment]);
+    const maintenancePayment = { ...base, id: "maintenance", maintenanceBillingPeriodId: "period-c1", amount: 11_000, paidAt: "2026-07-10", method: "Virement" } satisfies Payment;
+    const otherClientMaintenancePayment = { ...base, id: "maintenance-other", maintenanceBillingPeriodId: "period-c2", amount: 90_000, paidAt: "2026-07-10", method: "Virement" } satisfies Payment;
+    const metrics = clientRevenueMetrics(
+      "c1",
+      [invoice],
+      [linkedIntervention, directIntervention, scheduledIntervention],
+      [payment("invoice", 5_000), directPayment, maintenancePayment, otherClientMaintenancePayment],
+      [{ id: "contract-c1", clientId: "c1" }, { id: "contract-c2", clientId: "c2" }],
+      [{ id: "period-c1", contractId: "contract-c1" }, { id: "period-c2", contractId: "contract-c2" }],
+    );
     expect(metrics.revenue).toBe(58_000);
-    expect(metrics.collected).toBe(13_000);
+    expect(metrics.collected).toBe(24_000);
     expect(metrics.revenueEntryCount).toBe(2);
   });
   it("distingue paiement partiel et facture payée", () => {

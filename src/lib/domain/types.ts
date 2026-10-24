@@ -239,6 +239,7 @@ export interface Intervention extends BaseEntity {
 }
 
 export interface MaintenanceContract extends BaseEntity {
+  archivedAt?: ISODate;
   clientId: UUID;
   serviceId?: UUID;
   title: string;

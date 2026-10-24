@@ -3,6 +3,8 @@ import type {
   Expense,
   Intervention,
   Invoice,
+  MaintenanceBillingPeriod,
+  MaintenanceContract,
   Money,
   MonthlyObjective,
   Payment,
@@ -320,6 +322,8 @@ export function clientRevenueMetrics(
   invoices: Invoice[],
   interventions: Intervention[],
   payments: Payment[],
+  maintenanceContracts: Array<Pick<MaintenanceContract, "id" | "clientId">> = [],
+  maintenanceBillingPeriods: Array<Pick<MaintenanceBillingPeriod, "id" | "contractId">> = [],
 ) {
   const clientInvoices = invoices.filter((invoice) => invoice.clientId === clientId);
   const issuedInvoices = clientInvoices.filter((invoice) => invoice.status === "issued");
@@ -330,7 +334,24 @@ export function clientRevenueMetrics(
     (sum, intervention) => sum + intervention.items.reduce((itemSum, item) => itemSum + item.revenueAllocated, 0),
     0,
   );
-  const collected = collectedInterventionRevenue(clientInterventions.filter((intervention) => intervention.status !== "cancelled"), payments);
+  const clientContractIds = new Set(
+    maintenanceContracts
+      .filter((contract) => contract.clientId === clientId)
+      .map((contract) => contract.id),
+  );
+  const billingPeriodContractIds = new Map(
+    maintenanceBillingPeriods.map((period) => [period.id, period.contractId]),
+  );
+  const clientPayments = payments.filter((payment) => {
+    if (!payment.maintenanceContractId && !payment.maintenanceBillingPeriodId) return true;
+    const contractId = payment.maintenanceContractId
+      ?? (payment.maintenanceBillingPeriodId ? billingPeriodContractIds.get(payment.maintenanceBillingPeriodId) : undefined);
+    return Boolean(contractId && clientContractIds.has(contractId));
+  });
+  const collected = collectedInterventionRevenue(
+    clientInterventions.filter((intervention) => intervention.status !== "cancelled"),
+    clientPayments,
+  );
 
   return {
     invoices: clientInvoices,
@@ -392,7 +413,7 @@ export function collectedRevenue(payments: Payment[]): Money {
 
 export function collectedInterventionRevenue(
   interventions: Array<Pick<Intervention, "id" | "invoiceId">>,
-  payments: Array<Pick<Payment, "invoiceId" | "interventionId" | "amount">>,
+  payments: Array<Pick<Payment, "invoiceId" | "interventionId" | "maintenanceContractId" | "maintenanceBillingPeriodId" | "amount">>,
 ): Money {
   const interventionIds = new Set(interventions.map((intervention) => intervention.id));
   const linkedInvoiceIds = new Set(
@@ -402,7 +423,8 @@ export function collectedInterventionRevenue(
   return payments.reduce((sum, payment) => {
     const isDirectInterventionPayment = Boolean(payment.interventionId && interventionIds.has(payment.interventionId));
     const isLinkedInvoicePayment = Boolean(payment.invoiceId && linkedInvoiceIds.has(payment.invoiceId));
-    return sum + (isDirectInterventionPayment || isLinkedInvoicePayment ? payment.amount : 0);
+    const isMaintenancePayment = Boolean(payment.maintenanceContractId || payment.maintenanceBillingPeriodId);
+    return sum + (isDirectInterventionPayment || isLinkedInvoicePayment || isMaintenancePayment ? payment.amount : 0);
   }, 0);
 }
 

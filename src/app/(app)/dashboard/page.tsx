@@ -113,7 +113,7 @@ export default function DashboardPage() {
   });
   const toCollect = interventionWorkflows.filter(({ intervention, workflow }) => intervention.status === "completed" && !workflow.isComplete && workflow.outstanding > 0);
   const recentInterventionPayments = periodPayments
-    .filter((payment) => payment.interventionId || data.interventions.some((intervention) => intervention.invoiceId === payment.invoiceId))
+    .filter((payment) => payment.maintenanceContractId || payment.maintenanceBillingPeriodId || payment.interventionId || data.interventions.some((intervention) => intervention.invoiceId === payment.invoiceId))
     .sort((a, b) => b.paidAt.localeCompare(a.paidAt))
     .slice(0, 8);
   const todayActions = [
@@ -135,9 +135,10 @@ export default function DashboardPage() {
   const expenseRanking = rankExpensesForMonths(data.expenses, statisticsPeriod.monthKeys, periodReference).slice(0, 8);
   const largestExpense = expenseRanking[0]?.total ?? 0;
   const recurrenceLabels = { monthly: "Mensuelle", annual: "Annuelle", one_off: "Ponctuelle" } as const;
+  const currentMaintenanceContracts = data.maintenanceContracts.filter((contract) => !contract.archivedAt);
   const visibleMaintenanceContracts = workspace?.canManageBusiness || !workspace
-    ? data.maintenanceContracts
-    : data.maintenanceContracts.filter((contract) => contract.assignedMemberIds.includes(workspace.userId));
+    ? currentMaintenanceContracts
+    : currentMaintenanceContracts.filter((contract) => contract.assignedMemberIds.includes(workspace.userId));
   const maintenanceRenewals = visibleMaintenanceContracts.filter((contract) => {
     const renewal = maintenanceRenewalStatus(contract, now);
     return renewal.state === "due" || renewal.state === "expired";
@@ -251,7 +252,7 @@ export default function DashboardPage() {
       <Card>
         <CardHeader><div><h2 className="font-bold">Encaissements récents · {statisticsPeriod.label}</h2><p className="mt-1 text-xs text-zinc-500">Les paiements réellement reçus. La présence d’une facture n’est pas nécessaire.</p></div><Link href="/prestations" className="text-xs font-semibold text-brand-600 hover:text-brand-700">Ouvrir les prestations</Link></CardHeader>
         <CardContent className="overflow-x-auto px-0 pb-1">
-          <table className="w-full min-w-[620px] text-left text-xs"><thead className="text-[10px] tracking-wider text-zinc-600 uppercase"><tr><th className="px-5 py-3 font-semibold">Date</th><th className="px-3 py-3 font-semibold">Prestation</th><th className="px-3 py-3 font-semibold">Client</th><th className="px-3 py-3 font-semibold">Mode</th><th className="px-5 py-3 text-right font-semibold">Montant encaissé</th></tr></thead><tbody className="divide-y divide-zinc-100">{recentInterventionPayments.length === 0 ? <tr><td colSpan={5} className="px-5 py-8 text-center text-zinc-500">Aucun encaissement de prestation sur cette période.</td></tr> : recentInterventionPayments.map((payment) => { const intervention = payment.interventionId ? data.interventions.find((item) => item.id === payment.interventionId) : data.interventions.find((item) => item.invoiceId === payment.invoiceId); const client = data.clients.find((entry) => entry.id === intervention?.clientId); return <tr key={payment.id} className="hover:bg-orange-50/50"><td className="px-5 py-3 text-zinc-500">{formatDate(payment.paidAt)}</td><td className="px-3 py-3 font-semibold text-zinc-900">{intervention?.title ?? "Prestation liée"}</td><td className="px-3 py-3 text-zinc-600">{client?.company || `${client?.firstName ?? ""} ${client?.lastName ?? ""}`.trim() || "—"}</td><td className="px-3 py-3 text-zinc-500">{payment.method}</td><td className="px-5 py-3 text-right font-bold text-emerald-700">{formatMoney(payment.amount)}</td></tr>; })}</tbody></table>
+          <table className="w-full min-w-[620px] text-left text-xs"><thead className="text-[10px] tracking-wider text-zinc-600 uppercase"><tr><th className="px-5 py-3 font-semibold">Date</th><th className="px-3 py-3 font-semibold">Prestation</th><th className="px-3 py-3 font-semibold">Client</th><th className="px-3 py-3 font-semibold">Mode</th><th className="px-5 py-3 text-right font-semibold">Montant encaissé</th></tr></thead><tbody className="divide-y divide-zinc-100">{recentInterventionPayments.length === 0 ? <tr><td colSpan={5} className="px-5 py-8 text-center text-zinc-500">Aucun encaissement de prestation sur cette période.</td></tr> : recentInterventionPayments.map((payment) => { const intervention = payment.interventionId ? data.interventions.find((item) => item.id === payment.interventionId) : data.interventions.find((item) => item.invoiceId === payment.invoiceId); const billingPeriod = payment.maintenanceBillingPeriodId ? data.maintenanceBillingPeriods.find((item) => item.id === payment.maintenanceBillingPeriodId) : undefined; const maintenanceContractId = payment.maintenanceContractId ?? billingPeriod?.contractId; const maintenanceContract = maintenanceContractId ? data.maintenanceContracts.find((item) => item.id === maintenanceContractId) : undefined; const client = data.clients.find((entry) => entry.id === (intervention?.clientId ?? maintenanceContract?.clientId)); return <tr key={payment.id} className="hover:bg-orange-50/50"><td className="px-5 py-3 text-zinc-500">{formatDate(payment.paidAt)}</td><td className="px-3 py-3 font-semibold text-zinc-900">{maintenanceContract?.title ?? intervention?.title ?? "Prestation liée"}{maintenanceContract && <span className="ml-2 text-[10px] font-semibold text-violet-600">Entretien</span>}</td><td className="px-3 py-3 text-zinc-600">{client?.company || `${client?.firstName ?? ""} ${client?.lastName ?? ""}`.trim() || "—"}</td><td className="px-3 py-3 text-zinc-500">{payment.method}</td><td className="px-5 py-3 text-right font-bold text-emerald-700">{formatMoney(payment.amount)}</td></tr>; })}</tbody></table>
         </CardContent>
       </Card>
 

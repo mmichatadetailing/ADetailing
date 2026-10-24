@@ -14,6 +14,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { getInterventionWorkflow } from "@/lib/domain/intervention-workflow";
+import { collectedInterventionRevenue } from "@/lib/domain/calculations";
 import { interventionStatusLabels } from "@/lib/domain/labels";
 import { useDemoStore } from "@/lib/demo/store";
 import { formatDate, formatMoney, normalizeText } from "@/lib/utils";
@@ -71,7 +72,10 @@ function PrestationsPageContent() {
 
   const toCollectRows = rows.filter(({ intervention, workflow }) => intervention.status === "completed" && !workflow.isComplete);
   const toCollect = toCollectRows.reduce((sum, { workflow }) => sum + workflow.outstanding, 0);
-  const collected = rows.filter(({ intervention }) => intervention.status !== "cancelled").reduce((sum, { workflow }) => sum + workflow.paidAmount, 0);
+  const collected = collectedInterventionRevenue(
+    data.interventions.filter((intervention) => intervention.status !== "cancelled"),
+    data.payments,
+  );
   const inProgress = rows.filter(({ intervention }) => intervention.status === "in_progress").length;
   const selected = data.interventions.find((item) => item.id === selectedId);
   const deletingIntervention = data.interventions.find((item) => item.id === deletingInterventionId);
@@ -105,7 +109,7 @@ function PrestationsPageContent() {
         {[
           { icon: Sparkles, label: "En cours", value: String(inProgress), detail: "à terminer", tone: "bg-sky-100 text-sky-700" },
           { icon: CircleDollarSign, label: "À encaisser", value: formatMoney(toCollect), detail: `${toCollectRows.length} prestation(s) terminée(s)`, tone: "bg-violet-100 text-violet-700" },
-          { icon: Banknote, label: "Déjà encaissé", value: formatMoney(collected), detail: "paiements des prestations", tone: "bg-emerald-100 text-emerald-700" },
+          { icon: Banknote, label: "Déjà encaissé", value: formatMoney(collected), detail: "prestations et entretiens", tone: "bg-emerald-100 text-emerald-700" },
         ].map((metric) => <Card key={metric.label}><CardContent className="flex items-center gap-4 p-5"><span className={`grid size-10 place-items-center rounded-xl ${metric.tone}`}><metric.icon className="size-5" /></span><div><p className="text-xs text-zinc-500">{metric.label}</p><p className="mt-1 text-xl font-bold">{metric.value}</p><p className="mt-1 text-[10px] text-zinc-500">{metric.detail}</p></div></CardContent></Card>)}
       </section>
 

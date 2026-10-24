@@ -38,7 +38,7 @@ export function buildDashboardChartData({
   year: number;
   objectives: Array<Pick<MonthlyObjective, "month" | "revenueTarget">>;
   interventions: Array<Pick<Intervention, "id" | "invoiceId"> & Partial<Pick<Intervention, "status">>>;
-  payments: Array<Pick<Payment, "invoiceId" | "interventionId" | "paidAt" | "amount">>;
+  payments: Array<Pick<Payment, "invoiceId" | "interventionId" | "maintenanceContractId" | "maintenanceBillingPeriodId" | "paidAt" | "amount">>;
   expenses: Array<Pick<Expense, "date" | "paidAt" | "paid" | "recurrence" | "amountIncludingTax">>;
   reference?: Date;
 }) {

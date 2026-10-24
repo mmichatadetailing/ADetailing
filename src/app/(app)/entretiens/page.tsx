@@ -227,9 +227,10 @@ export default function EntretiensPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const today = localDateKey();
   const currentMonth = today.slice(0, 7);
+  const currentContracts = data.maintenanceContracts.filter((contract) => !contract.archivedAt);
   const visibleContracts = canManage || !workspace
-    ? data.maintenanceContracts
-    : data.maintenanceContracts.filter((contract) => contract.assignedMemberIds.includes(workspace.userId));
+    ? currentContracts
+    : currentContracts.filter((contract) => contract.assignedMemberIds.includes(workspace.userId));
   const visibleContractIds = new Set(visibleContracts.map((contract) => contract.id));
   const visibleBillingPeriods = data.maintenanceBillingPeriods.filter((period) => visibleContractIds.has(period.contractId));
   const activeContracts = visibleContracts.filter((contract) => contract.status === "active" && (contract.billingFrequency !== "prepaid" || !contract.endsOn || contract.endsOn >= today));

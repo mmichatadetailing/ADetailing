@@ -89,7 +89,14 @@ function ClientsContent({ requestedClientId, requestedVehicleId }: { requestedCl
   };
 
   const clientMetrics = (clientId: string) => {
-    return clientRevenueMetrics(clientId, data.invoices, data.interventions, data.payments);
+    return clientRevenueMetrics(
+      clientId,
+      data.invoices,
+      data.interventions,
+      data.payments,
+      data.maintenanceContracts,
+      data.maintenanceBillingPeriods,
+    );
   };
 
   return (

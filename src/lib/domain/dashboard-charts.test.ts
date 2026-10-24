@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildDashboardChartData, totalRevenueObjective } from "./dashboard-charts";
 
 describe("données des graphiques du dashboard", () => {
-  it("agrège uniquement les encaissements liés aux prestations", () => {
+  it("agrège les encaissements liés aux prestations et aux entretiens", () => {
     const result = buildDashboardChartData({
       year: 2026,
       objectives: [{ month: "2026-07", revenueTarget: 150_000 }],
@@ -13,13 +13,14 @@ describe("données des graphiques du dashboard", () => {
       payments: [
         { interventionId: "job-direct", paidAt: "2026-07-03T08:00:00.000Z", amount: 50_000 },
         { invoiceId: "invoice-linked", paidAt: "2026-07-18T08:00:00.000Z", amount: 25_000 },
+        { maintenanceBillingPeriodId: "maintenance-period", paidAt: "2026-07-20T08:00:00.000Z", amount: 11_000 },
         { invoiceId: "invoice-not-linked", paidAt: "2026-07-22T08:00:00.000Z", amount: 99_000 },
       ],
       expenses: [],
     });
 
     expect(result.revenue).toHaveLength(12);
-    expect(result.revenue[6]).toMatchObject({ key: "2026-07", objective: 150_000, collected: 75_000 });
+    expect(result.revenue[6]).toMatchObject({ key: "2026-07", objective: 150_000, collected: 86_000 });
     expect(result.revenue[5]?.objective).toBeNull();
   });
 
