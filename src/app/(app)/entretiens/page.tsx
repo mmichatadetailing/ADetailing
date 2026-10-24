@@ -33,6 +33,7 @@ import {
   maintenanceRenewalStatus,
   maintenanceRouteGroups,
   maintenanceTermEndDate,
+  maintenanceWeekdayDate,
   nextMaintenanceVisit,
 } from "@/lib/domain/maintenance";
 import { suggestedServicePrice } from "@/lib/domain/service-pricing";
@@ -112,6 +113,7 @@ function ContractForm({ contract, onCancel, onSave }: { contract?: MaintenanceCo
       ? contract.endsOn
       : maintenanceTermEndDate(firstVisitOn, termMonths)
     : undefined;
+  const adjustedFirstVisitOn = maintenanceWeekdayDate(firstVisitOn);
 
   const selectClient = (nextClientId: string) => {
     setClientId(nextClientId);
@@ -201,11 +203,12 @@ function ContractForm({ contract, onCancel, onSave }: { contract?: MaintenanceCo
         <p className="text-sm font-bold text-emerald-950">Organisation des visites mensuelles</p>
         <p className="mt-1 text-xs leading-5 text-emerald-800">{billingFrequency === "prepaid" ? `${termMonths} prestations seront préparées, exactement sur la période payée.` : "Douze prestations seront préparées dans le planning."} Elles resteront déplaçables individuellement.</p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Field label="Première visite" hint={financialTermsLocked ? "La date d’origine est conservée pour protéger l’historique." : "Du 1er au 28 du mois"}><Input disabled={financialTermsLocked} type="date" value={firstVisitOn} onChange={(event) => setFirstVisitOn(event.target.value)} /></Field>
+          <Field label="Première visite" hint={financialTermsLocked ? "La date d’origine est conservée pour protéger l’historique." : "Du 1er au 28 · les week-ends passent au lundi"}><Input disabled={financialTermsLocked} type="date" value={firstVisitOn} onChange={(event) => setFirstVisitOn(event.target.value)} /></Field>
           <Field label="Heure habituelle"><Input type="time" value={preferredStartTime} onChange={(event) => setPreferredStartTime(event.target.value)} /></Field>
           <Field label="Durée par visite (h)"><Input type="number" min="0.25" max="24" step="0.25" value={durationHours} onChange={(event) => setDurationHours(Number(event.target.value))} /></Field>
           <Field label="Collaborateur principal"><Select value={memberId} onChange={(event) => setMemberId(event.target.value)}><option value="">Sélectionner…</option>{members.map((member) => <option key={member.id} value={member.id}>{member.firstName} {member.lastName}</option>)}</Select></Field>
         </div>
+        {adjustedFirstVisitOn && adjustedFirstVisitOn !== firstVisitOn && <p className="mt-3 rounded-xl border border-emerald-200 bg-white/75 px-3 py-2 text-xs font-semibold text-emerald-800">Cette date tombe un week-end : la première visite sera automatiquement placée le {formatDate(adjustedFirstVisitOn, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}. Le jour de référence des mois suivants reste le {Number(firstVisitOn.slice(8, 10))}.</p>}
       </div>
       <Field label="Adresse d’intervention"><Input value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Adresse, code postal, ville" /></Field>
       {contract && <div className="grid gap-4 sm:grid-cols-2"><Field label="État du contrat"><Select value={status} onChange={(event) => setStatus(event.target.value as MaintenanceContract["status"])}><option value="active">Actif</option><option value="paused">En pause</option><option value="ended">Terminé</option></Select></Field>{billingFrequency === "prepaid" ? <Field label="Fin de la période payée"><Input readOnly value={fixedTermEnd ?? ""} /></Field> : <Field label="Date de fin" hint="Facultative"><Input type="date" min={firstVisitOn} value={endsOn} onChange={(event) => setEndsOn(event.target.value)} /></Field>}</div>}

@@ -35,6 +35,15 @@ export function maintenanceTermEndDate(firstVisitOn: string, termMonths: number)
   return dateKey(target);
 }
 
+export function maintenanceWeekdayDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  if (date.getDay() === 6) date.setDate(date.getDate() + 2);
+  else if (date.getDay() === 0) date.setDate(date.getDate() + 1);
+  return dateKey(date);
+}
+
 function recognitionMonths(contract: Pick<MaintenanceContract, "billingFrequency" | "termMonths">) {
   return contract.billingFrequency === "monthly" ? 1 : contract.billingFrequency === "prepaid" ? contract.termMonths ?? 12 : 12;
 }
@@ -57,8 +66,9 @@ export function maintenanceSchedule(
 
   for (let month = firstMonth, index = 0; month <= lastMonth; month = monthOffset(firstMonth, ++index)) {
     const lastDay = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
-    const visitOn = `${month}-${String(Math.min(contract.visitDay, lastDay)).padStart(2, "0")}`;
-    if (visitOn < contract.firstVisitOn || (contract.endsOn && visitOn > contract.endsOn)) continue;
+    const nominalVisitOn = `${month}-${String(Math.min(contract.visitDay, lastDay)).padStart(2, "0")}`;
+    if (nominalVisitOn < contract.firstVisitOn || (contract.endsOn && nominalVisitOn > contract.endsOn)) continue;
+    const visitOn = maintenanceWeekdayDate(nominalVisitOn);
     const monthsCovered = recognitionMonths(contract);
     const billingDue = contract.billingFrequency === "monthly" || index % monthsCovered === 0;
     const recognizedRevenue = monthsCovered === 1

@@ -1,10 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { maintenanceAnnualValue, maintenanceCollectionSummary, maintenanceMonthlyRevenue, maintenanceRenewalStatus, maintenanceSchedule, maintenanceTermEndDate } from "./maintenance";
+import { maintenanceAnnualValue, maintenanceCollectionSummary, maintenanceMonthlyRevenue, maintenanceRenewalStatus, maintenanceSchedule, maintenanceTermEndDate, maintenanceWeekdayDate } from "./maintenance";
 
 describe("entretiens mensuels", () => {
   it("tolère une date temporairement vide pendant la saisie du formulaire", () => {
     expect(maintenanceTermEndDate("", 6)).toBe("");
     expect(maintenanceTermEndDate("date-invalide", 6)).toBe("");
+  });
+
+  it("décale un week-end au lundi suivant sans toucher aux jours ouvrés", () => {
+    expect(maintenanceWeekdayDate("2026-10-23")).toBe("2026-10-23");
+    expect(maintenanceWeekdayDate("2026-10-24")).toBe("2026-10-26");
+    expect(maintenanceWeekdayDate("2026-10-25")).toBe("2026-10-26");
+  });
+
+  it("ne décale que les occurrences mensuelles qui tombent le week-end", () => {
+    const schedule = maintenanceSchedule({ firstVisitOn: "2026-10-24", visitDay: 24, billingFrequency: "monthly", billingAmount: 10_000 }, "2026-12-31");
+    expect(schedule.map((entry) => entry.visitOn)).toEqual(["2026-10-26", "2026-11-24", "2026-12-24"]);
+    expect(schedule.map((entry) => entry.month)).toEqual(["2026-10", "2026-11", "2026-12"]);
+  });
+
+  it("conserve la dernière visite d’un forfait même si son lundi dépasse la date d’ancrage", () => {
+    const endsOn = maintenanceTermEndDate("2026-10-24", 1);
+    const schedule = maintenanceSchedule({ firstVisitOn: "2026-10-24", visitDay: 24, endsOn, billingFrequency: "prepaid", billingAmount: 10_000, termMonths: 1 }, endsOn);
+    expect(endsOn).toBe("2026-10-24");
+    expect(schedule.map((entry) => entry.visitOn)).toEqual(["2026-10-26"]);
   });
 
   it("reconnaît chaque mois un douzième d’un paiement annuel", () => {
