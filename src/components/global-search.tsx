@@ -37,12 +37,27 @@ export function GlobalSearch() {
     const activeClientIds = new Set(activeClients.map((client) => client.id));
     const clientNames = new Map(activeClients.map((client) => [client.id, client.company || `${client.firstName} ${client.lastName}`.trim()]));
     return [
+      ...[
+        ["Dashboard", "/dashboard", "Accueil objectifs statistiques encaissements"],
+        ["Planning", "/planning", "Calendrier rendez-vous équipe Google"],
+        ["Prestations", "/prestations", "Interventions paiements"],
+        ["Entretiens mensuels", "/entretiens", "Abonnements forfaits renouvellements"],
+        ["Clients", "/clients", "Contacts véhicules"],
+        ["Finances", "/finances", "Dépenses charges trésorerie"],
+        ["Pilotage", "/pilotage", "Rentabilité marges"],
+        ["Catalogue", "/catalogue", "Formules tarifs offres"],
+        ["Équipe", "/equipe", "Collaborateurs associés invitations"],
+        ["Paramètres", "/parametres", "Configuration objectifs export Excel"],
+        ["Mon compte", "/compte", "Profil connexion"],
+        ["Boîte de réception", "/inbox", "Messages discussions"],
+        ["Documents", "/documents", "Factures devis justificatifs"],
+      ].map(([title, href, detail]) => ({ type: "Page", title: title!, href: href!, detail: detail! })),
       ...activeClients.map((client) => ({ type: "Client", title: client.company || `${client.firstName} ${client.lastName}`, detail: [client.phone, client.email, client.city].filter(Boolean).join(" · ") || "Coordonnées à compléter", href: `/clients?client=${client.id}` })),
       ...vehicles.filter((vehicle) => activeClientIds.has(vehicle.clientId)).map((vehicle) => ({ type: "Véhicule", title: `${vehicle.make} ${vehicle.model}`.trim() || vehicle.format, detail: [vehicle.registration, vehicle.format, clientNames.get(vehicle.clientId)].filter(Boolean).join(" · "), href: `/clients?client=${vehicle.clientId}&vehicle=${vehicle.id}` })),
       ...interventions.filter((intervention) => activeClientIds.has(intervention.clientId)).map((intervention) => ({ type: "Prestation", title: intervention.title, detail: [clientNames.get(intervention.clientId), interventionStatusLabels[intervention.status], formatDate(intervention.startAt, { day: "2-digit", month: "short", year: "numeric" }), formatMoney(intervention.items.reduce((sum, item) => sum + item.revenueAllocated, 0))].filter(Boolean).join(" · "), href: `/prestations?intervention=${intervention.id}` })),
-      ...maintenanceContracts.filter((contract) => !contract.archivedAt && activeClientIds.has(contract.clientId)).map((contract) => ({ type: "Entretien", title: contract.title, detail: [clientNames.get(contract.clientId), contract.billingFrequency === "monthly" ? "Paiement mensuel" : contract.billingFrequency === "annual" ? "Paiement annuel" : `Paiement unique ${contract.termMonths ?? 12} mois`, formatMoney(contract.billingAmount)].join(" · "), href: "/entretiens" })),
-      ...quotes.map((quote) => ({ type: "Devis", title: quote.number, detail: [clientNames.get(quote.clientId), formatMoney(quote.totalIncludingTax)].filter(Boolean).join(" · "), href: "/documents?tab=quotes" })),
-      ...invoices.map((invoice) => ({ type: "Facture", title: invoice.number, detail: [clientNames.get(invoice.clientId), formatMoney(invoice.totalIncludingTax)].filter(Boolean).join(" · "), href: "/documents?tab=invoices" })),
+      ...maintenanceContracts.filter((contract) => !contract.archivedAt && activeClientIds.has(contract.clientId)).map((contract) => ({ type: "Entretien", title: contract.title, detail: [clientNames.get(contract.clientId), contract.billingFrequency === "monthly" ? "Paiement mensuel" : contract.billingFrequency === "annual" ? "Paiement annuel" : `Paiement unique ${contract.termMonths ?? 12} mois`, formatMoney(contract.billingAmount)].join(" · "), href: `/entretiens#contrat-${contract.id}` })),
+      ...quotes.map((quote) => ({ type: "Devis", title: quote.number, detail: [clientNames.get(quote.clientId), formatMoney(quote.totalIncludingTax)].filter(Boolean).join(" · "), href: `/documents?tab=quotes#document-${quote.id}` })),
+      ...invoices.map((invoice) => ({ type: "Facture", title: invoice.number, detail: [clientNames.get(invoice.clientId), formatMoney(invoice.totalIncludingTax)].filter(Boolean).join(" · "), href: `/documents?tab=invoices#document-${invoice.id}` })),
     ].filter((item) => normalizeText(`${item.title} ${item.detail}`).includes(needle)).slice(0, 9);
   }, [clients, interventions, invoices, maintenanceContracts, query, quotes, vehicles]);
 

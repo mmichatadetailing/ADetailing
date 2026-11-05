@@ -323,7 +323,7 @@ export function clientRevenueMetrics(
   interventions: Intervention[],
   payments: Payment[],
   maintenanceContracts: Array<Pick<MaintenanceContract, "id" | "clientId">> = [],
-  maintenanceBillingPeriods: Array<Pick<MaintenanceBillingPeriod, "id" | "contractId">> = [],
+  maintenanceBillingPeriods: Array<Pick<MaintenanceBillingPeriod, "id" | "contractId"> & Partial<Pick<MaintenanceBillingPeriod, "status" | "amount">>> = [],
 ) {
   const clientInvoices = invoices.filter((invoice) => invoice.clientId === clientId);
   const issuedInvoices = clientInvoices.filter((invoice) => invoice.status === "issued");
@@ -352,6 +352,18 @@ export function clientRevenueMetrics(
     clientInterventions.filter((intervention) => intervention.status !== "cancelled"),
     clientPayments,
   );
+  // Un forfait payé d’avance ne doit pas masquer une autre prestation impayée.
+  const outstanding = completedInterventions
+    .filter((intervention) => !intervention.maintenanceContractId)
+    .reduce((sum, intervention) => {
+      const total = intervention.items.reduce((amount, item) => amount + item.revenueAllocated, 0);
+      const invoice = clientInvoices.find((item) => item.id === intervention.invoiceId);
+      const payable = total > 0 ? total : invoice?.totalIncludingTax ?? 0;
+      const paid = paymentsForIntervention(intervention.id, payments) + (invoice ? paymentsForInvoice(invoice.id, payments) : 0);
+      return sum + Math.max(payable - paid, 0);
+    }, 0) + maintenanceBillingPeriods
+      .filter((period) => clientContractIds.has(period.contractId) && period.status === "due")
+      .reduce((sum, period) => sum + (period.amount ?? 0), 0);
 
   return {
     invoices: clientInvoices,
@@ -360,6 +372,7 @@ export function clientRevenueMetrics(
     completedRevenue,
     revenue: completedRevenue,
     collected,
+    outstanding,
     revenueEntryCount: completedInterventions.length,
   };
 }

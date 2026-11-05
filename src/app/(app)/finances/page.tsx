@@ -180,7 +180,7 @@ export default function FinancesPage() {
         description="Distinguez les décaissements réels des charges prévues, qu’elles soient ponctuelles, mensuelles ou annuelles."
         actions={(
           <div className="flex flex-wrap items-center gap-2">
-            <Input className="w-[170px]" aria-label="Mois analysé" type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} />
+            <Input className="w-[170px]" aria-label="Mois analysé" type="month" value={selectedMonth} onChange={(event) => { if (/^\d{4}-\d{2}$/.test(event.target.value)) setSelectedMonth(event.target.value); }} />
             {canManage && <Button onClick={openExpenseForm}><Plus className="size-4" /> Ajouter une dépense</Button>}
           </div>
         )}

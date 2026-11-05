@@ -1,4 +1,5 @@
 import type { SupabaseClient, User } from "@supabase/supabase-js";
+import { readAllPages } from "./pagination";
 import type {
   Activity,
   AppData,
@@ -102,7 +103,7 @@ const activityKinds = new Set<Activity["kind"]>([
   "lead_created", "quote_imported", "invoice_imported", "payment_added", "intervention_moved", "comment_added", "objective_updated",
 ]);
 
-export async function loadSupabaseAppData(supabase: SupabaseClient, user: User): Promise<BootstrapPayload> {
+export async function loadSupabaseAppData(supabase: SupabaseClient, user: User, options: { allRows?: boolean } = {}): Promise<BootstrapPayload> {
   const profileResult = await supabase.from("profiles").select("id,first_name,last_name,email,current_organization_id").eq("id", user.id).single();
   if (profileResult.error) throw profileResult.error;
   const currentProfile = one(profileResult.data);
@@ -147,11 +148,21 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User):
     supabase.from("assets").select("*").eq("organization_id", organizationId).is("archived_at", null).order("created_at", { ascending: false }),
     supabase.from("monthly_objectives").select("*").eq("organization_id", organizationId).order("month"),
     supabase.from("reviews").select("*").eq("organization_id", organizationId).order("created_at", { ascending: false }),
-    supabase.from("activity_logs").select("*").eq("organization_id", organizationId).order("occurred_at", { ascending: false }).limit(100),
+    supabase.from("activity_logs").select("*").eq("organization_id", organizationId).order("occurred_at", { ascending: false }).limit(options.allRows ? 1000 : 100),
     supabase.from("messages").select("*,conversations(kind,entity_type,entity_id,conversation_members(profile_id,last_read_at))").eq("organization_id", organizationId).is("deleted_at", null).order("created_at"),
     supabase.from("app_settings").select("key,value").eq("organization_id", organizationId),
     supabase.from("organization_invitations").select("id,pending_member_id,invited_first_name,invited_last_name,email,role,weekly_capacity_minutes,expires_at,accepted_at,revoked_at,created_at").eq("organization_id", organizationId).order("created_at", { ascending: false }),
-  ]);
+  ].map(async (query) => {
+    if (!options.allRows) return query;
+    // Taille inférieure au plafond Supabase standard et tri stable pour ne pas
+    // tronquer l’export aux 1 000 premiers clients, paiements ou prestations.
+    const paginatedQuery = query.order("id");
+    const allRows = await readAllPages(async (from, to) => {
+      const result = await paginatedQuery.range(from, to);
+      return { data: rows(result.data), error: result.error };
+    });
+    return { data: allRows, error: null };
+  }));
   const firstError = results.find((result) => result.error)?.error;
   if (firstError) throw firstError;
   const [memberRows = [], sourceRows = [], formatRows = [], clientRows = [], vehicleRows = [], leadRows = [], serviceRows = [], quoteRows = [], invoiceRows = [], paymentRows = [], interventionRows = [], planningEventRows = [], maintenanceContractRows = [], maintenanceBillingRows = [], expenseRows = [], assetRows = [], objectiveRows = [], reviewRows = [], activityRows = [], messageRows = [], settingRows = [], invitationRows = []] = results.map((result) => rows(result.data));

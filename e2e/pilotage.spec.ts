@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import ExcelJS from "exceljs";
+import { readFile } from "node:fs/promises";
 
 test("la fenêtre Ajouter reste utilisable sur tous les écrans", async ({ page }) => {
   await page.goto("/dashboard");
@@ -86,4 +88,86 @@ test("la recherche ouvre directement la fiche du véhicule trouvé", async ({ pa
   await expect(clientDialog).toBeVisible();
   await expect(clientDialog.getByText("Mini Cooper S", { exact: true })).toBeVisible();
   await expect(clientDialog.getByText("AA-123-AA · Citadine", { exact: true })).toBeVisible();
+});
+
+test("les pages principales s’ouvrent sans erreur ni débordement global", async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  for (const route of ["dashboard", "planning", "prestations", "entretiens", "clients", "documents", "finances", "pilotage", "catalogue", "equipe", "parametres", "compte", "inbox"]) {
+    await page.goto(`/${route}`);
+    await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Ajouter", exact: true })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 2), route).toBe(true);
+  }
+  expect(errors).toEqual([]);
+  await page.goto("/dashboard");
+  await expect(page.locator(".recharts-surface")).toHaveCount(2);
+  await expect(page.locator(".recharts-cartesian-axis-tick-value").first()).toBeVisible();
+  expect(await page.locator(".recharts-wrapper").evaluateAll((charts) => charts.every((chart) => chart.getBoundingClientRect().width <= (chart.closest(".overflow-hidden")?.getBoundingClientRect().width ?? 0)))).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("dashboard-audit.png"), fullPage: true });
+});
+
+test("les onglets Documents suivent les liens et le retour arrière", async ({ page }) => {
+  await page.goto("/documents?tab=quotes");
+  await page.getByRole("button", { name: /^Factures / }).click();
+  await expect(page).toHaveURL(/tab=invoices/);
+  await page.goBack();
+  await expect(page).toHaveURL(/tab=quotes/);
+  await expect(page.getByRole("heading", { name: "Devis Henrri" })).toBeVisible();
+});
+
+test("Échap ferme seulement la fenêtre la plus haute", async ({ page }) => {
+  await page.goto("/clients?client=client-camille");
+  // La recherche donne un identifiant réel, quel que soit le jeu de démo.
+  await page.getByRole("button", { name: /Rechercher partout/ }).click();
+  const search = page.getByRole("dialog", { name: "Recherche globale" });
+  await search.getByRole("textbox").fill("Camille");
+  await search.getByRole("link", { name: /Client Camille Bernard/ }).first().click();
+  const client = page.getByRole("dialog", { name: "Camille Bernard" });
+  await client.getByRole("button", { name: "Modifier la fiche" }).click();
+  await expect(page.getByRole("dialog", { name: "Modifier le contact" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Modifier le contact" })).toHaveCount(0);
+  await expect(client).toBeVisible();
+});
+
+test("l’export télécharge un classeur complet et lisible", async ({ page }, testInfo) => {
+  await page.goto("/dashboard");
+  await page.getByRole("button", { name: "Exporter les données Excel", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Exporter les données Excel" });
+  const downloading = page.waitForEvent("download");
+  await dialog.getByRole("button", { name: "Télécharger le fichier Excel" }).click();
+  const download = await downloading;
+  expect(download.suggestedFilename()).toMatch(/\.xlsx$/);
+  const path = testInfo.outputPath("export.xlsx");
+  await download.saveAs(path);
+  const book = new ExcelJS.Workbook();
+  await book.xlsx.load(new Uint8Array(await readFile(path)).buffer);
+  expect(book.worksheets[0]?.name).toBe("Synthèse");
+  expect(book.getWorksheet("Clients")!.rowCount).toBeGreaterThan(4);
+  expect(book.getWorksheet("Entretiens")).toBeDefined();
+  expect(book.getWorksheet("Paiements")!.autoFilter).toBeTruthy();
+  expect(book.getWorksheet("Paiements")!.getCell("F5").value).toEqual(expect.any(Number));
+  await expect(dialog).not.toBeVisible();
+});
+
+test("le filtre mensuel reste utilisable si la saisie est effacée", async ({ page }) => {
+  await page.goto("/finances");
+  await page.getByLabel("Mois analysé").fill("");
+  await expect(page.getByRole("heading", { name: "Finances", exact: true })).toBeVisible();
+});
+
+test("la navigation mobile se ferme au clavier et après un choix", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "mobile");
+  await page.goto("/dashboard");
+  await page.getByRole("button", { name: "Ouvrir le menu" }).click();
+  const nav = page.getByRole("dialog", { name: "Navigation", exact: true });
+  await expect(nav).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(nav).toHaveCount(0);
+  await page.getByRole("button", { name: "Ouvrir le menu" }).click();
+  await nav.getByRole("link", { name: "Entretiens mensuels" }).click();
+  await expect(page).toHaveURL(/\/entretiens/);
+  await expect(nav).toHaveCount(0);
 });

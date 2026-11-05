@@ -7,6 +7,9 @@ import { Button } from "./button";
 import { cn } from "@/lib/utils";
 import { lockBodyScroll } from "@/lib/scroll-lock";
 
+// Un seul dialogue reçoit les commandes clavier, même avec une confirmation imbriquée.
+const openDialogs: string[] = [];
+
 export function Modal({
   open,
   onClose,
@@ -24,14 +27,21 @@ export function Modal({
 }) {
   const dialogRef = useRef<HTMLElement>(null);
   const titleId = useId();
+  const descriptionId = useId();
   const closeRef = useRef(onClose);
   useEffect(() => { closeRef.current = onClose; }, [onClose]);
   useEffect(() => {
     if (!open) return;
+    openDialogs.push(titleId);
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const controls = () => Array.from(dialogRef.current?.querySelectorAll<HTMLElement>("button, a[href], input, select, textarea, [tabindex='0']") ?? []).filter((element) => !element.matches(":disabled") && element.getClientRects().length > 0);
-    const frame = requestAnimationFrame(() => controls()[0]?.focus({ preventScroll: true }));
+    const frame = requestAnimationFrame(() => {
+      if (openDialogs.at(-1) !== titleId) return;
+      const preferred = dialogRef.current?.querySelector<HTMLElement>("[autofocus], input:not([type='hidden']), select, textarea");
+      (preferred && !preferred.matches(":disabled") ? preferred : controls()[0])?.focus({ preventScroll: true });
+    });
     const handler = (event: KeyboardEvent) => {
+      if (openDialogs.at(-1) !== titleId) return;
       if (event.key === "Escape") { event.preventDefault(); closeRef.current(); }
       if (event.key !== "Tab") return;
       const elements = controls();
@@ -44,11 +54,13 @@ export function Modal({
     const releaseScroll = lockBodyScroll();
     return () => {
       document.removeEventListener("keydown", handler);
+      const index = openDialogs.indexOf(titleId);
+      if (index >= 0) openDialogs.splice(index, 1);
       releaseScroll();
       cancelAnimationFrame(frame);
       if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
     };
-  }, [open]);
+  }, [open, titleId]);
 
   if (!open || typeof document === "undefined") return null;
   return createPortal(
@@ -58,12 +70,13 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        aria-describedby={description ? descriptionId : undefined}
         className={cn("modal-panel max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl border border-black/[0.1] bg-white shadow-[0_28px_90px_rgba(47,40,72,.22)] sm:my-auto sm:max-w-xl sm:rounded-3xl", className)}
       >
         <header className="sticky top-0 z-10 flex items-start justify-between border-b border-black/[0.07] bg-white/90 p-5 backdrop-blur-xl">
           <div>
             <h2 id={titleId} className="text-lg font-bold tracking-tight">{title}</h2>
-            {description && <p className="mt-1 text-sm text-zinc-500">{description}</p>}
+            {description && <p id={descriptionId} className="mt-1 text-sm text-zinc-500">{description}</p>}
           </div>
           <Button variant="ghost" size="icon" onClick={onClose} aria-label="Fermer"><X className="size-4" /></Button>
         </header>

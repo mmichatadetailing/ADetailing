@@ -71,7 +71,7 @@ export function DashboardCharts({
             <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-orange-100 text-brand-600 shadow-sm"><Target className="size-[18px]" /></span>
             <div>
               <h2 className="font-bold">Objectif & encaissements</h2>
-              <p className="mt-1 text-xs text-zinc-500">Exercice {year} · seuls les paiements reçus pour des prestations font progresser l’objectif.</p>
+              <p className="mt-1 text-xs text-zinc-500">Exercice {year} · encaissements des prestations et des entretiens, comptés une seule fois.</p>
             </div>
           </div>
           <Badge variant="orange">{periodLabel}</Badge>
@@ -93,7 +93,7 @@ export function DashboardCharts({
             <span className="flex items-center gap-2"><span className="h-0.5 w-5 rounded-full bg-violet-500" /> Objectif</span>
           </div>
           <div className="overflow-x-auto pb-2">
-            <div className="h-[285px] min-w-[620px]">
+            <div className="h-[285px] min-w-0">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={revenue} margin={{ top: 12, right: 8, left: 4, bottom: 0 }}>
                   <defs>
@@ -109,7 +109,7 @@ export function DashboardCharts({
                     cursor={{ fill: "rgba(249,115,79,.045)" }}
                     contentStyle={tooltipStyle}
                     labelStyle={{ color: "#172033", fontWeight: 800, marginBottom: 6 }}
-                    formatter={(value, name) => [tooltipMoney(value), name === "collected" ? "CA encaissé" : "Objectif"]}
+                    formatter={(value, name) => [tooltipMoney(value), name === "collected" || name === "CA encaissé" ? "CA encaissé" : "Objectif"]}
                   />
                   <Bar dataKey="collected" name="CA encaissé" fill="url(#dashboardRevenueBar)" radius={[7, 7, 3, 3]} maxBarSize={30} animationDuration={700}>
                     {revenue.map((item) => <Cell key={item.key} fill="url(#dashboardRevenueBar)" opacity={!focusMonth || item.key === focusMonth ? 1 : 0.22} />)}
@@ -153,7 +153,7 @@ export function DashboardCharts({
             <span className="ml-auto">{positiveMonths} mois positif(s) · {negativeMonths} négatif(s)</span>
           </div>
           <div className="overflow-x-auto pb-2">
-            <div className="h-[285px] min-w-[620px]">
+            <div className="h-[285px] min-w-0">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={cashFlow} margin={{ top: 12, right: 8, left: 4, bottom: 0 }}>
                   <defs>

@@ -105,6 +105,15 @@ describe("calculs financiers", () => {
     expect(paymentStatusForInvoice(invoice, [payment("p1", 5_000)], new Date("2026-07-10"))).toBe("partial");
     expect(paymentStatusForInvoice(invoice, [payment("p1", 12_000)], new Date("2026-07-10"))).toBe("paid");
   });
+  it("ne compense pas une prestation impayée avec un forfait d’entretien prépayé", () => {
+    const prepaid = { ...payment("prepaid", 100_000), invoiceId: undefined, maintenanceContractId: "contract" };
+    const metrics = clientRevenueMetrics("c1", [], [intervention], [prepaid], [{ id: "contract", clientId: "c1" }], [
+      { id: "due", contractId: "contract", status: "due", amount: 10_000 },
+      { id: "paid", contractId: "contract", status: "paid", amount: 20_000 },
+    ]);
+    expect(metrics.collected).toBe(100_000);
+    expect(metrics.outstanding).toBe(60_000);
+  });
   it("ne considère jamais une facture émise comme payée", () => expect(paymentStatusForInvoice(invoice, [], new Date("2026-07-10"))).toBe("unpaid"));
   it("marque en retard uniquement après échéance", () => expect(paymentStatusForInvoice(invoice, [], new Date("2026-07-20"))).toBe("overdue"));
 });
