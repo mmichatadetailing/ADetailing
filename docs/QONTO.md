@@ -29,7 +29,10 @@ npx supabase db push
 
 Le projet doit être celui déjà lié à votre base de production. Vérifiez le projet
 affiché par Supabase avant de valider. La migration attendue est
-`202611050025_qonto_banking.sql`.
+`202611050025_qonto_banking.sql`, suivie de
+`202611050026_qonto_historical_groups.sql` pour les regroupements historiques.
+Appliquez aussi `202611050027_qonto_automatic_drafts.sql` pour la préparation
+automatique des nouveaux paiements et charges.
 
 Ne passez pas cette étape : elle crée les tables bancaires, le suivi des règlements
 des charges et les protections contre les doublons. Les anciennes données ne sont
@@ -126,6 +129,58 @@ en mélangeant leurs historiques.
 
 Dans la vue **À traiter**, cliquez sur **Rapprocher**.
 
+### Nouvelles transactions : préparation automatique, validation manuelle
+
+La migration des brouillons active la préparation automatique pour les connexions
+Qonto existantes, avec un point de départ fixé à son application. Une nouvelle
+connexion utilise l’instant de sa création. La date et l’option sont visibles dans
+**Banque → Préparer automatiquement les nouvelles prestations et charges**.
+Le bouton permet de désactiver/réactiver la préparation sans effacer les propositions.
+
+- Seuls les règlements terminés, en euros, à partir de cet instant sont préparés.
+  L’historique antérieur n’est pas recréé, même lors d’une nouvelle synchronisation.
+- Les entrées apparaissent dans **Prestations → Prestations Qonto à valider**.
+- Les sorties apparaissent dans **Finances → Charges Qonto à valider**.
+- Aucun client, prestation définitive, paiement ni charge supplémentaire n’est créé
+  avant votre validation. Les propositions restent hors statistiques et planning.
+- Si le rapprochement automatique peut relier une écriture déjà connue, il conserve
+  son fonctionnement habituel et n’ajoute pas de proposition redondante à traiter.
+
+Cliquez sur **Vérifier / modifier**, corrigez le libellé, le client et la date.
+Vous pouvez créer un client depuis ce formulaire, puis le sélectionner. Une durée
+de 0 signifie qu’elle reste à renseigner : le logiciel n’invente pas le temps travaillé.
+Le prix de la prestation peut dépasser l’encaissement ; le solde restera à payer.
+Choisissez « Prestation à réaliser / acompte » si la prestation n’est pas encore faite.
+Une prestation à réaliser sans date sera placée « À planifier » après validation.
+
+Lorsqu’une prestation, une facture, un entretien, un paiement ou une échéance de charge
+existe déjà, sélectionnez cet enregistrement plutôt qu’une nouvelle saisie. Le logiciel
+propose les correspondances possibles. Un forfait d’entretien payé d’avance doit
+rester rattaché au contrat, pas à une nouvelle visite ponctuelle.
+
+**Enregistrer le brouillon** conserve les modifications sans impact financier.
+**Valider l’intégration** crée le dossier et son règlement, ou effectue le
+rapprochement choisi, dans une même transaction SQL. Le montant et la date du
+règlement restent ceux de la banque ; la date de prestation est indépendante.
+Une prestation validée s’ouvre ensuite dans son éditeur habituel.
+
+Pour une nouvelle charge, vérifiez la catégorie et la TVA sur le justificatif :
+aucun taux ni droit à récupération n’est deviné depuis la banque. Elle sera ponctuelle ;
+pour un abonnement déjà prévu, sélectionnez son échéance existante.
+
+La corbeille supprime la proposition, pas la transaction Qonto. Elle ne sera pas
+recréée à la prochaine synchronisation. Vous pouvez la restaurer depuis « Supprimées ».
+Un apport, un prêt ou un remboursement n’est pas automatiquement une vente : ne
+validez pas une prestation pour ces opérations, et classez-les correctement dans Banque.
+Si une opération est rapprochée ailleurs, sa proposition est fermée automatiquement.
+Les brouillons sont sauvegardés dans une feuille séparée de l’export Excel, sans
+être ajoutés au chiffre d’affaires de sa synthèse.
+
+Cette préparation suit les synchronisations Qonto : quotidiennement avec le cron
+de production configuré, ou immédiatement après **Synchroniser maintenant**. Ce
+n’est pas un flux bancaire temps réel. L’application doit rester correctement
+déployée et la connexion active pour que la tâche quotidienne fonctionne.
+
 ### Paiement déjà saisi
 
 Choisissez **Paiement existant**. Aucun encaissement supplémentaire n’est créé.
@@ -163,6 +218,40 @@ Choisissez **Créer une nouvelle charge ponctuelle**, puis indiquez le libellé 
 la catégorie. Faites-le seulement après avoir vérifié la liste des charges
 existantes. Cette action ne crée pas un abonnement. La TVA n’est pas déduite
 automatiquement et reste à vérifier selon le justificatif.
+
+### Anciennes transactions déjà regroupées dans une seule saisie
+
+Exemple : deux achats de 40 € et 70 € chez le même fournisseur, le 15 et le
+17 septembre, ont été saisis comme une seule charge payée de 110 €.
+
+1. Dans **Banque & rapprochement**, recherchez le fournisseur dans les transactions.
+2. Cochez les deux opérations dans **À traiter**. La sélection reste conservée entre
+   les recherches et les pages. Seules les opérations terminées, en euros et dans
+   le même sens peuvent être sélectionnées ensemble.
+3. Cliquez sur **Rapprocher le regroupement** : le détail et le total sont affichés.
+4. Choisissez la charge existante de 110 €. Elle doit déjà être marquée payée.
+   Pour des entrées bancaires, choisissez le paiement existant correspondant.
+5. Vérifiez la date historique conservée, puis confirmez que ces opérations étaient
+   déjà comptabilisées ensemble. Vous pouvez ajouter une note.
+6. Validez : les deux mouvements restent distincts dans Qonto et dans leur liste,
+   mais partagent le même regroupement. Aucune nouvelle charge ni nouvel
+   encaissement n’est créé ; le montant et le jour de votre saisie sont conservés,
+   même si les dates bancaires sont à cheval sur deux mois.
+
+Le total doit correspondre au centime près. Aucun regroupement n’est recherché ni
+validé automatiquement, même lorsque la synchronisation automatique est activée.
+Une écriture déjà rapprochée ne peut pas être réutilisée. Les libellés différents
+ou dates plus éloignées affichent un avertissement, sans imposer que les noms
+soient parfaitement identiques.
+Si une opération a déjà été rapprochée individuellement, annulez d’abord son
+traitement avant de la sélectionner dans un regroupement.
+
+La pastille **Regroupement historique** permet de retrouver tous les membres.
+**Annuler le regroupement**, depuis n’importe lequel d’entre eux, libère l’ensemble
+des mouvements tout en conservant votre saisie historique payée. Il n’est pas
+possible de détacher un seul membre, ce qui déséquilibrerait le total.
+Si Qonto annule ou modifie un membre, le groupe entier passe dans **À vérifier**.
+Les identifiants et notes de regroupement sont également présents dans l’export Excel.
 
 ### Virement interne, apport ou prêt
 

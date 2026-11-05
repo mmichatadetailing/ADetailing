@@ -3,10 +3,11 @@ import type { BankCandidate, BankTransaction } from "@/lib/domain/banking";
 import { bankDate } from "@/lib/domain/banking";
 import { projectedExpensesForMonth, expenseOccurrenceDateKey } from "@/lib/domain/calculations";
 import { readAllPages } from "@/lib/supabase/pagination";
+import type { BankDraft } from "@/lib/domain/bank-drafts";
 
 type Row = Record<string, unknown>;
 export async function qontoContext(db: SupabaseClient, org: string) {
-  const tables = ["payments", "expenses", "clients", "interventions", "intervention_items", "invoices", "maintenance_contracts", "maintenance_billing_periods", "bank_transactions", "expense_settlements"] as const;
+  const tables = ["payments", "expenses", "clients", "interventions", "intervention_items", "invoices", "maintenance_contracts", "maintenance_billing_periods", "bank_transactions", "expense_settlements", "bank_reconciliation_groups", "bank_transaction_drafts"] as const;
   const entries = await Promise.all(tables.map(async (table) => [table, await readAllPages<Row>(async (from, to) => {
     const result = await db.from(table).select("*").eq("organization_id", org).order("id").range(from, to);
     if (result.error) throw new Error("Données bancaires indisponibles. Vérifiez que la migration Qonto est appliquée.");
@@ -18,7 +19,14 @@ export async function qontoContext(db: SupabaseClient, org: string) {
   const invoices = new Map(rows.invoices.map((inv) => [String(inv.id), inv]));
   const contracts = new Map(rows.maintenance_contracts.map((contract) => [String(contract.id), contract]));
   const targets: BankCandidate[] = [];
-  const transactions = rows.bank_transactions as unknown as BankTransaction[];
+  const groups = new Map(rows.bank_reconciliation_groups.map((group) => [group.id, group]));
+  const groupSizes = new Map<unknown, number>();
+  for (const transaction of rows.bank_transactions) if (transaction.reconciliation_group_id) groupSizes.set(transaction.reconciliation_group_id, (groupSizes.get(transaction.reconciliation_group_id) ?? 0) + 1);
+  const transactions = rows.bank_transactions.map((transaction) => {
+    const group = groups.get(transaction.reconciliation_group_id);
+    return { ...transaction, payment_id: transaction.payment_id ?? group?.payment_id ?? null, expense_id: transaction.expense_id ?? group?.expense_id ?? null, expense_month: transaction.expense_month ?? group?.expense_month ?? null,
+      group_size: group ? groupSizes.get(group.id) : undefined, group_note: group ? String(group.note) : undefined };
+  }) as unknown as BankTransaction[];
   const linked = new Set(transactions.filter((tx) => tx.payment_id).map((tx) => tx.payment_id));
   const clientNames = (id: unknown) => clients.get(String(id)) ?? [];
   for (const payment of rows.payments) {
@@ -27,7 +35,7 @@ export async function qontoContext(db: SupabaseClient, org: string) {
     const invoice = invoices.get(String(payment.invoice_id));
     const contract = contracts.get(String(payment.maintenance_contract_id));
     const names = clientNames(job?.client_id ?? invoice?.client_id ?? contract?.client_id);
-    targets.push({ key: `payment:${payment.id}`, kind: "payment", id: String(payment.id), label: `Paiement existant · ${names[0] ?? "Client"} · ${contract?.title ?? job?.title ?? invoice?.number ?? "Encaissement"}`, identities: [...names, String(invoice?.number ?? ""), String(payment.reference ?? "")], amount: Number(payment.amount_cents), date: String(payment.paid_at) });
+    targets.push({ key: `payment:${payment.id}`, kind: "payment", id: String(payment.id), label: `Paiement existant · ${names[0] ?? "Client"} · ${contract?.title ?? job?.title ?? invoice?.number ?? "Encaissement"}`, identities: [...names, String(invoice?.number ?? ""), String(payment.reference ?? "")], amount: Number(payment.amount_cents), date: String(payment.paid_at), historicalEligible: bankDate(String(payment.paid_at)) <= bankDate(new Date().toISOString()) });
   }
   const paidFor = (key: string, id: unknown) => rows.payments.filter((payment) => payment[key] === id).reduce((sum, payment) => sum + Number(payment.amount_cents), 0);
   for (const job of rows.interventions.filter((job) => !job.archived_at && job.status === "completed" && !job.maintenance_contract_id && !job.invoice_id)) {
@@ -52,13 +60,22 @@ export async function qontoContext(db: SupabaseClient, org: string) {
     supplier: String(expense.supplier ?? ""), description: String(expense.description),
   }));
   const months = new Set<string>();
+  for (const expense of expenses.filter((expense) => expense.recurrence === "one_off" && expense.paid)) months.add(expense.date.slice(0, 7));
   for (const tx of transactions.filter((tx) => tx.reconciliation === "unmatched" && tx.side === "debit")) {
     const day = bankDate(tx.settled_at ?? tx.emitted_at);
     for (const delta of [-1, 0, 1]) { const date = new Date(`${day.slice(0, 7)}-15T12:00:00Z`); date.setUTCMonth(date.getUTCMonth() + delta); months.add(date.toISOString().slice(0, 7)); }
   }
   for (const month of months) for (const expense of projectedExpensesForMonth(expenses, month)) {
     if (rows.expense_settlements.some((entry) => entry.expense_id === expense.id && String(entry.period_month).slice(0, 7) === month)) continue;
-    targets.push({ key: `expense:${expense.id}:${month}`, kind: "expense", id: expense.id, month, label: `Charge · ${expense.supplier || expense.description} · ${month}`, identities: [expense.supplier, expense.description], amount: expense.amountIncludingTax, date: expenseOccurrenceDateKey(expense, month)! });
+    const date = expenseOccurrenceDateKey(expense, month)!;
+    const original = rows.expenses.find((entry) => entry.id === expense.id);
+    const paidDate = expense.recurrence === "one_off" && original?.paid_at ? bankDate(String(original.paid_at)) : date;
+    targets.push({ key: `expense:${expense.id}:${month}`, kind: "expense", id: expense.id, month, label: `Charge · ${expense.supplier || expense.description} · ${expense.description} · ${month}`, identities: [expense.supplier, expense.description], amount: expense.amountIncludingTax, date: paidDate, historicalEligible: expense.paid && paidDate <= bankDate(new Date().toISOString()) });
   }
-  return { transactions, candidates: targets };
+  const transactionById = new Map(transactions.map((transaction) => [transaction.id, transaction]));
+  const drafts = rows.bank_transaction_drafts.flatMap((draft) => {
+    const transaction = transactionById.get(String(draft.bank_transaction_id));
+    return transaction ? [{ ...draft, transaction } as unknown as BankDraft] : [];
+  });
+  return { transactions, candidates: targets, drafts };
 }

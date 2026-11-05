@@ -13,7 +13,7 @@ beforeEach(() => { vi.clearAllMocks(); });
 it("interdit la banque aux employés avant tout accès privilégié", async () => {
   mocks.workspace.mockResolvedValue({ role: "employee" });
   expect((await GET(new Request("https://app.test/api/integrations/qonto"))).status).toBe(403);
-  for (const action of ["sync", "connect", "disconnect", "settings", "reconcile"]) expect((await POST(request({ action }))).status).toBe(403);
+  for (const action of ["sync", "connect", "disconnect", "settings", "reconcile", "reconcile_group"]) expect((await POST(request({ action }))).status).toBe(403);
   expect(mocks.admin).not.toHaveBeenCalled();
   expect(mocks.context).not.toHaveBeenCalled();
   expect(mocks.rpc).not.toHaveBeenCalled();
@@ -44,4 +44,15 @@ it("effectue le rapprochement avec la session de l’utilisateur, pas la clé ad
   expect(response.status).toBe(200);
   expect(mocks.rpc).toHaveBeenCalledWith("reconcile_bank_transaction", expect.objectContaining({ target_kind: "ignore" }));
   expect(mocks.admin).not.toHaveBeenCalled();
+});
+it("regroupe manuellement avec la session et refuse une sélection répétée avant l’écriture", async () => {
+  mocks.workspace.mockResolvedValue({ role: "partner", organizationId: "org" });
+  mocks.rpc.mockResolvedValue({ data: "group", error: null });
+  const input = { action: "reconcile_group", transactionIds: ["50000000-0000-4000-8000-000000000001", "50000000-0000-4000-8000-000000000002"], kind: "expense", targetId: "40000000-0000-4000-8000-000000000001", month: "2026-09" };
+  expect((await POST(request(input))).status).toBe(200);
+  expect(mocks.rpc).toHaveBeenCalledWith("reconcile_bank_group", expect.objectContaining({ transaction_ids: input.transactionIds, target_month: "2026-09-01" }));
+  expect(mocks.admin).not.toHaveBeenCalled();
+  mocks.rpc.mockClear();
+  expect((await POST(request({ ...input, transactionIds: [input.transactionIds[0], input.transactionIds[0]] }))).status).toBe(400);
+  expect(mocks.rpc).not.toHaveBeenCalled();
 });

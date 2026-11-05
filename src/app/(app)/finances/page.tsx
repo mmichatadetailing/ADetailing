@@ -5,6 +5,7 @@ import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
+import { BankDraftInbox } from "@/components/banking/bank-draft-inbox";
 import { useWorkspace } from "@/components/workspace-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -201,6 +202,7 @@ export default function FinancesPage() {
         <div className="mt-5 flex justify-end gap-2"><Button variant="ghost" onClick={() => setDeletingExpense(null)}>Annuler</Button><Button variant="danger" onClick={deleteExpense}><Trash2 className="size-4" /> Supprimer définitivement</Button></div>
       </Modal>
 
+      <BankDraftInbox side="debit" />
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         {[
           { icon: CalendarClock, label: `Total charges · ${monthLabel}`, value: formatMoney(projectedExpenses), detail: `${formatMoney(monthSummary.recurring)} récurrent · ${formatMoney(oneOff)} ponctuel`, color: "text-orange-600" },

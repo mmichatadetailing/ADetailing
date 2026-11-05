@@ -1,10 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { automaticBankMatches, bankCandidateMatches, type BankTransaction, type BankCandidate } from "./banking";
+import { automaticBankMatches, bankCandidateMatches, historicalGroupCandidates, type BankTransaction, type BankCandidate } from "./banking";
 const transaction = { id: "tx", remote_id: "remote", account_name: "Compte", label: "VIREMENT FACTURE F2026-123", counterparty: "Matis Paysage", reference: "", amount_cents: 11_000, currency: "EUR", side: "credit", status: "completed", settled_at: "2026-09-16T12:00:00Z", emitted_at: "2026-09-16T12:00:00Z", operation_type: "transfer", reconciliation: "unmatched", payment_id: null, expense_id: null, expense_month: null, created_entry: false, ignored_reason: null } satisfies BankTransaction;
 const candidate = { key: "payment:p1", kind: "payment", id: "p1", label: "Paiement", identities: ["Matis Paysage"], amount: 11_000, date: "2026-09-15T12:00:00Z" } satisfies BankCandidate;
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-05T12:00:00Z")); });
 afterEach(() => vi.useRealTimers());
 describe("rapprochement bancaire prudent", () => {
+  it("propose manuellement une écriture historique au montant total exact", () => {
+    const transactions = [{ ...transaction, id: "a", side: "debit" as const, amount_cents: 4000 }, { ...transaction, id: "b", side: "debit" as const, amount_cents: 7000 }];
+    const targets: BankCandidate[] = [{ ...candidate, kind: "expense", historicalEligible: true }, { ...candidate, key: "unpaid", kind: "expense", historicalEligible: false }, { ...candidate, key: "wrong", kind: "expense", amount: 12000, historicalEligible: true }];
+    expect(historicalGroupCandidates(transactions, targets).map((entry) => entry.key)).toEqual([candidate.key]);
+    expect(automaticBankMatches(transactions, targets)).toHaveLength(0); // Jamais d’agrégation automatique.
+    expect(historicalGroupCandidates([{ ...transaction, id: "a", amount_cents: 4000 }, { ...transaction, id: "b", amount_cents: 7000 }], [{ ...candidate, historicalEligible: true }])).toHaveLength(1);
+  });
+  it("refuse une sélection historique invalide ou mixte", () => {
+    const target = { ...candidate, historicalEligible: true };
+    for (const selection of [[transaction], [transaction, transaction], [transaction, { ...transaction, id: "b", side: "debit" as const }], [transaction, { ...transaction, id: "b", status: "pending" }], [transaction, { ...transaction, id: "b", currency: "USD" }]]) expect(historicalGroupCandidates(selection, [target])).toHaveLength(0);
+  });
   it("rapproche un montant exact avec un nom explicite", () => expect(automaticBankMatches([transaction], [candidate])).toHaveLength(1));
   it("ne rapproche jamais sur le montant seul", () => expect(bankCandidateMatches({ ...transaction, label: "Virement", counterparty: "Inconnu" }, [candidate])).toHaveLength(0));
   it("ne rapproche pas des noms partiels accidentels", () => expect(bankCandidateMatches({ ...transaction, label: "", counterparty: "Matis Paysagiste" }, [candidate])).toHaveLength(0));

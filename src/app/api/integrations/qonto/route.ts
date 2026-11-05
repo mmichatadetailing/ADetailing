@@ -7,6 +7,7 @@ import { encryptToken, tokenEncryptionKeyStatus } from "@/lib/integrations/token
 import { QontoClient } from "@/lib/integrations/qonto-client";
 import { qontoContext } from "@/lib/integrations/qonto-context";
 import { syncQonto } from "@/lib/integrations/qonto-sync";
+import { normalizeText } from "@/lib/utils";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -14,8 +15,9 @@ export const dynamic = "force-dynamic";
 const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("connect"), login: z.string().trim().min(2).max(200).regex(/^[a-zA-Z0-9_-]+$/), secret: z.string().trim().min(8).max(500).regex(/^[^\r\n:]+$/), importSince: z.iso.date(), autoReconcile: z.boolean() }),
   z.object({ action: z.literal("sync") }),
-  z.object({ action: z.literal("settings"), enabled: z.boolean(), autoReconcile: z.boolean() }),
+  z.object({ action: z.literal("settings"), enabled: z.boolean(), autoReconcile: z.boolean(), autoIntake: z.boolean().optional() }),
   z.object({ action: z.literal("disconnect") }),
+  z.object({ action: z.literal("reconcile_group"), transactionIds: z.array(z.uuid()).min(2).max(50).refine((ids) => new Set(ids).size === ids.length), kind: z.enum(["payment", "expense"]), targetId: z.uuid(), month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).nullable().optional(), note: z.string().trim().max(500).optional() }),
   z.object({ action: z.literal("reconcile"), transactionId: z.uuid(), kind: z.enum(["payment", "expense", "new_expense", "intervention", "invoice", "maintenance", "ignore", "undo"]), targetId: z.uuid().nullable().optional(), month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/).nullable().optional(), description: z.string().trim().max(300).optional(), category: z.string().trim().max(120).optional(), reason: z.string().trim().max(500).optional() }),
 ]);
 
@@ -33,13 +35,14 @@ export async function GET(request: Request) {
   try {
     const { db, workspace } = await access();
     const admin = createSupabaseAdminClient();
-    const { data: connection, error } = await admin.from("qonto_connections").select("organization_name,accounts,import_since,enabled,auto_reconcile,last_synced_at,last_error,window_to,credentials_encrypted,lease_until").eq("organization_id", workspace.organizationId).maybeSingle();
+    const { data: connection, error } = await admin.from("qonto_connections").select("organization_name,accounts,import_since,enabled,auto_reconcile,auto_intake,auto_intake_from,last_synced_at,last_error,window_to,credentials_encrypted,lease_until").eq("organization_id", workspace.organizationId).maybeSingle();
     if (error) throw new Error("Appliquez la migration Supabase Qonto avant de connecter votre compte.");
     const context = await qontoContext(db, workspace.organizationId);
     const params = new URL(request.url).searchParams;
     const filter = params.get("filter") ?? "unmatched";
+    const query = normalizeText(params.get("q") ?? "");
     const page = Math.max(0, Number(params.get("page")) || 0);
-    const filtered = context.transactions.filter((tx) => filter === "all" || tx.reconciliation === filter).sort((a, b) => (b.settled_at ?? b.emitted_at).localeCompare(a.settled_at ?? a.emitted_at));
+    const filtered = context.transactions.filter((tx) => (filter === "all" || tx.reconciliation === filter) && (!query || normalizeText(`${tx.counterparty} ${tx.label} ${tx.reference} ${tx.group_note ?? ""} ${tx.reconciliation_group_id ?? ""}`).includes(query))).sort((a, b) => (b.settled_at ?? b.emitted_at).localeCompare(a.settled_at ?? a.emitted_at));
     const { credentials_encrypted: encrypted, accounts, ...publicConnection } = connection ?? {};
     return NextResponse.json({ connection: connection ? { ...publicConnection, connected: Boolean(encrypted), accounts: (accounts as Array<{ name: string; iban: string }>).map((account) => ({ name: account.name, last4: account.iban.slice(-4) })) } : null,
       transactions: filtered.slice(page * 50, (page + 1) * 50), total: filtered.length, candidates: context.candidates,
@@ -52,6 +55,11 @@ export async function POST(request: Request) {
   try {
     const { db, workspace } = await access();
     const input = schema.parse(await request.json());
+    if (input.action === "reconcile_group") {
+      const { data, error } = await db.rpc("reconcile_bank_group", { transaction_ids: input.transactionIds, target_kind: input.kind, target_id: input.targetId, target_month: input.month ? `${input.month}-01` : null, note: input.note ?? "" });
+      if (error) throw new Error(error.message);
+      return NextResponse.json({ ok: true, groupId: data });
+    }
     if (input.action === "reconcile") {
       const { error } = await db.rpc("reconcile_bank_transaction", { target_transaction: input.transactionId, target_kind: input.kind, target_id: input.targetId ?? null, target_month: input.month ? `${input.month}-01` : null, details: { description: input.description, category: input.category, reason: input.reason } });
       if (error) throw new Error(error.message);
@@ -75,7 +83,7 @@ export async function POST(request: Request) {
       if (error) throw new Error("La connexion Qonto n’a pas pu être enregistrée.");
       return NextResponse.json({ ok: true });
     }
-    const patch = input.action === "disconnect" ? { enabled: false, credentials_encrypted: "", updated_at: new Date().toISOString() } : { enabled: input.enabled, auto_reconcile: input.autoReconcile, updated_at: new Date().toISOString() };
+    const patch = input.action === "disconnect" ? { enabled: false, credentials_encrypted: "", updated_at: new Date().toISOString() } : { enabled: input.enabled, auto_reconcile: input.autoReconcile, ...(input.autoIntake === undefined ? {} : { auto_intake: input.autoIntake }), updated_at: new Date().toISOString() };
     const { error } = await admin.from("qonto_connections").update(patch).eq("organization_id", workspace.organizationId);
     if (error) throw new Error("Les paramètres Qonto n’ont pas pu être enregistrés.");
     return NextResponse.json({ ok: true });

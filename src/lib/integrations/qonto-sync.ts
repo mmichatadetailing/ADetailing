@@ -17,6 +17,7 @@ export async function syncQonto(db: SupabaseClient, organizationId: string, budg
   if (!connection) return { imported: 0, reconciled: 0, busy: true, pending: false };
   let imported = 0;
   let reconciled = 0;
+  let drafts = 0;
   try {
     const { login, secret } = JSON.parse(decryptToken(String(connection.credentials_encrypted))) as { login: string; secret: string };
     const client = new QontoClient(login, secret);
@@ -65,9 +66,14 @@ export async function syncQonto(db: SupabaseClient, organizationId: string, budg
         if (!error) reconciled += 1; // Une concurrence laisse l’opération à vérifier, jamais à dupliquer.
       }
     }
+    const { data: prepared, error: preparationError } = await db.rpc("prepare_qonto_drafts", { target_org: organizationId });
+    if (preparationError) throw new Error("Les transactions sont importées, mais les propositions n’ont pas pu être préparées. Vérifiez la migration Qonto.");
+    drafts = Number(prepared ?? 0);
     await db.from("qonto_connections").update({ last_synced_at: new Date().toISOString(), last_error: null, updated_at: new Date().toISOString() }).eq("organization_id", organizationId).eq("lease_token", token);
-    return { imported, reconciled, busy: false, pending };
+    return { imported, reconciled, drafts, busy: false, pending };
   } catch (error) {
+    // Une panne Qonto après une page réussie ne doit pas cacher les nouveaux mouvements déjà importés.
+    try { await db.rpc("prepare_qonto_drafts", { target_org: organizationId }); } catch { /* La prochaine synchronisation reprendra la préparation. */ }
     const message = error instanceof Error && !error.message.includes("decrypt") && !error.message.includes("authenticate")
       ? error.message : "La clé de chiffrement ou les identifiants Qonto ne sont pas valides. Reconnectez Qonto.";
     await db.from("qonto_connections").update({ last_error: message.slice(0, 300), updated_at: new Date().toISOString() }).eq("organization_id", organizationId).eq("lease_token", token);

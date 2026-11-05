@@ -2,10 +2,24 @@ import { describe, expect, it } from "vitest";
 import ExcelJS from "exceljs";
 import { demoSeed } from "@/lib/demo/seed";
 import { buildExportWorkbook, excelDate, exportWorkspaceExcel } from "./workbook";
+import type { BankDraft } from "@/lib/domain/bank-drafts";
 
 const reference = new Date("2026-11-05T10:00:00Z");
 
 describe("export Excel de l’entreprise", () => {
+  it("sauvegarde les propositions Qonto séparément sans les compter dans les encaissements", () => {
+    const draft: BankDraft = {
+      id: "draft", side: "credit", status: "pending", created_at: "2026-11-05", updated_at: "2026-11-05",
+      payload: { title: "À vérifier", performedOn: "2026-11-05", completed: true, revenue: 99900, durationMinutes: 0, expenseDate: "2026-11-05", supplier: "", category: "", family: "variable", vatRateBasisPoints: 0, vatRecoverable: false, notes: "" },
+      transaction: { id: "bank", remote_id: "remote", account_name: "Principal", label: "Encaissement", counterparty: "Client", reference: "", amount_cents: 99900, currency: "EUR", side: "credit", status: "completed", settled_at: "2026-11-05T08:00:00Z", emitted_at: "2026-11-05T08:00:00Z", operation_type: "transfer", reconciliation: "unmatched", payment_id: null, expense_id: null, expense_month: null, created_entry: false, ignored_reason: null },
+    };
+    const before = buildExportWorkbook(demoSeed, { exportedAt: reference });
+    const after = buildExportWorkbook(demoSeed, { exportedAt: reference, bankDrafts: [draft] });
+    expect(after.getWorksheet("Brouillons Qonto")!.getCell("B5").value).toBe("À valider — hors statistiques");
+    expect(after.getWorksheet("Brouillons Qonto")!.getCell("F5").value).toBe(999);
+    expect(after.getWorksheet("Synthèse")!.getCell("B5").value).toBe(before.getWorksheet("Synthèse")!.getCell("B5").value);
+    expect(after.getWorksheet("Paiements")!.rowCount).toBe(before.getWorksheet("Paiements")!.rowCount);
+  });
   it("conserve les tables métier et les sous-lignes dans des feuilles filtrables", () => {
     const book = buildExportWorkbook(demoSeed, { exportedAt: reference });
     expect(book.worksheets[0]?.name).toBe("Synthèse");

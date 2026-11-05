@@ -15,7 +15,7 @@ export async function GET() {
     if (!canManageBusiness(workspace.role)) return NextResponse.json({ error: "L’export est réservé aux associés et administrateurs." }, { status: 403 });
     const payload = await loadSupabaseAppData(supabase, workspace.user, { allRows: true });
     const banking = await qontoContext(supabase, workspace.organizationId);
-    const bytes = await exportWorkspaceExcel(payload.data, { invitations: payload.invitations, bankTransactions: banking.transactions });
+    const bytes = await exportWorkspaceExcel(payload.data, { invitations: payload.invitations, bankTransactions: banking.transactions, bankDrafts: banking.drafts });
     return new NextResponse(new Uint8Array(bytes), { headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       "Content-Disposition": 'attachment; filename="ADetailing-export.xlsx"',

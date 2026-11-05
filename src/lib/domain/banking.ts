@@ -11,6 +11,7 @@ export interface BankCandidate {
   identities: string[];
   amount: number;
   date: string;
+  historicalEligible?: boolean;
 }
 export interface BankTransaction {
   id: string;
@@ -32,6 +33,17 @@ export interface BankTransaction {
   expense_month: string | null;
   created_entry: boolean;
   ignored_reason: string | null;
+  reconciliation_group_id?: string | null;
+  group_size?: number;
+  group_note?: string;
+}
+
+export function historicalGroupCandidates(transactions: BankTransaction[], candidates: BankCandidate[]) {
+  const amount = transactions.reduce((sum, transaction) => sum + transaction.amount_cents, 0);
+  if (transactions.length < 2 || transactions.length > 50 || new Set(transactions.map((transaction) => transaction.id)).size !== transactions.length
+    || !Number.isSafeInteger(amount) || transactions.some((transaction) => !canReconcile(transaction) || transaction.side !== transactions[0]!.side)) return [];
+  return candidates.filter((candidate) => candidate.historicalEligible && candidate.amount === amount
+    && candidate.kind === (transactions[0]!.side === "debit" ? "expense" : "payment"));
 }
 
 export function bankDate(value: string) {
@@ -41,7 +53,7 @@ export function bankDate(value: string) {
 export function canReconcile(transaction: BankTransaction) {
   return transaction.status === "completed" && transaction.currency === "EUR" && transaction.amount_cents > 0
     && Boolean(transaction.settled_at) && new Date(transaction.settled_at!).getTime() <= Date.now()
-    && transaction.reconciliation === "unmatched" && transaction.operation_type !== "internal_transfer";
+    && transaction.reconciliation === "unmatched" && !transaction.reconciliation_group_id && transaction.operation_type !== "internal_transfer";
 }
 
 export function bankCandidateMatches(transaction: BankTransaction, candidates: BankCandidate[]) {

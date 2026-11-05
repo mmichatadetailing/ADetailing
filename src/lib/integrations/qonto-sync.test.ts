@@ -28,6 +28,7 @@ it("enregistre les pages une à une et libère le verrou après une interruption
   mocks.transactions.mockResolvedValueOnce({ transactions: [], meta: { next_page: 2, total_pages: 2 } }).mockRejectedValueOnce(new Error("Limite Qonto atteinte"));
   await expect(syncQonto(db, "org")).rejects.toThrow("Limite Qonto");
   expect(rpc).toHaveBeenCalledWith("ingest_qonto_transactions", { target_org: "org", entries: [] });
+  expect(rpc).toHaveBeenCalledWith("prepare_qonto_drafts", { target_org: "org" });
   expect(updates).toContainEqual(expect.objectContaining({ next_page: 2, cursor_at: connection.cursor_at }));
   expect(updates.at(-1)).toEqual({ lease_token: null, lease_until: null });
 });
@@ -46,6 +47,7 @@ it("termine les comptes, reprend 48 h et identifie les virements internes", asyn
     expect(await syncQonto(db, "org")).toMatchObject({ pending: false, busy: false, imported: 1 });
     expect(mocks.transactions).toHaveBeenCalledTimes(2);
     expect(rpc).toHaveBeenCalledWith("ingest_qonto_transactions", expect.objectContaining({ entries: [expect.objectContaining({ operation_type: "internal_transfer" })] }));
+    expect(rpc).toHaveBeenCalledWith("prepare_qonto_drafts", { target_org: "org" });
     expect(updates).toContainEqual(expect.objectContaining({ cursor_at: "2026-11-03T12:00:00.000Z", window_to: null, account_index: 0 }));
   } finally { vi.useRealTimers(); }
 });
