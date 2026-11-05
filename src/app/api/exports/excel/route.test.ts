@@ -4,6 +4,7 @@ vi.mock("@/lib/supabase/server", () => ({ createSupabaseServerClient: async () =
 vi.mock("@/lib/supabase/workspace", () => ({ requireAuthenticatedWorkspace: mocks.requireWorkspace, canManageBusiness: (role: string) => role === "partner" || role === "admin" }));
 vi.mock("@/lib/supabase/data", () => ({ loadSupabaseAppData: mocks.load }));
 vi.mock("@/lib/export/workbook", () => ({ exportWorkspaceExcel: mocks.export }));
+vi.mock("@/lib/integrations/qonto-context", () => ({ qontoContext: async () => ({ transactions: [] }) }));
 import { GET } from "./route";
 
 beforeEach(() => vi.clearAllMocks());

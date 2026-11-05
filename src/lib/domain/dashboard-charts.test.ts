@@ -2,6 +2,29 @@ import { describe, expect, it } from "vitest";
 import { buildDashboardChartData, totalRevenueObjective } from "./dashboard-charts";
 
 describe("données des graphiques du dashboard", () => {
+  it("utilise le mois français de la banque et ne double pas une charge rapprochée", () => {
+    const result = buildDashboardChartData({
+      year: 2026, objectives: [], interventions: [{ id: "job" }],
+      payments: [{ interventionId: "job", amount: 11000, paidAt: "2026-08-31T22:30:00Z" }],
+      expenses: [{ date: "2026-08-15", paid: true, recurrence: "one_off", amountIncludingTax: 11000, settlements: [{ id: "settlement", month: "2026-08", amount: 11000, paidAt: "2026-09-01", bankTransactionId: "bank" }] }],
+      reference: new Date("2026-11-05T12:00:00Z"),
+    });
+    expect(result.revenue[7]?.collected).toBe(0);
+    expect(result.revenue[8]?.collected).toBe(11000);
+    expect(result.cashFlow[7]?.paidExpenses).toBe(0);
+    expect(result.cashFlow[8]?.paidExpenses).toBe(11000);
+  });
+  it("ne paie pas deux tarifs de la même charge pendant un mois déjà rapproché", () => {
+    const result = buildDashboardChartData({
+      year: 2026, objectives: [], interventions: [], payments: [],
+      expenses: [
+        { seriesId: "series", date: "2026-01-15", endsAt: "2026-09-21", paid: true, recurrence: "monthly", amountIncludingTax: 11000, settlements: [{ id: "settlement", month: "2026-09", amount: 11000, paidAt: "2026-09-15", bankTransactionId: "bank" }] },
+        { seriesId: "series", date: "2026-09-22", paid: true, recurrence: "monthly", amountIncludingTax: 12000 },
+      ], reference: new Date("2026-11-05T12:00:00Z"),
+    });
+    expect(result.cashFlow[8]).toMatchObject({ expenses: 11000, paidExpenses: 11000 });
+    expect(result.cashFlow[9]).toMatchObject({ expenses: 12000, paidExpenses: 12000 });
+  });
   it("agrège les encaissements liés aux prestations et aux entretiens", () => {
     const result = buildDashboardChartData({
       year: 2026,

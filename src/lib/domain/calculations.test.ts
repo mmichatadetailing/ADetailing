@@ -123,6 +123,25 @@ describe("charges récurrentes", () => {
   const annual = { date: "2026-03-10T12:00:00.000Z", recurrence: "annual" as const, amountIncludingTax: 24_000, paid: true };
   const oneOff = { date: "2026-04-15T12:00:00.000Z", recurrence: "one_off" as const, amountIncludingTax: 5_000, paid: false };
 
+  it("ne compte pas deux fois une charge automatique pointée à la banque", () => {
+    const expense = { ...monthly, date: "2026-09-15", amountIncludingTax: 36_000, settlements: [{ id: "s", month: "2026-09", amount: 36_000, paidAt: "2026-09-16", bankTransactionId: "bank" }] };
+    expect(paidExpenseAmountForMonth([expense], "2026-09", new Date("2026-10-31"))).toBe(36_000);
+    expect(paidExpenseAmountForMonth([expense], "2026-10", new Date("2026-10-31"))).toBe(36_000);
+  });
+
+  it("utilise la date bancaire réelle d’une échéance réglée le mois suivant", () => {
+    const expense = { ...monthly, date: "2026-09-15", amountIncludingTax: 36_000, settlements: [{ id: "s", month: "2026-09", amount: 36_000, paidAt: "2026-10-02", bankTransactionId: "bank" }] };
+    expect(paidExpenseAmountForMonth([expense], "2026-09", new Date("2026-10-31"))).toBe(0);
+    expect(paidExpenseAmountForMonth([expense], "2026-10", new Date("2026-10-31"))).toBe(72_000);
+    expect(expenseMonthSummary([expense], "2026-09", new Date("2026-09-30")).paid).toBe(0);
+  });
+
+  it("reconnaît un règlement bancaire ponctuel même sans case de prélèvement automatique", () => {
+    const expense = { ...oneOff, settlements: [{ id: "s", month: "2026-04", amount: 5_000, paidAt: "2026-04-16", bankTransactionId: "bank" }] };
+    expect(paidExpenseAmountForMonth([expense], "2026-04", new Date("2026-04-30"))).toBe(5_000);
+    expect(expenseMonthSummary([expense], "2026-04", new Date("2026-04-30")).paid).toBe(5_000);
+  });
+
   it("projette chaque fréquence uniquement dans les mois concernés", () => {
     expect(expenseOccursInMonth(monthly, "2026-01")).toBe(false);
     expect(expenseOccursInMonth(monthly, "2026-04")).toBe(true);

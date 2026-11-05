@@ -2,6 +2,7 @@
 
 import { AlertCircle, Banknote, CalendarClock, CheckCircle2, CircleDollarSign, Clock3, Landmark, PackageSearch, Pencil, Plus, ReceiptText, Repeat2, Save, ShieldCheck, Trash2, TriangleAlert, WalletCards } from "lucide-react";
 import { useState, type FormEvent } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { useWorkspace } from "@/components/workspace-provider";
@@ -20,7 +21,7 @@ import {
   recurringExpenseMetrics,
 } from "@/lib/domain/calculations";
 import { getInterventionWorkflow } from "@/lib/domain/intervention-workflow";
-import { monthKey } from "@/lib/domain/periods";
+import { financialDateKey, monthKey } from "@/lib/domain/periods";
 import type { Expense } from "@/lib/domain/types";
 import { useDemoStore, type NewExpenseInput } from "@/lib/demo/store";
 import { formatDate, formatMoney } from "@/lib/utils";
@@ -140,7 +141,7 @@ export default function FinancesPage() {
   const selectedExpenses = monthSummary.occurrences.map((occurrence) => occurrence.expense);
   const projectedExpenses = monthSummary.total;
   const paidExpenses = paidExpenseAmountForMonth(data.expenses, selectedMonth);
-  const collected = collectedRevenue(data.payments.filter((payment) => payment.paidAt.slice(0, 7) === selectedMonth));
+  const collected = collectedRevenue(data.payments.filter((payment) => financialDateKey(payment.paidAt).slice(0, 7) === selectedMonth));
   const cash = cashBalance(data.settings.initialCash, data.payments, data.expenses);
   const toCollect = data.interventions
     .filter((intervention) => intervention.status === "completed")
@@ -185,6 +186,7 @@ export default function FinancesPage() {
           </div>
         )}
       />
+      {canManage && <Link href="/banque" className="focus-ring flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-900"><span>Qonto : rapprocher les mouvements bancaires des paiements et des charges</span><span>Ouvrir la banque →</span></Link>}
 
       <Modal open={Boolean(editingExpense)} onClose={() => setEditingExpense(null)} title={editingExpense?.recurrence === "one_off" ? "Modifier la charge" : "Modifier le montant de l’abonnement"} description={editingExpense ? `${recurrenceLabels[editingExpense.recurrence]} · ${editingExpense.description}` : undefined}>
         {editingExpense && <ExpenseEditor key={editingExpense.id} expense={editingExpense} onCancel={() => setEditingExpense(null)} onSave={(input) => saveExpense(editingExpense, input)} />}

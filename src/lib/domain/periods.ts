@@ -94,3 +94,10 @@ export function monthKey(date: Date) {
 export function dateKey(date: Date) {
   return `${monthKey(date)}-${String(date.getDate()).padStart(2, "0")}`;
 }
+
+// Les mouvements bancaires arrivent en UTC : leur mois comptable est celui de Paris.
+export function financialDateKey(value: string) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Paris" }).format(date) : "";
+}

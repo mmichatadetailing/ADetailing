@@ -44,6 +44,7 @@ export function GlobalSearch() {
         ["Entretiens mensuels", "/entretiens", "Abonnements forfaits renouvellements"],
         ["Clients", "/clients", "Contacts véhicules"],
         ["Finances", "/finances", "Dépenses charges trésorerie"],
+        ["Banque & rapprochement", "/banque", "Qonto transactions synchronisation bancaire paiements charges"],
         ["Pilotage", "/pilotage", "Rentabilité marges"],
         ["Catalogue", "/catalogue", "Formules tarifs offres"],
         ["Équipe", "/equipe", "Collaborateurs associés invitations"],

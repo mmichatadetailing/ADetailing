@@ -283,6 +283,7 @@ export interface PlanningEvent extends BaseEntity {
 }
 
 export interface Expense extends BaseEntity {
+  settlements?: Array<{ id: string; month: string; amount: Money; paidAt: ISODate; bankTransactionId: string }>;
   date: ISODate;
   endsAt?: ISODate;
   seriesId?: UUID;

@@ -13,7 +13,7 @@ import { Field, Input } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import { Progress } from "@/components/ui/progress";
 import { collectedInterventionRevenue, grossMargin, hourlyMargin, servicePerformance } from "@/lib/domain/calculations";
-import { monthKey } from "@/lib/domain/periods";
+import { financialDateKey, monthKey } from "@/lib/domain/periods";
 import { useDemoStore } from "@/lib/demo/store";
 import { formatMoney } from "@/lib/utils";
 
@@ -26,7 +26,7 @@ export default function PilotagePage() {
   const currentMonthLabel = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric" }).format(currentDate);
   const objective = data.objectives.find((item) => item.month === currentMonth);
   const objectiveTarget = objective?.revenueTarget ?? 0;
-  const currentMonthPayments = data.payments.filter((payment) => payment.paidAt.slice(0, 7) === currentMonth);
+  const currentMonthPayments = data.payments.filter((payment) => financialDateKey(payment.paidAt).slice(0, 7) === currentMonth);
   const revenue = collectedInterventionRevenue(data.interventions.filter((intervention) => intervention.status !== "cancelled"), currentMonthPayments);
   const completed = data.interventions.filter((item) => item.status === "completed" && item.startAt?.slice(0, 7) === currentMonth);
   const margin = completed.reduce((sum, item) => sum + grossMargin(item), 0);

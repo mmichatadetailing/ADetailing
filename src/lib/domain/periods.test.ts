@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { getCompanyStatsPeriod, getCompanyStatsPeriodOptions, getPeriodRange, getPreviousCompanyStatsPeriodKey, isDateInRange, monthKey } from "./periods";
+import { financialDateKey, getCompanyStatsPeriod, getCompanyStatsPeriodOptions, getPeriodRange, getPreviousCompanyStatsPeriodKey, isDateInRange, monthKey } from "./periods";
 
 const reference = new Date("2026-07-30T12:00:00+02:00");
+
+it("rattache les transactions UTC au jour civil de Paris, sans décaler une date seule", () => {
+  expect(financialDateKey("2026-08-31T22:30:00Z")).toBe("2026-09-01");
+  expect(financialDateKey("2026-12-31T23:30:00Z")).toBe("2027-01-01");
+  expect(financialDateKey("2026-09-30")).toBe("2026-09-30");
+});
 
 describe("dashboard periods", () => {
   it("builds a Monday-to-Monday week", () => {

@@ -17,7 +17,7 @@
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 - `NEXT_PUBLIC_APP_URL`
 
-`SUPABASE_SERVICE_ROLE_KEY` n’est pas utilisée par l’application actuelle et ne doit pas être ajoutée à Vercel sans besoin serveur explicite.
+Pour Qonto, ajouter `SUPABASE_SERVICE_ROLE_KEY`, `OAUTH_TOKEN_ENCRYPTION_KEY` et `CRON_SECRET` uniquement côté serveur. Appliquer la migration Qonto avant de déployer cette version. Le [guide Qonto](QONTO.md) détaille la connexion, les protections contre les doublons et la tâche quotidienne déclarée dans `vercel.json`.
 
 Pour Google Calendar, ajouter aussi `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` et `OAUTH_TOKEN_ENCRYPTION_KEY`. L’URL de retour est construite automatiquement depuis le domaine qui lance la connexion.
 

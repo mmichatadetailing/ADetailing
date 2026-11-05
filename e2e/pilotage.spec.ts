@@ -94,7 +94,7 @@ test("les pages principales s’ouvrent sans erreur ni débordement global", asy
   test.setTimeout(120_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  for (const route of ["dashboard", "planning", "prestations", "entretiens", "clients", "documents", "finances", "pilotage", "catalogue", "equipe", "parametres", "compte", "inbox"]) {
+  for (const route of ["dashboard", "planning", "prestations", "entretiens", "clients", "documents", "finances", "banque", "pilotage", "catalogue", "equipe", "parametres", "compte", "inbox"]) {
     await page.goto(`/${route}`);
     await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Ajouter", exact: true })).toBeVisible();

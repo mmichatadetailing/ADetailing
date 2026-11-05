@@ -13,7 +13,7 @@ import type {
 
 const cents = (value: Decimal.Value): Money => new Decimal(value).toDecimalPlaces(0).toNumber();
 
-export type ExpenseSchedule = Pick<Expense, "date" | "endsAt" | "seriesId" | "recurrence" | "amountIncludingTax" | "paid" | "paidAt">;
+export type ExpenseSchedule = Pick<Expense, "date" | "endsAt" | "seriesId" | "recurrence" | "amountIncludingTax" | "paid" | "paidAt" | "settlements">;
 
 export type ExpenseOccurrenceStatus = "paid" | "due" | "upcoming";
 
@@ -128,7 +128,10 @@ export function nextExpenseOccurrenceDateKey(expense: ExpenseSchedule, reference
 }
 
 export function projectedExpensesForMonth<T extends ExpenseSchedule>(expenses: T[], month: string): T[] {
-  return latestSeriesVersions(expenses.filter((expense) => expenseOccursInMonth(expense, month)));
+  const eligible = expenses.filter((expense) => expenseOccursInMonth(expense, month));
+  const settledVersions = new Map(eligible.filter((expense) => expense.seriesId && expense.settlements?.some((settlement) => settlement.month === month)).map((expense) => [expense.seriesId, expense]));
+  // Un tarif révisé en cours de mois ne remplace pas une échéance déjà pointée.
+  return latestSeriesVersions(eligible).map((expense) => settledVersions.get(expense.seriesId) ?? expense);
 }
 
 export function projectedExpenseAmountForMonth(expenses: ExpenseSchedule[], month: string): Money {
@@ -140,8 +143,9 @@ export function expenseOccurrencesForMonth<T extends ExpenseSchedule>(expenses: 
   return projectedExpensesForMonth(expenses, month)
     .map((expense) => {
       const dueDate = expenseOccurrenceDateKey(expense, month)!;
-      const paymentDate = expense.recurrence === "one_off" ? (expense.paidAt ?? expense.date).slice(0, 10) : dueDate;
-      const isPaid = expense.paid && Boolean(paymentDate) && paymentDate! <= referenceDate;
+      const settlement = expense.settlements?.find((entry) => entry.month === month);
+      const paymentDate = settlement ? settlement.paidAt.slice(0, 10) : expense.recurrence === "one_off" ? (expense.paidAt ?? expense.date).slice(0, 10) : dueDate;
+      const isPaid = Boolean(settlement || expense.paid) && Boolean(paymentDate) && paymentDate <= referenceDate;
       return {
         expense,
         month,
@@ -206,14 +210,15 @@ export function expenseForecast(expenses: ExpenseSchedule[], startMonth: string,
 
 export function paidExpenseAmountForMonth(expenses: ExpenseSchedule[], month: string, reference = new Date()): Money {
   const referenceDate = dateKey(reference);
-  return projectedExpensesForMonth(expenses, month).reduce((sum, expense) => {
+  const actual = expenses.flatMap((expense) => expense.settlements ?? [])
+    .filter((entry) => entry.paidAt.slice(0, 7) === month && entry.paidAt.slice(0, 10) <= referenceDate)
+    .reduce((sum, entry) => sum + entry.amount, 0);
+  const oneOff = expenses.filter((expense) => expense.recurrence === "one_off" && !expense.settlements?.length && expense.paid)
+    .filter((expense) => (expense.paidAt ?? expense.date).slice(0, 7) === month && (expense.paidAt ?? expense.date).slice(0, 10) <= referenceDate)
+    .reduce((sum, expense) => sum + expense.amountIncludingTax, 0);
+  return actual + oneOff + projectedExpensesForMonth(expenses, month).reduce((sum, expense) => {
+    if (expense.recurrence === "one_off" || expense.settlements?.some((entry) => entry.month === month)) return sum;
     if (!expense.paid) return sum;
-    if (expense.recurrence === "one_off") {
-      const paidOn = expense.paidAt ?? expense.date;
-      return paidOn.slice(0, 7) === month && paidOn.slice(0, 10) <= referenceDate
-        ? sum + expense.amountIncludingTax
-        : sum;
-    }
     const occurrence = expenseOccurrenceDateKey(expense, month);
     return occurrence && occurrence <= referenceDate ? sum + expense.amountIncludingTax : sum;
   }, 0);
@@ -452,22 +457,15 @@ export function unpaidAmount(invoices: Invoice[], payments: Payment[]): Money {
 }
 
 export function cashBalance(initialCash: Money, payments: Payment[], expenses: Expense[], reference = new Date()): Money {
-  let paidExpenses = expenses.reduce((sum, expense) => {
-    if (!expense.paid || expense.recurrence !== "one_off") return sum;
-    const paidOn = expense.paidAt ?? expense.date;
-    return new Date(paidOn).getTime() <= reference.getTime() ? sum + expense.amountIncludingTax : sum;
-  }, 0);
-  const recurringExpenses = expenses.filter((expense) => expense.recurrence !== "one_off");
-  const firstMonth = recurringExpenses.reduce<string | null>((earliest, expense) => {
-    const month = expense.date.slice(0, 7);
+  let paidExpenses = 0;
+  const firstMonth = expenses.reduce<string | null>((earliest, expense) => {
+    const month = [expense.date, expense.paidAt ?? expense.date, ...(expense.settlements ?? []).map((entry) => entry.paidAt)].sort()[0]!.slice(0, 7);
     return earliest === null || month < earliest ? month : earliest;
   }, null);
   const lastMonth = dateKey(reference).slice(0, 7);
   if (firstMonth) {
     for (let month = firstMonth; month <= lastMonth; month = nextMonth(month, 1)) {
-      paidExpenses += expenseOccurrencesForMonth(recurringExpenses, month, reference)
-        .filter((occurrence) => occurrence.status === "paid")
-        .reduce((sum, occurrence) => sum + occurrence.amount, 0);
+      paidExpenses += paidExpenseAmountForMonth(expenses, month, reference);
     }
   }
   return initialCash + collectedRevenue(payments) - paidExpenses;

@@ -1,11 +1,13 @@
 import ExcelJS from "exceljs";
 import type { AppData, Payment } from "@/lib/domain/types";
 import type { TeamInvitation } from "@/lib/supabase/data";
+import type { BankTransaction } from "@/lib/domain/banking";
 import { clientRevenueMetrics, grossMargin, paymentStatusForInvoice } from "@/lib/domain/calculations";
 import { buildDashboardChartData } from "@/lib/domain/dashboard-charts";
 import { getInterventionWorkflow } from "@/lib/domain/intervention-workflow";
 import { interventionStatusLabels, invoiceStatusLabels, leadStageLabels, paymentStatusLabels, quoteStatusLabels } from "@/lib/domain/labels";
 import { memberRoleDisplayLabel } from "@/lib/domain/member-roles";
+import { financialDateKey } from "@/lib/domain/periods";
 
 type Row = Record<string, unknown>;
 const without = (record: object, keys: string[]): Row => Object.fromEntries(Object.entries(record).filter(([key]) => !keys.includes(key)));
@@ -81,7 +83,7 @@ function rowsSheet(book: ExcelJS.Workbook, name: string, records: Row[], preferr
   return sheet;
 }
 
-export function buildExportWorkbook(data: AppData, options: { exportedAt?: Date; invitations?: TeamInvitation[] } = {}) {
+export function buildExportWorkbook(data: AppData, options: { exportedAt?: Date; invitations?: TeamInvitation[]; bankTransactions?: BankTransaction[] } = {}) {
   const reference = options.exportedAt ?? new Date();
   const book = new ExcelJS.Workbook();
   book.creator = "ADetailing";
@@ -124,6 +126,8 @@ export function buildExportWorkbook(data: AppData, options: { exportedAt?: Date;
     return { clientName: clients.get(contract?.clientId ?? intervention?.clientId ?? invoice?.clientId ?? "") ?? "Client non retrouvé", contractName: contract?.title, interventionName: intervention?.title, type: contract ? "Entretien" : invoice ? "Facture" : "Prestation", ...payment };
   };
   add("Paiements", data.payments.map(paymentDetails), ["paidAt", "clientName", "type", "contractName", "interventionName", "amount", "method"]);
+  add("Transactions Qonto", (options.bankTransactions ?? []).map((transaction) => ({ "Date bancaire": excelDate(transaction.settled_at ?? transaction.emitted_at), "Compte": transaction.account_name, "Libellé": transaction.label, "Contrepartie": transaction.counterparty, "Montant (€)": transaction.amount_cents / 100 * (transaction.side === "credit" ? 1 : -1), "État bancaire": transaction.status, "Rapprochement": transaction.reconciliation, "ID transaction": transaction.id, "ID Qonto": transaction.remote_id, "ID paiement": transaction.payment_id, "ID charge": transaction.expense_id, "Mois charge": transaction.expense_month })), ["Date bancaire", "Compte", "Libellé", "Contrepartie", "Montant (€)", "État bancaire", "Rapprochement"]);
+  add("Règlements charges", data.expenses.flatMap((expense) => (expense.settlements ?? []).map((settlement) => ({ "Charge": expense.description, "ID charge": expense.id, ...settlement }))), ["Charge", "month", "amount", "paidAt", "bankTransactionId"]);
   add("Clients", data.clients.map((client) => { const metrics = clientRevenueMetrics(client.id, data.invoices, data.interventions, data.payments, data.maintenanceContracts, data.maintenanceBillingPeriods); return { ...client, "Encaissé (€)": metrics.collected / 100, "Prestations réalisées (€)": metrics.revenue / 100 }; }), ["company", "firstName", "lastName", "email", "phone", "city"]);
   add("Véhicules", data.vehicles.map((vehicle) => ({ clientName: clients.get(vehicle.clientId), ...vehicle })), ["clientName", "make", "model", "registration", "format"]);
   add("Prestations", data.interventions.map((original) => { const item = original; const workflow = getInterventionWorkflow(original, invoices.get(item.invoiceId ?? ""), data.payments); return { clientName: clients.get(item.clientId), ...without(item, ["items", "workers"]), status: interventionStatusLabels[item.status], "Facturation": item.maintenanceContractId ? "Incluse dans le contrat" : "Prestation ponctuelle", "Reste à encaisser (€)": workflow.outstanding / 100, "Marge brute (€)": grossMargin(original) / 100 }; }), ["title", "clientName", "startAt", "endAt", "status"]);
@@ -131,7 +135,7 @@ export function buildExportWorkbook(data: AppData, options: { exportedAt?: Date;
   add("Affectations", data.interventions.flatMap((item) => item.workers.map((worker) => ({ interventionName: item.title, interventionId: item.id, memberName: team.get(worker.memberId), ...worker }))), ["interventionName", "memberName", "plannedMinutes", "actualMinutes"]);
   add("Entretiens", data.maintenanceContracts.map((contract) => ({ clientName: clients.get(contract.clientId), ...contract, assignedMemberIds: contract.assignedMemberIds.map((id) => team.get(id) ?? id), billingFrequency: ({ monthly: "Mensuel", annual: "Annuel", prepaid: "Paiement unique" })[contract.billingFrequency], status: ({ active: "Actif", paused: "En pause", ended: "Terminé" })[contract.status] })), ["title", "clientName", "billingFrequency", "billingAmount", "termMonths", "firstVisitOn", "endsOn"]);
   add("Échéances entretiens", data.maintenanceBillingPeriods.map((period) => ({ clientName: clients.get(contracts.get(period.contractId)?.clientId ?? ""), contractName: contracts.get(period.contractId)?.title, ...period, status: ({ due: "À encaisser", paid: "Encaissée", cancelled: "Annulée" })[period.status] })), ["clientName", "contractName", "dueOn", "amount", "status", "paidAt"]);
-  add("Charges", data.expenses.map((expense) => ({ ...expense, recurrence: ({ monthly: "Mensuelle", annual: "Annuelle", one_off: "Ponctuelle" })[expense.recurrence], family: ({ fixed: "Fixe", variable: "Variable", investment: "Investissement", personal: "Personnel" })[expense.family] })), ["description", "supplier", "category", "date", "endsAt", "recurrence", "amountIncludingTax", "paid"]);
+  add("Charges", data.expenses.map((expense) => ({ ...without(expense, ["settlements"]), recurrence: ({ monthly: "Mensuelle", annual: "Annuelle", one_off: "Ponctuelle" })[expense.recurrence], family: ({ fixed: "Fixe", variable: "Variable", investment: "Investissement", personal: "Personnel" })[expense.family] })), ["description", "supplier", "category", "date", "endsAt", "recurrence", "amountIncludingTax", "paid"]);
   add("Équipe", data.team.map((member) => ({ ...member, role: memberRoleDisplayLabel(member.role), "Droits administrateur": member.role === "admin" ? "Oui" : "Non" })), ["firstName", "lastName", "email", "role", "active", "weeklyCapacityMinutes"]);
   add("Formules", data.services.map((service) => without(service, ["prices"])), ["name", "kind", "category", "pricingMode", "active"]);
   add("Tarifs formules", data.services.flatMap((service) => service.prices.map((price) => ({ "Formule": service.name, serviceId: service.id, ...price }))), ["Formule", "label", "vehicleFormat", "minimumVehicleCount", "maximumVehicleCount", "amount", "maximumAmount"]);
@@ -147,7 +151,7 @@ export function buildExportWorkbook(data: AppData, options: { exportedAt?: Date;
   add("Messages accessibles", data.messages.map((message) => ({ memberName: team.get(message.authorId), ...message, readBy: message.readBy.map((id) => team.get(id) ?? id) })), ["sentAt", "memberName", "channel", "body", "entityType", "entityId"]);
   add("Invitations", (options.invitations ?? []).map((invitation) => ({ ...invitation })), ["firstName", "lastName", "email", "role", "expiresAt", "acceptedAt"]);
   add("Paramètres", Object.entries(data.settings).map(([key, value]) => ({ "Paramètre": key, "Valeur": Array.isArray(value) ? value.join(", ") : key.endsWith("BasisPoints") ? Number(value) / 10_000 : /Cash|Target|Buffer/.test(key) && !/Review|Rating|Rate/.test(key) ? Number(value) / 100 : value })), ["Paramètre", "Valeur"]);
-  const years = new Set([reference.getFullYear(), ...data.payments.map((item) => +item.paidAt.slice(0, 4)), ...data.objectives.map((item) => +item.month.slice(0, 4)), ...data.expenses.map((item) => +item.date.slice(0, 4)), ...data.interventions.flatMap((item) => item.startAt ? [+item.startAt.slice(0, 4)] : [])]);
+  const years = new Set([reference.getFullYear(), ...data.payments.map((item) => +financialDateKey(item.paidAt).slice(0, 4)), ...data.objectives.map((item) => +item.month.slice(0, 4)), ...data.expenses.map((item) => +item.date.slice(0, 4)), ...data.interventions.flatMap((item) => item.startAt ? [+item.startAt.slice(0, 4)] : [])]);
   const monthly = [...years].filter((year) => Number.isFinite(year) && year >= 1900 && year <= 9999).sort().flatMap((year) => {
     const charts = buildDashboardChartData({ year, objectives: data.objectives, interventions: data.interventions, payments: data.payments, expenses: data.expenses, reference });
     return charts.revenue.map((point, index) => {

@@ -49,6 +49,7 @@
     "zustand": "latest"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.15",
     "@playwright/test": "latest",
     "@tailwindcss/postcss": "latest",
     "@testing-library/jest-dom": "latest",

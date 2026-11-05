@@ -41,7 +41,7 @@ Le script de prévisualisation nécessite que `npm run dev` soit lancé. Il acce
 
 ## Variables d’environnement
 
-Voir `.env.example`. Les variables `NEXT_PUBLIC_*` sont les seules exposables au navigateur. `SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_CLIENT_SECRET` et `OAUTH_TOKEN_ENCRYPTION_KEY` restent strictement côté serveur.
+Voir `.env.example`. Les variables `NEXT_PUBLIC_*` sont les seules exposables au navigateur. `SUPABASE_SERVICE_ROLE_KEY`, `GOOGLE_CLIENT_SECRET`, `OAUTH_TOKEN_ENCRYPTION_KEY` et `CRON_SECRET` restent strictement côté serveur.
 
 Pour générer la clé de chiffrement OAuth :
 
@@ -72,4 +72,4 @@ Tous les membres d’une entreprise chargent les mêmes clients, documents, pres
 
 Les données de démonstration sont fictives. Les fichiers `.pdf`, `.xlsx` et `private-fixtures/` sont ignorés par Git. Ne placez jamais les PDF clients réels dans un dépôt public.
 
-Voir [fonctionnalités et limites](docs/FEATURES.md), [déploiement Vercel](docs/DEPLOYMENT.md), [Google Calendar](docs/GOOGLE_CALENDAR.md) et [import historique](docs/IMPORT_GUIDE.md).
+Voir [fonctionnalités et limites](docs/FEATURES.md), [déploiement Vercel](docs/DEPLOYMENT.md), [Google Calendar](docs/GOOGLE_CALENDAR.md), [connexion et rapprochement Qonto](docs/QONTO.md) et [import historique](docs/IMPORT_GUIDE.md).
