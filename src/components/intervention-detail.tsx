@@ -8,7 +8,6 @@ import {
   CircleDollarSign,
   Clock3,
   ExternalLink,
-  FileUp,
   MapPin,
   Pencil,
   Phone,
@@ -412,7 +411,7 @@ export function InterventionDetail({ interventionId, startEditing = false, onDir
 
             {paymentHistory}
 
-            {canManage && <div className="rounded-2xl border border-dashed border-violet-200 bg-violet-50/40 p-4"><p className="text-[10px] font-bold tracking-wider text-violet-700 uppercase">Document facultatif</p><p className="mb-3 mt-1 text-xs text-zinc-500">Vous pouvez associer une facture comme justificatif, maintenant ou plus tard.</p><div className="grid gap-3 sm:grid-cols-[1fr_auto]"><Field label="Facture du client"><Select value={invoiceChoice} onChange={(event) => setInvoiceChoice(event.target.value)}><option value="">Sélectionner une facture importée…</option>{eligibleInvoices.map((item) => <option key={item.id} value={item.id}>{item.number} · {formatMoney(item.totalIncludingTax)} · {formatDate(item.issuedAt)}</option>)}</Select></Field><Button className="self-end" disabled={!invoiceChoice} onClick={linkInvoice}><ReceiptText className="size-4" /> Associer</Button></div><div className="mt-3 flex justify-end"><Link href="/documents?tab=imports" className={buttonVariants({ size: "sm", variant: "ghost" })}><FileUp className="size-3.5" /> Importer un justificatif</Link></div></div>}
+            {canManage && eligibleInvoices.length > 0 && <div className="rounded-2xl border border-dashed border-violet-200 bg-violet-50/40 p-4"><p className="text-[10px] font-bold tracking-wider text-violet-700 uppercase">Justificatif facultatif</p><p className="mb-3 mt-1 text-xs text-zinc-500">Vous pouvez associer une facture déjà enregistrée pour ce client.</p><div className="grid gap-3 sm:grid-cols-[1fr_auto]"><Field label="Facture du client"><Select value={invoiceChoice} onChange={(event) => setInvoiceChoice(event.target.value)}><option value="">Sélectionner une facture déjà enregistrée…</option>{eligibleInvoices.map((item) => <option key={item.id} value={item.id}>{item.number} · {formatMoney(item.totalIncludingTax)} · {formatDate(item.issuedAt)}</option>)}</Select></Field><Button className="self-end" disabled={!invoiceChoice} onClick={linkInvoice}><ReceiptText className="size-4" /> Associer</Button></div></div>}
           </div>
         )}
       </section>

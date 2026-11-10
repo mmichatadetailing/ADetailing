@@ -94,7 +94,7 @@ function PrestationsPageContent() {
       router.replace("/prestations", { scroll: false });
     }
     setDeletingInterventionId(null);
-    toast.success("Prestation supprimée", { description: deletingInvoice ? "La facture liée a été conservée dans Documents." : "Elle a été retirée du planning et des statistiques." });
+    toast.success("Prestation supprimée", { description: deletingInvoice ? "La facture liée a été conservée." : "Elle a été retirée du planning et des statistiques." });
   };
 
   return (

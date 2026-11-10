@@ -9,7 +9,7 @@ import {
   ChevronDown,
   CircleDollarSign,
   ContactRound,
-  FileStack,
+  ReceiptText,
   Gauge,
   Inbox,
   Menu,
@@ -49,7 +49,7 @@ const groups = [
       { href: "/prestations", label: "Prestations", icon: Sparkles },
       { href: "/entretiens", label: "Entretiens mensuels", icon: Repeat2 },
       { href: "/clients", label: "Clients", icon: ContactRound },
-      { href: "/documents", label: "Documents", icon: FileStack },
+      { href: "/factures", label: "Factures", icon: ReceiptText },
     ],
   },
   {
@@ -77,13 +77,15 @@ function Brand() {
 
 function Navigation({ close }: { close?: () => void }) {
   const pathname = usePathname();
+  const { mode, workspace } = useWorkspace();
+  const canViewInvoices = mode === "demo" || Boolean(workspace?.canManageBusiness);
   return (
     <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
       {groups.map((group) => (
         <div key={group.label}>
           <p className="mb-2 px-3 text-[10px] font-bold tracking-[.18em] text-zinc-600 uppercase">{group.label}</p>
           <div className="grid gap-1">
-            {group.items.map((item) => {
+            {group.items.filter((item) => item.href !== "/factures" || canViewInvoices).map((item) => {
               const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
                 <Link key={item.href} href={item.href} onClick={close} aria-current={active ? "page" : undefined} className={cn("focus-ring row-interactive group flex min-h-10 items-center gap-3 rounded-xl px-3 text-sm font-semibold", active ? "bg-gradient-to-r from-brand-50 to-orange-50 text-brand-600 shadow-sm" : "text-zinc-500 hover:text-zinc-200")}>

@@ -14,9 +14,9 @@ La prévisualisation :
 
 Après validation, le rapport indique les lignes créées, ignorées et à vérifier. `legacy_row` assure l’idempotence locale ; en Supabase, compléter avec `file_hash` et `import_fingerprint`.
 
-## PDF Henrri
+## PDF Henrri (historique)
 
-Ouvrir **Documents → Rapprochements** puis déposer un PDF. Le flux extrait le texte, identifie devis/facture, parse les lignes et totaux, signale les remises implicites et exige une validation humaine.
+L’import PDF Henrri n’est plus proposé dans le menu : **Factures** affiche uniquement les factures clients Qonto. Les données importées auparavant et leurs liens avec les prestations sont conservés. Le script de prévisualisation ci-dessous reste disponible pour examiner un PDF sans l’importer.
 
 Une facture importée démarre avec un paiement **non payé**. Le moyen de paiement prévu ne vaut jamais preuve d’encaissement.
 

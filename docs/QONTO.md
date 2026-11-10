@@ -129,7 +129,7 @@ en mélangeant leurs historiques.
 
 ### Consulter les factures clients et leurs retards
 
-Dans **Documents → Factures Qonto**, les associés et administrateurs peuvent
+Dans le menu **Factures**, les associés et administrateurs peuvent
 consulter le numéro, le client, l’émission, l’échéance et le montant des factures
 clients. L’onglet réutilise la connexion existante et lit Qonto à l’ouverture,
 au retour sur la fenêtre et périodiquement tant que l’onglet est visible.

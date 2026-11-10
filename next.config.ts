@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1"],
   redirects: async () => [
     { source: "/commercial", destination: "/prestations", permanent: true },
+    { source: "/documents", destination: "/factures", permanent: true },
   ],
   experimental: {
     optimizePackageImports: ["lucide-react", "recharts"],
