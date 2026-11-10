@@ -19,3 +19,14 @@ it("met en tête les retards et distingue une échéance du jour et les factures
   expect(html.indexOf("F-RETARD")).toBeLessThan(html.indexOf("F-DUJOUR"));
   expect(html.indexOf("F-DUJOUR")).toBeLessThan(html.indexOf("F-PAYÉE"));
 });
+
+it("affiche le montant restant en retard en euros sans masquer un solde inconnu", () => {
+  const html = renderToStaticMarkup(<QontoInvoiceList today="2026-11-10" invoices={[
+    late,
+    { ...late, id: "partial", remaining: "25.50" },
+    { ...late, id: "unknown", remaining: null },
+  ]} />);
+  expect(html).toMatch(/100,50\s€/u);
+  expect(html).toContain("Solde connu en euros");
+  expect(html).toContain("Solde non communiqué pour 1 facture en euros.");
+});

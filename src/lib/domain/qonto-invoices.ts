@@ -1,3 +1,4 @@
+import Decimal from "decimal.js";
 import { financialDateKey } from "./periods";
 import { normalizeText } from "@/lib/utils";
 
@@ -32,6 +33,21 @@ export function qontoInvoiceDaysLate(dueDate: string, today: string) {
 
 export function qontoInvoiceMatchesFilter(status: QontoInvoiceStatus, filter: QontoInvoiceFilter) {
   return filter === "all" || status === filter || (filter === "unpaid" && status === "overdue");
+}
+
+export function qontoOverdueEuroTotal(invoices: QontoInvoice[], today: string) {
+  let amount = new Decimal(0);
+  let known = 0;
+  let missing = 0;
+  let nonEuro = 0;
+  for (const invoice of invoices) {
+    if (qontoInvoiceStatus(invoice, today) !== "overdue") continue;
+    if (invoice.currency !== "EUR") { nonEuro++; continue; }
+    if (invoice.remaining === null) { missing++; continue; }
+    amount = amount.plus(invoice.remaining);
+    known++;
+  }
+  return { amount: missing > 0 && known === 0 ? null : amount.toFixed(), missing, nonEuro };
 }
 
 export function listQontoInvoices(invoices: QontoInvoice[], today: string, filter: QontoInvoiceFilter, query: string, order: QontoInvoiceOrder) {

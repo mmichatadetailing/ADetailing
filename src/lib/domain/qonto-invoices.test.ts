@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { listQontoInvoices, qontoInvoiceDaysLate, qontoInvoiceStatus, type QontoInvoice } from "./qonto-invoices";
+import { listQontoInvoices, qontoInvoiceDaysLate, qontoInvoiceStatus, qontoOverdueEuroTotal, type QontoInvoice } from "./qonto-invoices";
 
 const invoice: QontoInvoice = { id: "one", number: "F-2026-101", clientName: "Élodie Martin", issueDate: "2026-11-02", dueDate: "2026-11-09", status: "unpaid", currency: "EUR", total: "150", remaining: "75" };
 const today = "2026-11-10";
@@ -16,6 +16,23 @@ it("ne signale comme en retard que les impayés dont le jour d’échéance est 
 it("compte les jours calendaires, y compris lors du changement d’heure", () => {
   expect(qontoInvoiceDaysLate("2026-10-24", "2026-10-26")).toBe(2);
   expect(qontoInvoiceDaysLate(invoice.dueDate!, today)).toBe(1);
+});
+
+it("additionne uniquement les soldes connus des factures en retard en euros", () => {
+  expect(qontoOverdueEuroTotal([
+    { ...invoice, remaining: "75.10" },
+    { ...invoice, id: "second", remaining: "0.21" },
+    { ...invoice, id: "missing", remaining: null },
+    { ...invoice, id: "usd", currency: "USD" },
+    { ...invoice, id: "today", dueDate: today },
+    { ...invoice, id: "paid", status: "paid" },
+    { ...invoice, id: "canceled", status: "canceled" },
+  ], today)).toEqual({ amount: "75.31", missing: 1, nonEuro: 1 });
+});
+
+it("distingue l’absence de retard d’un solde non communiqué", () => {
+  expect(qontoOverdueEuroTotal([], today)).toEqual({ amount: "0", missing: 0, nonEuro: 0 });
+  expect(qontoOverdueEuroTotal([{ ...invoice, remaining: null }], today)).toEqual({ amount: null, missing: 1, nonEuro: 0 });
 });
 
 it("trie les retards les plus anciens en premier et filtre par client ou numéro", () => {

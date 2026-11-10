@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/field";
 import { financialDateKey } from "@/lib/domain/periods";
-import { listQontoInvoices, qontoInvoiceDaysLate, qontoInvoiceMatchesFilter, qontoInvoiceStatus, type QontoInvoice, type QontoInvoiceFeed, type QontoInvoiceFilter, type QontoInvoiceOrder, type QontoInvoiceStatus } from "@/lib/domain/qonto-invoices";
+import { listQontoInvoices, qontoInvoiceDaysLate, qontoInvoiceMatchesFilter, qontoInvoiceStatus, qontoOverdueEuroTotal, type QontoInvoice, type QontoInvoiceFeed, type QontoInvoiceFilter, type QontoInvoiceOrder, type QontoInvoiceStatus } from "@/lib/domain/qonto-invoices";
 
 const statusDetails = {
   overdue: { label: "En retard", variant: "red" }, unpaid: { label: "À encaisser", variant: "blue" }, paid: { label: "Payée", variant: "green" },
@@ -44,6 +44,7 @@ export function QontoInvoiceList({ invoices, today }: { invoices: QontoInvoice[]
     }
     return results;
   }, [invoices, today]);
+  const overdueTotal = useMemo(() => qontoOverdueEuroTotal(invoices, today), [invoices, today]);
   const results = useMemo(() => listQontoInvoices(invoices, today, filter, query, order), [invoices, today, filter, query, order]);
   const pageSize = 25;
   const pageCount = Math.max(1, Math.ceil(results.length / pageSize));
@@ -52,7 +53,13 @@ export function QontoInvoiceList({ invoices, today }: { invoices: QontoInvoice[]
   const selectFilter = (next: QontoInvoiceFilter) => { setFilter(next); setPage(0); };
   return <>
     <div className="grid gap-2 sm:grid-cols-3" aria-label="Synthèse des factures Qonto">
-      <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-900"><p className="text-xs font-semibold">En retard</p><p className="mt-1 text-2xl font-bold tabular-nums">{counts.overdue}</p></div>
+      <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-900">
+        <p className="text-xs font-semibold">En retard</p>
+        <p className="mt-1 text-2xl font-bold tabular-nums">{amountLabel(overdueTotal.amount, "EUR")}</p>
+        <p className="mt-1 text-xs">{overdueTotal.missing > 0 ? "Solde connu en euros" : "Reste à encaisser en euros"} · {counts.overdue} facture{counts.overdue === 1 ? "" : "s"}</p>
+        {overdueTotal.missing > 0 && <p className="mt-1 text-xs">Solde non communiqué pour {overdueTotal.missing} facture{overdueTotal.missing === 1 ? "" : "s"} en euros.</p>}
+        {overdueTotal.nonEuro > 0 && <p className="mt-1 text-xs">Les factures hors EUR ou sans devise renseignée ne sont pas incluses dans le montant.</p>}
+      </div>
       <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sky-900"><p className="text-xs font-semibold">À encaisser · retards inclus</p><p className="mt-1 text-2xl font-bold tabular-nums">{counts.unpaid}</p></div>
       <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-900"><p className="text-xs font-semibold">Payées</p><p className="mt-1 text-2xl font-bold tabular-nums">{counts.paid}</p></div>
     </div>
