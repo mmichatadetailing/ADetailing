@@ -110,11 +110,25 @@ test("les pages principales s’ouvrent sans erreur ni débordement global", asy
 
 test("les onglets Documents suivent les liens et le retour arrière", async ({ page }) => {
   await page.goto("/documents?tab=quotes");
-  await page.getByRole("button", { name: /^Factures / }).click();
+  await page.getByRole("button", { name: /^Factures Henrri/ }).click();
   await expect(page).toHaveURL(/tab=invoices/);
   await page.goBack();
   await expect(page).toHaveURL(/tab=quotes/);
   await expect(page.getByRole("heading", { name: "Devis Henrri" })).toBeVisible();
+});
+
+test("l’onglet Factures Qonto est distinct et ne charge pas de données en démonstration", async ({ page }) => {
+  let qontoReads = 0;
+  page.on("request", (request) => { if (request.url().includes("/api/integrations/qonto/invoices")) qontoReads++; });
+  await page.goto("/documents?tab=invoices");
+  await page.getByRole("button", { name: "Factures Qonto" }).click();
+  await expect(page).toHaveURL(/tab=qonto/);
+  await expect(page.getByRole("heading", { name: "Factures clients Qonto" })).toBeVisible();
+  await expect(page.getByText("Aucune donnée bancaire n’est chargée en démonstration.", { exact: false })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Importer un PDF" })).toHaveCount(0);
+  expect(qontoReads).toBe(0);
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "Factures Henrri" })).toBeVisible();
 });
 
 test("Échap ferme seulement la fenêtre la plus haute", async ({ page }) => {

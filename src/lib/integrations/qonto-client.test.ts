@@ -21,3 +21,31 @@ it("n’expose jamais le corps d’une erreur Qonto ou les identifiants", async 
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("secret et corps privé", { status: 401 })));
   await expect(new QontoClient("login", "secret").organization()).rejects.toThrow("Qonto refuse l’accès");
 });
+
+it("lit toutes les pages de factures clients, imports compris, et dédoublonne sur l’identifiant", async () => {
+  const invoice = { id: "q1", organization_id: "org", number: "F-1", status: "unpaid", due_date: "2026-11-09", issue_date: "2026-11-02", client: { first_name: "Ada", last_name: "Martin", email: "private@qonto.test" }, currency: "EUR", total_amount: { value: "150.10", currency: "EUR" }, amount_paid: { value: "50.03", currency: "EUR" }, invoice_url: "https://pay.qonto.com/private" };
+  const json = (client_invoices: object[], next_page: number | null) => new Response(JSON.stringify({ client_invoices, meta: { next_page } }));
+  const fetchMock = vi.fn().mockResolvedValueOnce(json([invoice], 2)).mockResolvedValueOnce(json([invoice, { id: "q2", status: "draft", due_date: null, total_amount_cents: null }], null));
+  vi.stubGlobal("fetch", fetchMock);
+  const result = await new QontoClient("login", "secret").clientInvoices("org");
+  expect(result).toEqual([
+    { id: "q1", number: "F-1", status: "unpaid", dueDate: "2026-11-09", issueDate: "2026-11-02", clientName: "Ada Martin", currency: "EUR", total: "150.1", remaining: "100.07" },
+    { id: "q2", number: null, status: "draft", dueDate: null, issueDate: null, clientName: null, currency: null, total: null, remaining: null },
+  ]);
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  for (const [index, [url, request]] of fetchMock.mock.calls.entries()) {
+    const parsed = new URL(String(url));
+    expect(parsed.pathname).toBe("/v2/client_invoices");
+    expect(parsed.searchParams.get("page")).toBe(String(index + 1));
+    expect(parsed.searchParams.get("exclude_imported")).toBe("false");
+    expect(request).toMatchObject({ method: "GET", headers: { Authorization: "login:secret" }, cache: "no-store" });
+  }
+});
+
+it("ne renvoie pas une liste partielle si Qonto répète la page ou renvoie une autre organisation", async () => {
+  const client = new QontoClient("login", "secret");
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ client_invoices: [], meta: { next_page: 1 } }))));
+  await expect(client.clientInvoices("org")).rejects.toThrow("Pagination Qonto incomplète");
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ client_invoices: [{ id: "q1", organization_id: "other", status: "unpaid" }], meta: { next_page: null } }))));
+  await expect(client.clientInvoices("org")).rejects.toThrow("Organisation Qonto incohérente");
+});

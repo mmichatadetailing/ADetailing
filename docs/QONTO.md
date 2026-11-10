@@ -127,6 +127,22 @@ en mélangeant leurs historiques.
 
 ## 6. Rapprocher les opérations
 
+### Consulter les factures clients et leurs retards
+
+Dans **Documents → Factures Qonto**, les associés et administrateurs peuvent
+consulter le numéro, le client, l’émission, l’échéance et le montant des factures
+clients. L’onglet réutilise la connexion existante et lit Qonto à l’ouverture,
+au retour sur la fenêtre et périodiquement tant que l’onglet est visible.
+Le bouton **Actualiser** permet de relire immédiatement les statuts.
+
+Une facture est **En retard** uniquement si Qonto la considère à encaisser et
+si son échéance est antérieure au jour courant à Paris. L’échéance du jour n’est
+pas un retard. Le solde est affiché lorsque Qonto fournit un montant déjà réglé.
+La recherche par client ou numéro et le filtre **En retard** permettent de
+retrouver les factures à suivre. La liste est séparée de la facturation interne :
+aucun paiement, document comptable ou mouvement Qonto n’est créé ou modifié.
+Aucune migration supplémentaire n’est nécessaire pour cette vue.
+
 Dans la vue **À traiter**, cliquez sur **Rapprocher**.
 
 ### Nouvelles transactions : préparation automatique, validation manuelle
