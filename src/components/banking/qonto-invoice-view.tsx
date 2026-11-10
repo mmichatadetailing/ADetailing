@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { AlertCircle, FileText, LoaderCircle, RefreshCw, Search } from "lucide-react";
+import { AlertCircle, Eye, FileText, LoaderCircle, RefreshCw, Search } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/field";
+import { QontoInvoicePreview } from "./qonto-invoice-preview";
 import { financialDateKey } from "@/lib/domain/periods";
 import { listQontoInvoices, qontoInvoiceDaysLate, qontoInvoiceMatchesFilter, qontoInvoiceStatus, qontoOverdueEuroTotal, type QontoInvoice, type QontoInvoiceFeed, type QontoInvoiceFilter, type QontoInvoiceOrder, type QontoInvoiceStatus } from "@/lib/domain/qonto-invoices";
 
@@ -31,11 +32,18 @@ function InvoiceDue({ invoice, status, today }: { invoice: QontoInvoice; status:
   </>;
 }
 
+function PreviewButton({ invoice, onOpen }: { invoice: QontoInvoice; onOpen: (invoice: QontoInvoice) => void }) {
+  return <Button variant="secondary" size="sm" aria-haspopup="dialog"
+    aria-label={`Aperçu de la facture ${invoice.number ?? invoice.clientName ?? "sans numéro"}`}
+    onClick={() => onOpen(invoice)}><Eye aria-hidden="true" className="size-4" /> Aperçu</Button>;
+}
+
 export function QontoInvoiceList({ invoices, today }: { invoices: QontoInvoice[]; today: string }) {
   const [filter, setFilter] = useState<QontoInvoiceFilter>("all");
   const [query, setQuery] = useState("");
   const [order, setOrder] = useState<QontoInvoiceOrder>("priority");
   const [page, setPage] = useState(0);
+  const [previewInvoice, setPreviewInvoice] = useState<QontoInvoice | null>(null);
   const counts = useMemo(() => {
     const results = { all: 0, overdue: 0, unpaid: 0, paid: 0, draft: 0, canceled: 0 };
     for (const invoice of invoices) {
@@ -72,18 +80,21 @@ export function QontoInvoiceList({ invoices, today }: { invoices: QontoInvoice[]
     </div>
     {rows.length === 0 ? <div className="rounded-xl border border-dashed border-black/10 p-7 text-center text-sm text-zinc-500"><FileText aria-hidden="true" className="mx-auto mb-2 size-5" />{invoices.length === 0 ? "Aucune facture client trouvée dans Qonto." : filter === "overdue" && !query ? "Aucune facture en retard." : "Aucune facture ne correspond à ces critères."}</div> : <>
       <div className="hidden overflow-x-auto rounded-xl border border-black/10 md:block"><table className="w-full min-w-[680px] text-left text-sm">
-        <thead className="bg-zinc-50 text-xs text-zinc-500"><tr>{["Facture", "Client", "Émission", "Échéance", "Montant TTC", "Reste à encaisser", "Statut"].map((label, i) => <th key={label} scope="col" className={`px-3 py-3 font-semibold ${i === 4 || i === 5 ? "text-right" : ""}`}>{label}</th>)}</tr></thead>
+        <thead className="bg-zinc-50 text-xs text-zinc-500"><tr>{["Facture", "Client", "Émission", "Échéance", "Montant TTC", "Reste à encaisser", "Statut"].map((label, i) => <th key={label} scope="col" className={`px-3 py-3 font-semibold ${i === 4 || i === 5 ? "text-right" : ""}`}>{label}</th>)}<th scope="col"><span className="sr-only">Aperçu PDF</span></th></tr></thead>
         <tbody className="divide-y divide-black/[0.06]">{rows.map(({ invoice, status }) => <tr key={invoice.id} className={status === "overdue" ? "bg-red-50/50" : "hover:bg-zinc-50"}>
           <th scope="row" className="px-3 py-3 text-left font-semibold break-words">{invoice.number ?? "Sans numéro"}</th><td className="px-3 py-3 break-words">{invoice.clientName ?? "—"}</td><td className="px-3 py-3 whitespace-nowrap text-zinc-500">{dateLabel(invoice.issueDate)}</td><td className="px-3 py-3 whitespace-nowrap"><InvoiceDue invoice={invoice} status={status} today={today} /></td><td className="px-3 py-3 text-right font-semibold whitespace-nowrap tabular-nums">{amountLabel(invoice.total, invoice.currency)}</td><td className="px-3 py-3 text-right whitespace-nowrap tabular-nums">{amountLabel(invoice.remaining, invoice.currency)}</td><td className="px-3 py-3"><Badge variant={statusDetails[status].variant}>{statusDetails[status].label}</Badge></td>
+          <td className="px-3 py-3 text-right"><PreviewButton invoice={invoice} onOpen={setPreviewInvoice} /></td>
         </tr>)}</tbody>
       </table></div>
       <ul aria-label="Factures Qonto" className="grid gap-2 md:hidden">{rows.map(({ invoice, status }) => <li key={invoice.id} className={`rounded-xl border p-3 ${status === "overdue" ? "border-red-200 bg-red-50/50" : "border-black/10"}`}>
         <div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="font-bold break-words">{invoice.number ?? "Sans numéro"}</p><p className="mt-1 text-xs break-words text-zinc-500">{invoice.clientName ?? "Client non renseigné"}</p></div><Badge variant={statusDetails[status].variant}>{statusDetails[status].label}</Badge></div>
         <dl className="mt-3 grid grid-cols-2 gap-3 text-xs"><div><dt className="text-zinc-500">Émission</dt><dd className="mt-1">{dateLabel(invoice.issueDate)}</dd></div><div><dt className="text-zinc-500">Échéance</dt><dd className="mt-1"><InvoiceDue invoice={invoice} status={status} today={today} /></dd></div><div><dt className="text-zinc-500">Montant TTC</dt><dd className="mt-1 font-semibold tabular-nums">{amountLabel(invoice.total, invoice.currency)}</dd></div><div><dt className="text-zinc-500">Reste à encaisser</dt><dd className="mt-1 tabular-nums">{amountLabel(invoice.remaining, invoice.currency)}</dd></div></dl>
+        <div className="mt-3 flex justify-end"><PreviewButton invoice={invoice} onOpen={setPreviewInvoice} /></div>
       </li>)}</ul>
     </>}
     {pageCount > 1 && <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs"><Button variant="secondary" size="sm" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Précédent</Button><span>Page {currentPage + 1} / {pageCount} · {results.length} factures</span><Button variant="secondary" size="sm" disabled={currentPage + 1 === pageCount} onClick={() => setPage(currentPage + 1)}>Suivant</Button></div>}
     <p className="mt-4 text-xs text-zinc-500">Le statut de paiement vient de Qonto. Une facture est en retard si elle est à encaisser et si son échéance est passée. Un solde non communiqué est affiché « — ».</p>
+    {previewInvoice && <QontoInvoicePreview invoice={previewInvoice} onClose={() => setPreviewInvoice(null)} />}
   </>;
 }
 

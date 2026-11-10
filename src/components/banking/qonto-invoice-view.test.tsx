@@ -30,3 +30,9 @@ it("affiche le montant restant en retard en euros sans masquer un solde inconnu"
   expect(html).toContain("Solde connu en euros");
   expect(html).toContain("Solde non communiqué pour 1 facture en euros.");
 });
+
+it("propose un aperçu PDF pour la facture dans le tableau et la carte mobile", () => {
+  const html = renderToStaticMarkup(<QontoInvoiceList today="2026-11-10" invoices={[late]} />);
+  expect(html.match(/aria-label="Aperçu de la facture F-RETARD"/g)).toHaveLength(2);
+  expect(html).not.toContain("Chargement du PDF Qonto");
+});

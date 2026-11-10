@@ -134,6 +134,10 @@ consulter le numéro, le client, l’émission, l’échéance et le montant des
 clients. L’onglet réutilise la connexion existante et lit Qonto à l’ouverture,
 au retour sur la fenêtre et périodiquement tant que l’onglet est visible.
 Le bouton **Actualiser** permet de relire immédiatement les statuts.
+Cliquez sur **Aperçu** à côté d’une facture pour lire son PDF Qonto dans le
+logiciel, naviguer entre les pages et le télécharger si besoin. Le PDF est
+chargé à la demande, sans l’enregistrer dans le logiciel. Si Qonto ne fournit
+pas encore le document, réessayez après sa génération dans Qonto.
 
 Une facture est **En retard** uniquement si Qonto la considère à encaisser et
 si son échéance est antérieure au jour courant à Paris. L’échéance du jour n’est

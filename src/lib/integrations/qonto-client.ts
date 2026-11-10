@@ -1,6 +1,7 @@
 import { z } from "zod";
 import Decimal from "decimal.js";
 import type { QontoInvoice } from "@/lib/domain/qonto-invoices";
+import { downloadQontoInvoicePdf, unavailableInvoicePdf } from "@/lib/integrations/qonto-invoice-pdf";
 const remoteTransaction = z.object({
   transaction_id: z.string().min(1).optional(), id: z.string().min(1), amount_cents: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   currency: z.string(), side: z.enum(["credit", "debit"]), status: z.enum(["pending", "completed", "declined", "reversed"]),
@@ -22,6 +23,10 @@ const invoicePage = z.object({
   meta: z.object({ next_page: z.number().int().positive().nullable() }),
 });
 const dateSchema = z.iso.date();
+const invoiceDetail = z.object({ client_invoice: z.object({
+  id: z.uuid(), organization_id: z.string(), attachment_id: z.uuid().nullish(),
+}) });
+const invoiceAttachment = z.object({ attachment: z.object({ id: z.uuid(), url: z.string().nullish() }) });
 function invoiceDate(value: string | null | undefined) { return dateSchema.safeParse(value).data ?? null; }
 function invoiceAmount(value: string | null | undefined) {
   return value && value.length <= 32 && /^-?\d+(?:\.\d+)?$/.test(value) ? new Decimal(value) : null;
@@ -54,6 +59,21 @@ export class QontoClient {
     const params = new URLSearchParams({ iban: account.iban, updated_at_from: from, updated_at_to: to, sort_by: "updated_at:asc", per_page: "100", page: String(page) });
     ["pending", "completed", "declined", "reversed"].forEach((status) => params.append("status[]", status));
     return z.object({ transactions: z.array(remoteTransaction), meta: z.object({ next_page: z.number().nullable(), total_pages: z.number() }) }).parse(await this.get("transactions", params));
+  }
+  async clientInvoicePdf(id: string, organizationId: string, requestSignal: AbortSignal) {
+    const invoiceId = z.uuid().parse(id);
+    const signal = AbortSignal.any([requestSignal, AbortSignal.timeout(40_000)]);
+    try {
+      const { client_invoice: invoice } = invoiceDetail.parse(await this.get(`client_invoices/${invoiceId}`, undefined, signal));
+      if (invoice.organization_id !== organizationId || invoice.id !== invoiceId) throw unavailableInvoicePdf();
+      if (!invoice.attachment_id) throw unavailableInvoicePdf();
+      const { attachment } = invoiceAttachment.parse(await this.get(`attachments/${invoice.attachment_id}`, undefined, signal));
+      if (attachment.id !== invoice.attachment_id || !attachment.url) throw unavailableInvoicePdf();
+      return await downloadQontoInvoicePdf(attachment.url, signal);
+    } catch (error) {
+      if (error instanceof QontoRequestError && error.status === 404) throw unavailableInvoicePdf();
+      throw error;
+    }
   }
   async clientInvoices(organizationId: string, requestSignal?: AbortSignal) {
     const timeout = AbortSignal.timeout(38_000);
