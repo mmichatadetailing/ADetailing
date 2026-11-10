@@ -14,12 +14,14 @@ type PreviewState = { state: "loading" } | { state: "ready"; pdf: LoadedPdf } | 
 function PdfPage({ pdf, page, zoom }: { pdf: LoadedPdf; page: number; zoom: number }) {
   const container = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
+  const lastPaintedPage = useRef<number | null>(null);
   const [width, setWidth] = useState(0);
-  const [rendered, setRendered] = useState<{ width: number; failed: boolean }>();
+  const [paintedPage, setPaintedPage] = useState<number | null>(null);
+  const [renderError, setRenderError] = useState<{ page: number; width: number; zoom: number }>();
   useEffect(() => {
     const target = container.current;
     if (!target) return;
-    const observer = new ResizeObserver(([entry]) => { if (entry) setWidth(Math.floor(entry.contentRect.width)); });
+    const observer = new ResizeObserver(([entry]) => { if (entry) setWidth(Math.min(880, Math.floor(entry.contentRect.width))); });
     observer.observe(target);
     return () => observer.disconnect();
   }, []);
@@ -32,25 +34,39 @@ function PdfPage({ pdf, page, zoom }: { pdf: LoadedPdf; page: number; zoom: numb
     void pdf.document.getPage(page).then(async (source) => {
       if (!active) return;
       const original = source.getViewport({ scale: 1 });
-      const viewport = source.getViewport({ scale: Math.min(880, width) / original.width * zoom });
+      const viewport = source.getViewport({ scale: width / original.width * zoom });
       // Bound the pixel count even for a high-DPI screen or an unusually tall page.
       const ratio = Math.min(window.devicePixelRatio || 1, 2, 4096 / Math.max(viewport.width, viewport.height));
-      target.width = Math.max(1, Math.ceil(viewport.width * ratio));
-      target.height = Math.max(1, Math.ceil(viewport.height * ratio));
+      // PDF.js clears its canvas when drawing. Keep the old image visible until its replacement is complete.
+      const buffer = document.createElement("canvas");
+      buffer.width = Math.max(1, Math.ceil(viewport.width * ratio));
+      buffer.height = Math.max(1, Math.ceil(viewport.height * ratio));
+      task = source.render({ canvas: buffer, viewport, transform: [ratio, 0, 0, ratio, 0, 0], annotationMode: pdf.annotationMode });
+      await task.promise;
+      if (!active) return;
+
+      const context = target.getContext("2d");
+      if (!context) throw new Error("Canvas indisponible.");
+      target.width = buffer.width;
+      target.height = buffer.height;
       target.style.width = `${viewport.width}px`;
       target.style.height = `${viewport.height}px`;
-      task = source.render({ canvas: target, viewport, transform: [ratio, 0, 0, ratio, 0, 0], annotationMode: pdf.annotationMode });
-      await task.promise;
-      if (active) setRendered({ width, failed: false });
-    }).catch(() => { if (active) setRendered({ width, failed: true }); });
+      context.drawImage(buffer, 0, 0);
+      if (lastPaintedPage.current !== page) container.current?.scrollTo(0, 0);
+      lastPaintedPage.current = page;
+      setPaintedPage(page);
+      setRenderError(undefined);
+    }).catch(() => { if (active) setRenderError({ page, width, zoom }); });
     return () => { active = false; task?.cancel(); };
   }, [pdf, page, zoom, width]);
 
-  const pending = rendered?.width !== width;
-  return <div ref={container} role="region" aria-label="Aperçu du document PDF" tabIndex={0} className="focus-ring h-[58dvh] min-h-44 overflow-auto rounded-xl border border-black/10 bg-slate-100 p-2 sm:p-4">
-    {pending && <p role="status" className="flex items-center justify-center gap-2 py-10 text-sm text-zinc-500"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> Affichage de la page…</p>}
-    {!pending && rendered.failed && <p role="alert" className="py-10 text-center text-sm text-red-800">Cette page ne peut pas être affichée. Vous pouvez télécharger le PDF.</p>}
-    <canvas ref={canvas} role="img" aria-label={`Page ${page} de la facture`} className={`mx-auto max-w-none bg-white shadow-sm ${pending || rendered.failed ? "hidden" : "block"}`} />
+  const failed = renderError?.page === page && renderError.width === width && renderError.zoom === zoom;
+  const showFrame = paintedPage !== null && (!failed || paintedPage === page);
+  // Reserve scrollbar space even before the canvas is shown so rendering cannot change its own input width.
+  return <div ref={container} role="region" aria-label="Aperçu du document PDF" tabIndex={0} className="focus-ring h-[58dvh] min-h-44 overflow-auto rounded-xl border border-black/10 bg-slate-100 p-2 [scrollbar-gutter:stable] sm:p-4">
+    {paintedPage === null && !failed && <p role="status" className="flex items-center justify-center gap-2 py-10 text-sm text-zinc-500"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> Affichage de la page…</p>}
+    {failed && <p role="alert" className="py-10 text-center text-sm text-red-800">Cette page ne peut pas être affichée. Vous pouvez télécharger le PDF.</p>}
+    <canvas ref={canvas} role="img" aria-label={`Page ${paintedPage ?? page} de la facture`} className={`mx-auto max-w-none bg-white shadow-sm ${showFrame ? "block" : "hidden"}`} />
   </div>;
 }
 
@@ -119,7 +135,7 @@ function InvoicePdf({ invoice }: { invoice: QontoInvoice }) {
         <a href={pdf.url} download={`facture-${filename}.pdf`} className={buttonVariants({ variant: "secondary", size: "sm" })}><Download aria-hidden="true" className="size-4" /> Télécharger le PDF</a>
       </div>
     </div>
-    <PdfPage key={`${page}-${zoom}`} pdf={pdf} page={page} zoom={zoom} />
+    <PdfPage pdf={pdf} page={page} zoom={zoom} />
   </div>;
 }
 
