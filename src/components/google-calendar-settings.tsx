@@ -185,7 +185,7 @@ export function GoogleCalendarSettings({ enabled }: { enabled: boolean }) {
   const startConnection = () => { window.location.assign("/api/integrations/google/start"); };
 
   return (
-    <div className="rounded-2xl border border-sky-200/80 bg-gradient-to-br from-white via-sky-50/40 to-violet-50/40 p-4 shadow-sm">
+    <div className="rounded-2xl border border-black/10 bg-brand-50/50 p-4 shadow-sm">
       <div className="flex items-start gap-3">
         <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-sky-100 text-sky-600">
           <CalendarDays className="size-5" />

@@ -3,6 +3,7 @@
 import { LoaderCircle, RefreshCw } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { BrandLogo } from "@/components/brand-logo";
 import type { Expense } from "@/lib/domain/types";
 import type { NewAppointmentInput, NewClientInput } from "@/lib/demo/store";
 import { useDemoStore } from "@/lib/demo/store";
@@ -170,7 +171,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<WorkspaceContextValue>(() => ({ mode: isSupabaseConfigured ? "supabase" : "demo", workspace, invitations, refresh, createRecord, sendMessage, switchOrganization, signOut }), [workspace, invitations, refresh, createRecord, sendMessage, switchOrganization, signOut]);
 
-  if (status === "loading") return <main className="grid min-h-screen place-items-center p-6"><div className="text-center"><span className="mx-auto grid size-14 place-items-center rounded-2xl bg-gradient-to-br from-brand-500 to-orange-400 text-lg font-black text-on-accent shadow-lg">AD</span><LoaderCircle className="mx-auto mt-6 size-6 animate-spin text-brand-500" /><p className="mt-3 text-sm font-semibold">Chargement de vos données…</p><p className="mt-1 text-xs text-zinc-500">Connexion sécurisée à Supabase</p></div></main>;
+  if (status === "loading") return <main className="grid min-h-screen place-items-center p-6"><div className="text-center"><BrandLogo className="mx-auto w-40" priority /><LoaderCircle className="mx-auto mt-6 size-6 animate-spin text-brand-500" /><p className="mt-3 text-sm font-semibold">Chargement de vos données…</p><p className="mt-1 text-xs text-zinc-500">Connexion sécurisée à Supabase</p></div></main>;
   if (status === "error") return <main className="grid min-h-screen place-items-center p-6"><div className="w-full max-w-md rounded-3xl border border-red-200 bg-white p-7 text-center shadow-xl"><h1 className="text-lg font-bold">Impossible de charger l’espace</h1><p className="mt-2 text-sm text-zinc-500">{error}</p><div className="mt-6 flex justify-center gap-2"><Button onClick={() => void refresh()}><RefreshCw className="size-4" /> Réessayer</Button><Button variant="ghost" onClick={() => void signOut()}>Se déconnecter</Button></div></div></main>;
   return <WorkspaceContext.Provider value={value}>{error && <div role="status" className="sticky top-0 z-[60] flex flex-wrap items-center justify-center gap-3 border-b border-amber-300 bg-amber-50 px-4 py-2 text-xs text-amber-950"><span>Actualisation interrompue : les dernières données affichées peuvent être anciennes. {error}</span><Button size="sm" variant="secondary" onClick={() => void refresh()}>Réessayer</Button></div>}{children}</WorkspaceContext.Provider>;
 }

@@ -1,0 +1,11 @@
+ADetailing brand assets, imported from the reference site on 2026-11-16.
+Local copies avoid third-party requests when the internal application is used.
+
+adetailing.svg: https://adetailingorange.fr/img/logo%20nav.svg
+favicon.svg: https://adetailingorange.fr/img/favicon.svg?v=2
+detailing.webp: https://adetailingorange.fr/static/media/home_bg.e68f38669e7eb017f90c.webp
+montserrat.woff2: https://adetailingorange.fr/static/media/Montserrat.ba808aad08c87ecb345a.woff2
+
+Montserrat is distributed under the accompanying OFL.txt license.
+License source: https://raw.githubusercontent.com/google/fonts/main/ofl/montserrat/OFL.txt
+The font license does not apply to ADetailing's logo or photograph.

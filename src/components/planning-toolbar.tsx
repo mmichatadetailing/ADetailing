@@ -105,7 +105,7 @@ export function PlanningToolbar({
   return (
     <div
       ref={containerRef}
-      className="planning-toolbar sticky top-[var(--app-header-height)] z-20 rounded-2xl border border-black/[.08] bg-white/95 shadow-[0_8px_28px_rgba(78,64,120,.09)] backdrop-blur-xl"
+      className="planning-toolbar sticky top-[var(--app-header-height)] z-20 rounded-2xl border border-black/[.08] bg-white/95 shadow-[0_4px_18px_rgba(22,25,20,.05)] backdrop-blur-xl"
       data-planning-controls
       onBlur={(event) => { if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) setPanel(null); }}
     >

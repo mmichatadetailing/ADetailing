@@ -53,7 +53,7 @@ export function PlanningDatePicker({ selectedDate, onSelect, onClose }: { select
                 "focus-ring grid aspect-square place-items-center rounded-xl text-xs font-bold transition hover:bg-brand-50 hover:text-brand-700",
                 outside && "text-zinc-400",
                 key === todayKey && "border border-brand-300 text-brand-700",
-                key === selectedKey && "bg-gradient-to-br from-brand-500 to-orange-400 text-white shadow-sm hover:text-white",
+                key === selectedKey && "bg-brand-500 text-white shadow-sm hover:text-white",
               )}
             >
               {date.getDate()}

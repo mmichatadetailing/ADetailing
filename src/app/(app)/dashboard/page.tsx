@@ -144,13 +144,13 @@ export default function DashboardPage() {
     return renewal.state === "due" || renewal.state === "expired";
   });
   const kpis = [
-    { label: "CA encaissé", value: formatMoney(collected), detail: statisticsPeriod.label, comparison: evolutionLabel(collected, previousCollected, previousLabel), icon: Banknote, color: "text-emerald-600", tone: "from-emerald-50/90 to-white", href: "/finances" },
-    { label: statisticsPeriod.kind === "year" ? "Objectif annuel" : "Objectif du mois", value: objective > 0 ? `${Math.round(collected / objective * 100)} %` : "À définir", detail: objective > 0 ? `${formatMoney(Math.max(objective - collected, 0))} restant sur ${formatMoney(objective)}` : "Renseignez vos objectifs dans Paramètres", comparison: evolutionLabel(collected, previousCollected, previousLabel), icon: Target, color: "text-sky-600", tone: "from-sky-50/90 to-white", href: "/parametres#objectifs-chiffre-affaires" },
-    { label: "Cash-flow décaissé", value: formatMoney(cashFlow), detail: `${formatMoney(cashReceipts)} reçu − ${formatMoney(paidExpenses)} réellement décaissé`, comparison: evolutionLabel(cashFlow, previousCashFlow, previousLabel), icon: WalletCards, color: cashFlow >= 0 ? "text-emerald-600" : "text-red-600", tone: "from-teal-50/90 to-white", href: "/finances" },
-    { label: "Charges prévues", value: formatMoney(projectedExpenses), detail: `${formatMoney(paidExpenses)} décaissé sur la période · ${formatMoney(remainingExpenses)} restant sur ces charges`, comparison: evolutionLabel(projectedExpenses, previousProjectedExpenses, previousLabel), icon: TrendingDown, color: "text-orange-600", tone: "from-orange-50/90 to-white", href: "/finances" },
-    { label: "Prestations réalisées", value: String(completed.length), detail: statisticsPeriod.label, comparison: evolutionLabel(completed.length, previousCompleted.length, previousLabel), icon: Sparkles, color: "text-violet-600", tone: "from-violet-50/90 to-white", href: "/prestations" },
-    { label: "Panier moyen", value: formatMoney(averageBasket), detail: `${completed.length} prestation(s) terminée(s)`, comparison: evolutionLabel(averageBasket, previousAverageBasket, previousLabel), icon: Gauge, color: "text-amber-600", tone: "from-amber-50/90 to-white", href: "/pilotage" },
-    { label: "Marge brute", value: formatMoney(margin), detail: averageHourly === null ? "Durées non renseignées" : `${formatMoney(averageHourly)}/heure-personne`, comparison: evolutionLabel(margin, previousMargin, previousLabel), icon: TrendingUp, color: "text-fuchsia-600", tone: "from-fuchsia-50/90 to-white", href: "/pilotage" },
+    { label: "CA encaissé", value: formatMoney(collected), detail: statisticsPeriod.label, comparison: evolutionLabel(collected, previousCollected, previousLabel), icon: Banknote, color: "text-emerald-600", href: "/finances" },
+    { label: statisticsPeriod.kind === "year" ? "Objectif annuel" : "Objectif du mois", value: objective > 0 ? `${Math.round(collected / objective * 100)} %` : "À définir", detail: objective > 0 ? `${formatMoney(Math.max(objective - collected, 0))} restant sur ${formatMoney(objective)}` : "Renseignez vos objectifs dans Paramètres", comparison: evolutionLabel(collected, previousCollected, previousLabel), icon: Target, color: "text-zinc-400", href: "/parametres#objectifs-chiffre-affaires" },
+    { label: "Cash-flow décaissé", value: formatMoney(cashFlow), detail: `${formatMoney(cashReceipts)} reçu − ${formatMoney(paidExpenses)} réellement décaissé`, comparison: evolutionLabel(cashFlow, previousCashFlow, previousLabel), icon: WalletCards, color: cashFlow >= 0 ? "text-emerald-600" : "text-red-600", href: "/finances" },
+    { label: "Charges prévues", value: formatMoney(projectedExpenses), detail: `${formatMoney(paidExpenses)} décaissé sur la période · ${formatMoney(remainingExpenses)} restant sur ces charges`, comparison: evolutionLabel(projectedExpenses, previousProjectedExpenses, previousLabel), icon: TrendingDown, color: "text-zinc-400", href: "/finances" },
+    { label: "Prestations réalisées", value: String(completed.length), detail: statisticsPeriod.label, comparison: evolutionLabel(completed.length, previousCompleted.length, previousLabel), icon: Sparkles, color: "text-zinc-400", href: "/prestations" },
+    { label: "Panier moyen", value: formatMoney(averageBasket), detail: `${completed.length} prestation(s) terminée(s)`, comparison: evolutionLabel(averageBasket, previousAverageBasket, previousLabel), icon: Gauge, color: "text-zinc-400", href: "/pilotage" },
+    { label: "Marge brute", value: formatMoney(margin), detail: averageHourly === null ? "Durées non renseignées" : `${formatMoney(averageHourly)}/heure-personne`, comparison: evolutionLabel(margin, previousMargin, previousLabel), icon: TrendingUp, color: "text-zinc-400", href: "/pilotage" },
   ];
 
   return (
@@ -171,10 +171,10 @@ export default function DashboardPage() {
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-12">
         {kpis.map((kpi, index) => (
           <Link href={kpi.href} key={kpi.label} className={`focus-ring group rounded-2xl ${index === kpis.length - 1 ? "sm:col-span-2 xl:col-span-4" : kpis.length % 4 === 3 && index >= kpis.length - 3 ? "xl:col-span-4" : "xl:col-span-3"}`}>
-            <Card className={`h-full bg-gradient-to-br ${kpi.tone} transition duration-200 group-hover:-translate-y-1 group-hover:border-brand-400/20 group-hover:shadow-[0_18px_48px_rgba(78,64,120,.12)]`}>
+            <Card className={`brand-kpi h-full transition duration-200 group-hover:-translate-y-0.5 group-hover:border-brand-400/30 group-hover:shadow-md`}>
               <CardContent className="p-4 sm:p-5">
-                <div className="flex items-start justify-between"><span className="text-xs font-semibold text-zinc-500">{kpi.label}</span><kpi.icon className={`size-[17px] ${kpi.color}`} /></div>
-                <p className="mt-4 text-2xl font-bold tracking-[-0.035em] text-zinc-900">{kpi.value}</p>
+                <div className="flex items-start justify-between"><span className="text-xs font-semibold text-zinc-500">{kpi.label}</span><span className="grid size-8 shrink-0 place-items-center rounded-full bg-brand-50"><kpi.icon className={`size-[16px] ${kpi.color}`} /></span></div>
+                <p className="kpi-value mt-3 text-zinc-900">{kpi.value}</p>
                 <p className="mt-1 text-[11px] text-zinc-600">{kpi.detail}</p>
                 <p className="mt-2 text-[10px] font-bold text-zinc-500">{kpi.comparison}</p>
               </CardContent>
@@ -185,10 +185,10 @@ export default function DashboardPage() {
 
       <DashboardCharts year={dashboardYear} revenue={dashboardCharts.revenue} cashFlow={dashboardCharts.cashFlow} focusMonth={statisticsPeriod.month} periodLabel={statisticsPeriod.label} />
 
-      <Card className="overflow-hidden border-orange-100 bg-[linear-gradient(120deg,rgba(255,255,255,.98),rgba(255,247,237,.7),rgba(240,253,250,.72))]">
+      <Card className="overflow-hidden">
         <CardHeader>
           <div className="flex items-start gap-3">
-            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-orange-100 text-orange-700"><ReceiptText className="size-5" /></span>
+            <span className="grid size-10 shrink-0 place-items-center rounded-full bg-brand-50 text-zinc-300"><ReceiptText className="size-5" /></span>
             <div>
               <h2 className="font-bold text-zinc-900">Plus grosses dépenses · {statisticsPeriod.label}</h2>
               <p className="mt-1 text-xs text-zinc-500">Cumul des échéances ponctuelles, mensuelles et annuelles prévues sur la période.</p>
@@ -198,14 +198,14 @@ export default function DashboardPage() {
         </CardHeader>
         <CardContent className="grid gap-2">
           {expenseRanking.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-orange-200 bg-white/75 px-5 py-9 text-center">
-              <ReceiptText className="mx-auto size-6 text-orange-400" />
+            <div className="rounded-2xl border border-dashed border-black/15 bg-white/75 px-5 py-9 text-center">
+              <ReceiptText className="mx-auto size-6 text-zinc-400" />
               <p className="mt-2 text-sm font-bold text-zinc-800">Aucune dépense sur cette période</p>
               <p className="mt-1 text-xs text-zinc-500">Les charges ajoutées dans Finances apparaîtront ici automatiquement.</p>
             </div>
           ) : expenseRanking.map((entry, index) => (
-            <Link href="/finances" key={entry.expense.id} className="focus-ring group grid gap-3 rounded-2xl border border-zinc-100 bg-white/90 p-3.5 transition hover:-translate-y-0.5 hover:border-orange-200 hover:shadow-md sm:grid-cols-[40px_minmax(0,1fr)_minmax(150px,.55fr)_120px] sm:items-center">
-              <span className={`grid size-9 place-items-center rounded-xl text-sm font-extrabold ${index < 3 ? "bg-orange-100 text-orange-700" : "bg-zinc-100 text-zinc-600"}`}>#{index + 1}</span>
+            <Link href="/finances" key={entry.expense.id} className="focus-ring group grid gap-3 rounded-2xl border border-zinc-100 bg-white/90 p-3.5 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-md sm:grid-cols-[40px_minmax(0,1fr)_minmax(150px,.55fr)_120px] sm:items-center">
+              <span className={`grid size-9 place-items-center rounded-xl text-sm font-extrabold ${index < 3 ? "bg-brand-100 text-zinc-200" : "bg-zinc-100 text-zinc-600"}`}>#{index + 1}</span>
               <span className="min-w-0">
                 <span className="block truncate text-sm font-bold text-zinc-900">{entry.expense.description || entry.expense.supplier || "Dépense sans libellé"}</span>
                 <span className="mt-1 block truncate text-[11px] text-zinc-500">{entry.expense.category || "Sans catégorie"} · {recurrenceLabels[entry.expense.recurrence]} · {entry.occurrenceCount} échéance(s)</span>
@@ -225,7 +225,7 @@ export default function DashboardPage() {
           <CardHeader><div><h2 className="font-bold">Prestations à venir</h2><p className="mt-1 text-xs text-zinc-500">Les prochains rendez-vous confirmés ou planifiés.</p></div><Link href="/planning" className="focus-ring inline-flex min-h-8 items-center gap-2 rounded-lg px-3 text-xs font-semibold text-zinc-500 transition hover:bg-brand-50 hover:text-brand-600">Tout voir <ArrowRight className="size-3.5" /></Link></CardHeader>
           <CardContent className="px-0 pb-1">
             <div className="divide-y divide-white/[0.055]">
-              {upcoming.length === 0 && <div className="px-5 py-8 text-center"><CalendarClock className="mx-auto size-6 text-zinc-500" /><p className="mt-2 text-sm font-semibold">Aucun rendez-vous à venir</p><Link href="/planning" className="focus-ring mt-2 inline-flex rounded-lg px-3 py-2 text-xs font-bold text-brand-600 hover:bg-orange-50">Ouvrir le planning</Link></div>}
+              {upcoming.length === 0 && <div className="px-5 py-8 text-center"><CalendarClock className="mx-auto size-6 text-zinc-500" /><p className="mt-2 text-sm font-semibold">Aucun rendez-vous à venir</p><Link href="/planning" className="focus-ring mt-2 inline-flex rounded-lg px-3 py-2 text-xs font-bold text-brand-600 hover:bg-brand-50">Ouvrir le planning</Link></div>}
               {upcoming.map((item) => {
                 const client = data.clients.find((entry) => entry.id === item.clientId);
                 const vehicle = data.vehicles.find((entry) => entry.id === item.vehicleId);
@@ -253,7 +253,7 @@ export default function DashboardPage() {
       <Card>
         <CardHeader><div><h2 className="font-bold">Encaissements récents · {statisticsPeriod.label}</h2><p className="mt-1 text-xs text-zinc-500">Les paiements réellement reçus. La présence d’une facture n’est pas nécessaire.</p></div><Link href="/prestations" className="text-xs font-semibold text-brand-600 hover:text-brand-700">Ouvrir les prestations</Link></CardHeader>
         <CardContent className="overflow-x-auto px-0 pb-1">
-          <table className="w-full min-w-[620px] text-left text-xs"><thead className="text-[10px] tracking-wider text-zinc-600 uppercase"><tr><th className="px-5 py-3 font-semibold">Date</th><th className="px-3 py-3 font-semibold">Prestation</th><th className="px-3 py-3 font-semibold">Client</th><th className="px-3 py-3 font-semibold">Mode</th><th className="px-5 py-3 text-right font-semibold">Montant encaissé</th></tr></thead><tbody className="divide-y divide-zinc-100">{recentInterventionPayments.length === 0 ? <tr><td colSpan={5} className="px-5 py-8 text-center text-zinc-500">Aucun encaissement de prestation sur cette période.</td></tr> : recentInterventionPayments.map((payment) => { const intervention = payment.interventionId ? data.interventions.find((item) => item.id === payment.interventionId) : payment.invoiceId ? data.interventions.find((item) => item.invoiceId === payment.invoiceId) : undefined; const billingPeriod = payment.maintenanceBillingPeriodId ? data.maintenanceBillingPeriods.find((item) => item.id === payment.maintenanceBillingPeriodId) : undefined; const maintenanceContractId = payment.maintenanceContractId ?? billingPeriod?.contractId; const maintenanceContract = maintenanceContractId ? data.maintenanceContracts.find((item) => item.id === maintenanceContractId) : undefined; const client = data.clients.find((entry) => entry.id === (intervention?.clientId ?? maintenanceContract?.clientId)); return <tr key={payment.id} className="hover:bg-orange-50/50"><td className="px-5 py-3 text-zinc-500">{formatDate(payment.paidAt)}</td><td className="px-3 py-3 font-semibold text-zinc-900">{maintenanceContract?.title ?? intervention?.title ?? "Prestation liée"}{maintenanceContract && <span className="ml-2 text-[10px] font-semibold text-violet-600">Entretien</span>}</td><td className="px-3 py-3 text-zinc-600">{client?.company || `${client?.firstName ?? ""} ${client?.lastName ?? ""}`.trim() || "—"}</td><td className="px-3 py-3 text-zinc-500">{payment.method}</td><td className="px-5 py-3 text-right font-bold text-emerald-700">{formatMoney(payment.amount)}</td></tr>; })}</tbody></table>
+          <table className="w-full min-w-[620px] text-left text-xs"><thead className="text-[10px] tracking-wider text-zinc-600 uppercase"><tr><th className="px-5 py-3 font-semibold">Date</th><th className="px-3 py-3 font-semibold">Prestation</th><th className="px-3 py-3 font-semibold">Client</th><th className="px-3 py-3 font-semibold">Mode</th><th className="px-5 py-3 text-right font-semibold">Montant encaissé</th></tr></thead><tbody className="divide-y divide-zinc-100">{recentInterventionPayments.length === 0 ? <tr><td colSpan={5} className="px-5 py-8 text-center text-zinc-500">Aucun encaissement de prestation sur cette période.</td></tr> : recentInterventionPayments.map((payment) => { const intervention = payment.interventionId ? data.interventions.find((item) => item.id === payment.interventionId) : payment.invoiceId ? data.interventions.find((item) => item.invoiceId === payment.invoiceId) : undefined; const billingPeriod = payment.maintenanceBillingPeriodId ? data.maintenanceBillingPeriods.find((item) => item.id === payment.maintenanceBillingPeriodId) : undefined; const maintenanceContractId = payment.maintenanceContractId ?? billingPeriod?.contractId; const maintenanceContract = maintenanceContractId ? data.maintenanceContracts.find((item) => item.id === maintenanceContractId) : undefined; const client = data.clients.find((entry) => entry.id === (intervention?.clientId ?? maintenanceContract?.clientId)); return <tr key={payment.id} className="hover:bg-brand-50/50"><td className="px-5 py-3 text-zinc-500">{formatDate(payment.paidAt)}</td><td className="px-3 py-3 font-semibold text-zinc-900">{maintenanceContract?.title ?? intervention?.title ?? "Prestation liée"}{maintenanceContract && <span className="ml-2 text-[10px] font-semibold text-violet-600">Entretien</span>}</td><td className="px-3 py-3 text-zinc-600">{client?.company || `${client?.firstName ?? ""} ${client?.lastName ?? ""}`.trim() || "—"}</td><td className="px-3 py-3 text-zinc-500">{payment.method}</td><td className="px-5 py-3 text-right font-bold text-emerald-700">{formatMoney(payment.amount)}</td></tr>; })}</tbody></table>
         </CardContent>
       </Card>
 

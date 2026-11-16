@@ -178,7 +178,7 @@ export function TeamPlanningTimeline({
   };
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_18px_55px_rgba(78,64,120,.08)]">
+    <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_3px_16px_rgba(22,25,20,.03)]">
       <div ref={scrollContainer} className="max-h-[70dvh] overflow-auto">
         <div style={{ minWidth: RESOURCE_WIDTH + timelineWidth }}>
           <div className="sticky top-0 z-30 flex border-b border-zinc-200 bg-white/95 shadow-sm backdrop-blur-xl">
@@ -190,10 +190,10 @@ export function TeamPlanningTimeline({
               {days.map((day) => {
                 const todayDay = isSamePlanningDay(day, today);
                 return (
-                  <div key={day.toISOString()} className={cn("shrink-0 border-r border-zinc-200", todayDay && "bg-orange-50/55")} style={{ width: dayWidth }}>
+                  <div key={day.toISOString()} className={cn("shrink-0 border-r border-zinc-200", todayDay && "bg-brand-50/65")} style={{ width: dayWidth }}>
                     {showDayLabels && <div className="flex h-12 items-center justify-between border-b border-zinc-100 px-4">
                       <div><p className={cn("text-xs font-extrabold capitalize", todayDay ? "text-brand-700" : "text-zinc-900")}>{formatDate(day.toISOString(), { weekday: "long" })}</p><p className="text-[10px] text-zinc-500">{formatDate(day.toISOString(), { day: "2-digit", month: "long" })}</p></div>
-                      {todayDay && <Badge variant="orange">Aujourd’hui</Badge>}
+                      {todayDay && <Badge>Aujourd’hui</Badge>}
                     </div>}
                     <div className={cn("relative", showDayLabels ? "h-8" : "h-11")}>
                       {HOURS.map((hour) => <span key={hour} className="absolute top-2 text-[9px] font-bold text-zinc-500" style={{ left: `${(hour - PLANNING_START_HOUR) / (PLANNING_END_HOUR - PLANNING_START_HOUR) * 100}%`, transform: hour === PLANNING_START_HOUR ? "translateX(8px)" : hour === PLANNING_END_HOUR ? "translateX(calc(-100% - 8px))" : "translateX(-50%)" }}>{hour}h</span>)}
@@ -204,9 +204,9 @@ export function TeamPlanningTimeline({
             </div>
           </div>
 
-          <div className="flex h-10 border-b border-violet-200 bg-gradient-to-r from-violet-50 to-sky-50">
-            <div className="sticky left-0 z-20 flex shrink-0 items-center border-r border-violet-200 bg-violet-50 px-4 text-xs font-extrabold text-violet-800" style={{ width: RESOURCE_WIDTH }}>Équipe ADetailing</div>
-            <div className="flex items-center px-4 text-[10px] font-semibold text-violet-700" style={{ width: timelineWidth }}>{members.length} personne(s) affichée(s) · glissez une prestation pour modifier son horaire ou son affectation</div>
+          <div className="flex h-10 border-b border-black/10 bg-brand-50">
+            <div className="sticky left-0 z-20 flex shrink-0 items-center border-r border-black/10 bg-brand-50 px-4 text-xs font-semibold text-zinc-200" style={{ width: RESOURCE_WIDTH }}>Équipe ADetailing</div>
+            <div className="flex items-center px-4 text-[10px] font-medium text-zinc-500" style={{ width: timelineWidth }}>{members.length} personne(s) affichée(s) · glissez une prestation pour modifier son horaire ou son affectation</div>
           </div>
 
           {members.map((member) => (
@@ -214,7 +214,7 @@ export function TeamPlanningTimeline({
               <div className="sticky left-0 z-20 flex shrink-0 items-center gap-3 border-r border-zinc-200 bg-white px-4 shadow-[8px_0_18px_rgba(41,50,71,.035)]" style={{ width: RESOURCE_WIDTH }}>
                 <Avatar label={member.initials} color={member.color} />
                 <div className="min-w-0"><p className="truncate text-xs font-extrabold text-zinc-900">{member.firstName} {member.lastName}</p><p className="mt-1 flex items-center gap-1 text-[10px] text-zinc-500"><Clock3 className="size-3" /> {new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(member.weeklyCapacityMinutes / 60)} h/semaine</p>{member.id === currentUserId && <p className="mt-1 text-[9px] font-bold text-emerald-700">Votre ligne</p>}</div>
-                {member.active && <button type="button" className="focus-ring ml-auto grid size-7 shrink-0 place-items-center rounded-lg text-brand-600 hover:bg-orange-50" aria-label={`Ajouter pour ${member.firstName} ${member.lastName}`} title="Ajouter sur cette ligne" onClick={() => { const start = new Date(days[0] ?? today); start.setHours(9, 0, 0, 0); onEmptySlot(member.id, start); }}><Plus className="size-4" /></button>}
+                {member.active && <button type="button" className="focus-ring ml-auto grid size-7 shrink-0 place-items-center rounded-lg text-brand-600 hover:bg-brand-50" aria-label={`Ajouter pour ${member.firstName} ${member.lastName}`} title="Ajouter sur cette ligne" onClick={() => { const start = new Date(days[0] ?? today); start.setHours(9, 0, 0, 0); onEmptySlot(member.id, start); }}><Plus className="size-4" /></button>}
               </div>
               <div className="flex" style={{ width: timelineWidth }}>
                 {days.map((day) => {

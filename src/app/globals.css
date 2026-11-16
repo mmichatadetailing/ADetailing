@@ -1,25 +1,29 @@
 @import "tailwindcss";
 
 @theme inline {
-  --font-sans: "Avenir Next", "Segoe UI Variable", "Segoe UI", Arial, sans-serif;
+  --font-sans: var(--font-montserrat), "Segoe UI", Arial, sans-serif;
   --color-white: #ffffff;
-  --color-on-accent: #fffdf9;
-  --color-brand-50: #fff7ed;
-  --color-brand-100: #ffedd5;
-  --color-brand-400: #ff8a4c;
-  --color-brand-500: #f9734f;
-  --color-brand-600: #e85d3f;
-  --color-ink-950: #f8f7fc;
+  --color-on-accent: #fafaf8;
+  --color-brand-50: #f2f2ef;
+  --color-brand-100: #e8e9e5;
+  --color-brand-200: #d3d5cf;
+  --color-brand-300: #70736e;
+  --color-brand-400: #565954;
+  --color-brand-500: #292b29;
+  --color-brand-600: #181a18;
+  --color-brand-700: #111311;
+  --color-ink-950: #f5f5f2;
   --color-ink-900: #ffffff;
   --color-ink-850: #ffffff;
-  --color-ink-800: #f3f1f8;
-  --color-ink-700: #e6e1ee;
-  --color-zinc-200: #1f2937;
-  --color-zinc-300: #344054;
-  --color-zinc-400: #4f5a6e;
-  --color-zinc-500: #5e697c;
-  --color-zinc-600: #687386;
-  --color-zinc-700: #8b94a3;
+  --color-ink-800: #f0f1ed;
+  --color-ink-700: #e1e3dc;
+  /* Keep the existing light-theme text scale used throughout the app. */
+  --color-zinc-200: #242623;
+  --color-zinc-300: #393c37;
+  --color-zinc-400: #565a53;
+  --color-zinc-500: #62665e;
+  --color-zinc-600: #6c7068;
+  --color-zinc-700: #73786e;
   --color-orange-300: #c94c22;
   --color-emerald-300: #087f5b;
   --color-sky-300: #1672a4;
@@ -34,16 +38,16 @@
 :root {
   color-scheme: light;
   --app-header-height: 70px;
-  --background: #f8f7fc;
+  --background: #f5f5f2;
   --surface: #ffffff;
-  --surface-raised: #fffdf9;
-  --border: rgba(41, 50, 71, 0.1);
-  --muted: #6f7a8d;
-  --text: #172033;
-  --accent: #f9734f;
-  --focus-ring: rgba(249, 115, 79, 0.42);
-  --interaction-border: rgba(249, 115, 79, 0.24);
-  --interaction-shadow: 0 14px 36px rgba(78, 64, 120, 0.12), 0 4px 14px rgba(249, 115, 79, 0.06);
+  --surface-raised: #fafaf8;
+  --border: rgba(30, 32, 28, 0.12);
+  --muted: #6c7068;
+  --text: #20221f;
+  --accent: #292b29;
+  --focus-ring: rgba(41, 43, 41, 0.48);
+  --interaction-border: rgba(41, 43, 41, 0.26);
+  --interaction-shadow: 0 8px 22px rgba(22, 25, 20, 0.07), 0 1px 3px rgba(22, 25, 20, 0.03);
   --ease-out-smooth: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -68,15 +72,11 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 8% -5%, rgba(255, 184, 138, 0.38), transparent 29rem),
-    radial-gradient(circle at 92% 4%, rgba(190, 177, 255, 0.3), transparent 28rem),
-    radial-gradient(circle at 62% 92%, rgba(130, 220, 202, 0.18), transparent 34rem),
-    var(--background);
-  background-attachment: fixed;
+  background: var(--background);
   color: var(--text);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  font-variant-numeric: lining-nums tabular-nums;
 }
 
 button,
@@ -132,7 +132,7 @@ textarea:disabled,
 }
 
 ::selection {
-  background: rgba(249, 115, 79, 0.25);
+  background: #dce0d6;
 }
 
 ::-webkit-scrollbar {
@@ -141,7 +141,7 @@ textarea:disabled,
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cfd3dd;
+  background: #c8ccc3;
   border: 3px solid transparent;
   border-radius: 999px;
   background-clip: padding-box;
@@ -150,7 +150,7 @@ textarea:disabled,
 .glass {
   background: color-mix(in srgb, var(--surface) 84%, transparent);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.72) inset;
-  backdrop-filter: blur(22px) saturate(1.25);
+  backdrop-filter: blur(18px);
 }
 
 .focus-ring:focus-visible {
@@ -190,7 +190,7 @@ textarea:disabled,
 
 .tab-interactive[aria-selected="true"],
 .tab-interactive[data-active="true"] {
-  box-shadow: 0 4px 12px rgba(78, 64, 120, 0.09);
+  box-shadow: 0 2px 6px rgba(22, 25, 20, 0.08);
 }
 
 .modal-backdrop {
@@ -223,13 +223,12 @@ table tbody tr {
 
 @media (hover: hover) and (pointer: fine) {
   .ui-card:hover {
-    border-color: rgba(41, 50, 71, 0.14);
-    box-shadow: 0 18px 50px rgba(78, 64, 120, 0.1), 0 4px 14px rgba(249, 115, 79, 0.045);
+    border-color: rgba(30, 32, 28, 0.18);
   }
 
   .surface-interactive:hover {
     z-index: 1;
-    transform: translateY(-2px);
+    transform: translateY(-1px);
     border-color: var(--interaction-border);
     box-shadow: var(--interaction-shadow);
   }
@@ -241,12 +240,12 @@ table tbody tr {
   button.text-zinc-500.rounded-lg:hover,
   button.text-zinc-500.rounded-xl:hover,
   button.text-zinc-500.rounded-2xl:hover {
-    background-color: rgba(249, 115, 79, 0.075);
-    color: #e85d3f;
+    background-color: var(--color-brand-50);
+    color: var(--text);
   }
 
   .row-interactive:hover {
-    background-color: rgba(249, 115, 79, 0.055);
+    background-color: var(--surface-raised);
   }
 
   .tab-interactive:hover:not([aria-selected="true"]):not([data-active="true"]) {
@@ -255,13 +254,13 @@ table tbody tr {
   }
 
   .icon-interactive:hover {
-    background-color: rgba(249, 115, 79, 0.09);
-    color: #e85d3f;
+    background-color: var(--color-brand-50);
+    color: var(--text);
     transform: translateY(-1px);
   }
 
   .text-link:hover {
-    color: #e85d3f;
+    color: var(--accent);
   }
 
   .text-link:hover svg,
@@ -271,12 +270,12 @@ table tbody tr {
   }
 
   table tbody tr:hover {
-    background-color: rgba(249, 115, 79, 0.035);
+    background-color: var(--surface-raised);
   }
 
   .fc .fc-button-primary:hover:not(:disabled) {
     transform: translateY(-1px);
-    box-shadow: 0 7px 18px rgba(78, 64, 120, 0.09);
+    box-shadow: var(--interaction-shadow);
   }
 
   .fc .fc-event:hover {
@@ -288,14 +287,14 @@ table tbody tr {
   .external-intervention:hover {
     transform: translateY(-2px);
     border-color: var(--interaction-border);
-    background-color: rgba(249, 115, 79, 0.045);
-    box-shadow: 0 10px 24px rgba(78, 64, 120, 0.11);
+    background-color: var(--surface-raised);
+    box-shadow: var(--interaction-shadow);
   }
 
   input[type="checkbox"]:not(:disabled):hover,
   input[type="radio"]:not(:disabled):hover {
     filter: saturate(1.12);
-    box-shadow: 0 0 0 4px rgba(249, 115, 79, 0.08);
+    box-shadow: 0 0 0 4px rgba(41, 43, 41, 0.08);
   }
 }
 
@@ -325,6 +324,38 @@ table tbody tr {
 .text-balance {
   text-wrap: balance;
 }
+
+.brand-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .16em;
+  line-height: 1.6;
+  text-transform: uppercase;
+}
+
+.brand-eyebrow::before {
+  content: "";
+  flex: 0 0 24px;
+  height: 1px;
+  background: #a4a99e;
+}
+
+.app-nav-link[aria-current="page"],
+.app-nav-link[aria-current="page"]:hover {
+  background: var(--accent);
+  color: var(--color-on-accent);
+}
+
+.app-nav-link[aria-current="page"] svg { color: inherit; }
+
+.brand-kpi { box-shadow: 0 2px 8px rgb(22 25 20 / 2%); }
+.brand-kpi .kpi-value { font-size: clamp(1.4rem, 2vw, 1.85rem); font-weight: 600; letter-spacing: -.045em; }
+
+table thead { background: var(--surface-raised); }
 
 /* The planning navigation sits immediately below the app header. */
 .planning-toolbar {
@@ -373,10 +404,10 @@ table tbody tr {
 .fc {
   --fc-border-color: rgba(41, 50, 71, 0.1);
   --fc-page-bg-color: transparent;
-  --fc-neutral-bg-color: #f6f3fa;
-  --fc-list-event-hover-bg-color: #fff4ed;
-  --fc-today-bg-color: rgba(249, 115, 79, 0.075);
-  --fc-now-indicator-color: #f9734f;
+  --fc-neutral-bg-color: #f0f1ed;
+  --fc-list-event-hover-bg-color: #f5f5f2;
+  --fc-today-bg-color: rgba(110, 120, 100, 0.06);
+  --fc-now-indicator-color: #292b29;
   --fc-event-text-color: #fffdf9;
   font-size: 0.84rem;
 }
@@ -396,9 +427,9 @@ table tbody tr {
 
 .fc .fc-button-primary:hover,
 .fc .fc-button-primary:not(:disabled).fc-button-active {
-  border-color: rgba(249, 115, 79, 0.4);
-  background: rgba(249, 115, 79, 0.12);
-  color: #c94c22;
+  border-color: var(--interaction-border);
+  background: var(--color-brand-50);
+  color: var(--text);
 }
 
 .fc .fc-button-primary:disabled {
@@ -458,8 +489,8 @@ table tbody tr {
   overflow: hidden;
   border: 1px solid #e2e8f0;
   border-radius: 20px;
-  background: #f8fafc;
-  box-shadow: 0 12px 40px rgb(47 40 72 / 12%);
+  background: #fafaf8;
+  box-shadow: 0 12px 40px rgb(22 25 20 / 12%);
   animation: planning-panel-enter 160ms ease-out;
 }
 
@@ -496,7 +527,7 @@ table tbody tr {
 
 .planning-workspace button[data-selected="true"],
 .planning-workspace .planning-current-event {
-  outline: 2px solid #f9734f;
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 

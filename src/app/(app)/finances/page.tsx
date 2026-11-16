@@ -265,7 +265,7 @@ export default function FinancesPage() {
               <button key={month.month} type="button" onClick={() => setSelectedMonth(month.month)} className={`focus-ring rounded-2xl border p-3 text-left transition hover:-translate-y-0.5 hover:border-orange-300 hover:shadow-md ${month.month === selectedMonth ? "border-orange-300 bg-orange-50 shadow-sm" : "border-zinc-200 bg-white"}`}>
                 <div className="flex items-center justify-between gap-2"><p className="text-[11px] font-bold capitalize text-zinc-600">{formatMonth(month.month, "short")}</p>{month.annual > 0 && <Badge variant="blue">annuelle</Badge>}</div>
                 <p className="mt-3 text-lg font-extrabold text-zinc-900">{formatMoney(month.total)}</p>
-                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-zinc-100"><div className="h-full rounded-full bg-gradient-to-r from-orange-400 to-violet-500" style={{ width: `${Math.max(month.total > 0 ? 8 : 0, Math.round(month.total / forecastMaximum * 100))}%` }} /></div>
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-zinc-100"><div className="h-full rounded-full bg-brand-500" style={{ width: `${Math.max(month.total > 0 ? 8 : 0, Math.round(month.total / forecastMaximum * 100))}%` }} /></div>
                 <p className="mt-2 text-[10px] leading-4 text-zinc-500">{formatMoney(month.monthly)} mensuel{month.annual > 0 ? ` · ${formatMoney(month.annual)} annuel` : ""}{month.oneOff > 0 ? ` · ${formatMoney(month.oneOff)} ponctuel` : ""}</p>
               </button>
             ))}

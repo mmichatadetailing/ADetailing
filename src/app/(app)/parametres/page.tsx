@@ -103,7 +103,7 @@ export default function SettingsPage() {
           <Field label="Année"><Select className="min-w-36" value={objectiveYear} onChange={(event) => setObjectiveYear(Number(event.target.value))}>{[currentYear + 1, currentYear, currentYear - 1].map((year) => <option key={year} value={year}>{year}{year === currentYear ? " · en cours" : ""}</option>)}</Select></Field>
         </CardHeader>
         <CardContent>
-          <div className="mb-5 grid gap-3 rounded-2xl border border-orange-100 bg-gradient-to-r from-orange-50/90 to-violet-50/60 p-4 sm:grid-cols-[1fr_auto] sm:items-center">
+          <div className="mb-5 grid gap-3 rounded-2xl border border-black/10 bg-brand-50 p-4 sm:grid-cols-[1fr_auto] sm:items-center">
             <div><p className="flex items-center gap-2 text-xs font-bold text-zinc-700"><CalendarRange className="size-4 text-brand-600" /> Objectif annuel {objectiveYear}</p><p className="mt-1 text-[11px] text-zinc-500">{configuredObjectiveMonths}/12 mois renseigné(s)</p></div>
             <p className="text-2xl font-extrabold tracking-tight text-brand-700">{formatMoney(annualObjective)}</p>
           </div>
