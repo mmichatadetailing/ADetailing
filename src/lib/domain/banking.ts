@@ -36,6 +36,8 @@ export interface BankTransaction {
   reconciliation_group_id?: string | null;
   group_size?: number;
   group_note?: string;
+  automation_note?: string | null;
+  automated_at?: string | null;
 }
 
 export function historicalGroupCandidates(transactions: BankTransaction[], candidates: BankCandidate[]) {

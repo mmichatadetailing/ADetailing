@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PGlite } from "@electric-sql/pglite";
 import { readFile } from "node:fs/promises";
 import { financialDateKey } from "@/lib/domain/periods";
-import { paidExpenseAmountForMonth } from "@/lib/domain/calculations";
+import { collectedInterventionRevenue, paidExpenseAmountForMonth } from "@/lib/domain/calculations";
 
 const org = "10000000-0000-4000-8000-000000000001";
 const user = "20000000-0000-4000-8000-000000000001";
@@ -22,9 +22,9 @@ beforeAll(async () => {
     create function public.has_permission(target uuid, permission text) returns boolean language sql as $$select target::text=current_setting('app.org',true) and current_setting('app.member_role',true) in ('partner','admin')$$;
     create function public.is_org_member(target uuid) returns boolean language sql as $$select target::text=current_setting('app.org',true)$$;
     create table organizations(id uuid primary key); create table locations(id uuid primary key); create table profiles(id uuid primary key);
-    create table clients(id uuid primary key,organization_id uuid,archived_at timestamptz);
+    create table clients(id uuid primary key default gen_random_uuid(),organization_id uuid,archived_at timestamptz,location_id uuid,kind text,first_name text default '',last_name text default '',company text,notes text);
     create table organization_members(id uuid primary key,organization_id uuid,profile_id uuid,active boolean);
-    create table maintenance_contracts(id uuid primary key,organization_id uuid,client_id uuid);
+    create table maintenance_contracts(id uuid primary key,organization_id uuid,client_id uuid,archived_at timestamptz);
     create table invoices(id uuid primary key,organization_id uuid,total_including_tax_cents bigint,status text,archived_at timestamptz,client_id uuid);
     create table interventions(id uuid primary key default gen_random_uuid(),organization_id uuid,status text,invoice_id uuid,maintenance_contract_id uuid,archived_at timestamptz,location_id uuid,client_id uuid,title text,start_at timestamptz,end_at timestamptz,planned_duration_minutes integer,actual_duration_minutes integer,notes text,created_by uuid);
     create table intervention_items(id uuid primary key default gen_random_uuid(),organization_id uuid,intervention_id uuid,revenue_allocated_cents bigint,label text,quantity numeric);
@@ -36,6 +36,7 @@ beforeAll(async () => {
   await db.exec(await readFile("supabase/migrations/202611050025_qonto_banking.sql", "utf8"));
   await db.exec(await readFile("supabase/migrations/202611050026_qonto_historical_groups.sql", "utf8"));
   await db.exec(await readFile("supabase/migrations/202611050027_qonto_automatic_drafts.sql", "utf8"));
+  await db.exec(await readFile("supabase/migrations/202611160028_qonto_direct_integration.sql", "utf8"));
 }, 30_000);
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
@@ -43,7 +44,7 @@ beforeEach(async () => {
     truncate organizations,profiles,interventions,intervention_items,intervention_workers,clients,organization_members,maintenance_contracts,invoices,payments,expenses,maintenance_billing_periods cascade;
     insert into organizations values('${org}'); insert into profiles values('${user}');
     insert into qonto_connections(organization_id,remote_organization_id,organization_name,credentials_encrypted,import_since,cursor_at) values('${org}','qonto','Entreprise','encrypted','2026-01-01','2026-01-01');
-    insert into clients values('${user}','${org}',null);
+    insert into clients(id,organization_id) values('${user}','${org}');
     insert into interventions(id,organization_id,status) values('${job}','${org}','completed');
     insert into intervention_items(organization_id,intervention_id,revenue_allocated_cents) values('${org}','${job}',11000);
     insert into expenses(id,organization_id,expense_date,description,amount_including_tax_cents,recurrence,paid) values('${expense}','${org}','2026-01-15','Assurance',11000,'monthly',true);
@@ -75,6 +76,124 @@ async function manageDraft(action: string, details: Record<string, unknown> = {}
   return db.query<{ manage_bank_draft: { interventionId?: string } }>("select manage_bank_draft($1,$2,$3)", [draft.id, action, JSON.stringify({ expectedUpdatedAt: draft.updated_at, ...details })]);
 }
 function validation(payload: Record<string, unknown>) { return { targetKind: "new", expectedAmount: 11000, expectedSettledAt: "2026-09-16T00:00:00Z", payload }; }
+
+async function automate(decision: Record<string, unknown>, bankId = tx) {
+  await db.exec("set app.member_role='service_role'");
+  return db.query<{ result: { kind?: string; skipped?: boolean; review?: boolean; interventionId?: string } }>(
+    "select automate_qonto_transaction($1,11000,'2026-09-16', $2) result", [bankId, JSON.stringify(decision)]);
+}
+async function automaticReady(side = "credit") {
+  await prepareDraft(side);
+  await db.query("update qonto_connections set auto_create_from='2026-09-01' where organization_id=$1", [org]);
+  await db.query("update bank_transactions set counterparty='Camille Bernard',label='Nettoyage voiture' where id=$1", [tx]);
+}
+
+describe("création Qonto sans validation humaine dans PostgreSQL", () => {
+  it("crée le client, une prestation terminée à la date bancaire et son paiement une seule fois", async () => {
+    await automaticReady();
+    const decision = { action: "service", clientName: "Camille Bernard" };
+    expect((await automate(decision)).rows[0]!.result.kind).toBe("service");
+    expect((await automate(decision)).rows[0]!.result.skipped).toBe(true);
+    expect(await count("clients")).toBe(2);
+    expect(await count("interventions")).toBe(2);
+    expect(await count("payments")).toBe(1);
+    expect((await db.query("select status,(start_at at time zone 'Europe/Paris')::date::text date,planned_duration_minutes,actual_duration_minutes from interventions where client_id is not null")).rows[0]).toMatchObject({ status: "completed", date: "2026-09-16", planned_duration_minutes: 0, actual_duration_minutes: null });
+    expect((await db.query("select amount_cents::integer amount,paid_at::date::text date from payments")).rows[0]).toEqual({ amount: 11000, date: "2026-09-16" });
+    const jobs = (await db.query<{ id: string }>("select id from interventions")).rows;
+    const payments = (await db.query<{ interventionId: string; amount: number }>('select intervention_id as "interventionId",amount_cents::integer amount from payments')).rows;
+    expect(collectedInterventionRevenue(jobs, payments)).toBe(11000);
+    expect((await draftFor()).payload.title).toBeTruthy();
+    expect((await db.query("select status from bank_transaction_drafts")).rows[0]).toEqual({ status: "processed" });
+    expect((await db.query<{ automated_at: string }>("select automated_at from bank_transactions")).rows[0]!.automated_at).toBeTruthy();
+  });
+  it("réutilise le client malgré accents et ordre nom/prénom", async () => {
+    await automaticReady();
+    await db.query("update clients set first_name='Camille',last_name='Bérnard' where id=$1", [user]);
+    await db.query("update bank_transactions set counterparty='BERNARD CAMILLE' where id=$1", [tx]);
+    expect((await automate({ action: "service", clientName: "BERNARD CAMILLE" })).rows[0]!.result.kind).toBe("service");
+    expect(await count("clients")).toBe(1);
+  });
+  it("crée une charge réglée sans inventer de TVA et sans doublon au rejeu", async () => {
+    await automaticReady("debit");
+    expect((await automate({ action: "expense" })).rows[0]!.result.kind).toBe("expense");
+    await automate({ action: "expense" });
+    expect(await count("expenses")).toBe(2);
+    expect(await count("expense_settlements")).toBe(1);
+    expect((await db.query("select amount_including_tax_cents::integer amount,vat_amount_cents::integer vat,vat_recoverable,recurrence from expenses where description='Nettoyage voiture'")).rows[0]).toMatchObject({ amount: 11000, vat: 0, vat_recoverable: false, recurrence: "one_off" });
+  });
+  it("rapproche un entretien payé d’avance sans créer une visite facturée en plus", async () => {
+    await automaticReady();
+    await db.query("update maintenance_billing_periods set amount_cents=11000 where id=$1", [period]);
+    await automate({ action: "match", kind: "maintenance", id: period });
+    expect(await count("interventions")).toBe(1);
+    expect(await count("payments")).toBe(1);
+    expect((await db.query("select status from maintenance_billing_periods")).rows[0]).toEqual({ status: "paid" });
+  });
+  it("rapproche une mensualité sans recréer sa règle de charge", async () => {
+    await automaticReady("debit");
+    await automate({ action: "match", kind: "expense", id: expense, month: "2026-09-01" });
+    expect(await count("expenses")).toBe(1);
+    expect(await count("expense_settlements")).toBe(1);
+  });
+  it("laisse en exception un abonnement au montant différent ou un dossier client déjà ouvert", async () => {
+    await automaticReady("debit");
+    await db.query("update expenses set supplier='Camille Bernard',amount_including_tax_cents=10000 where id=$1", [expense]);
+    expect((await automate({ action: "expense" })).rows[0]!.result.review).toBe(true);
+    expect(await count("expenses")).toBe(1);
+    await db.query("update bank_transactions set side='credit' where id=$1", [tx]);
+    await db.query("update interventions set client_id=$1,status='scheduled' where id=$2", [user, job]);
+    expect((await automate({ action: "service", clientId: user, clientName: "Camille Bernard" })).rows[0]!.result.review).toBe(true);
+    expect(await count("payments")).toBe(0);
+  });
+  it("ne reprend ni l’historique ni un brouillon modifié ou supprimé", async () => {
+    await automaticReady();
+    const decision = { action: "service", clientName: "Camille Bernard" };
+    await db.query("update qonto_connections set auto_create_from='2026-10-01' where organization_id=$1", [org]);
+    expect((await automate(decision)).rows[0]!.result.skipped).toBe(true);
+    await db.query("update qonto_connections set auto_create_from='2026-09-01' where organization_id=$1", [org]);
+    await db.query("update bank_transaction_drafts set updated_at=created_at+interval '1 second'");
+    expect((await automate(decision)).rows[0]!.result.skipped).toBe(true);
+    await db.query("update bank_transaction_drafts set updated_at=created_at,status='dismissed'");
+    expect((await automate(decision)).rows[0]!.result.skipped).toBe(true);
+    expect(await count("payments")).toBe(0);
+  });
+  it("respecte les pauses et refuse les montants devenus obsolètes", async () => {
+    await automaticReady();
+    const decision = { action: "service", clientName: "Camille Bernard" };
+    for (const field of ["enabled", "auto_intake", "auto_create"]) {
+      await db.exec(`update qonto_connections set ${field}=false`);
+      expect((await automate(decision)).rows[0]!.result.skipped).toBe(true);
+      await db.exec(`update qonto_connections set ${field}=true`);
+    }
+    await db.query("update bank_transactions set amount_cents=12000 where id=$1", [tx]);
+    await expect(automate(decision)).rejects.toThrow("bancaire a changé");
+    expect(await count("payments")).toBe(0);
+  });
+  it("une annulation manuelle n’est pas réintégrée automatiquement", async () => {
+    await automaticReady();
+    await automate({ action: "service", clientName: "Camille Bernard" });
+    await reconcile(tx, "undo");
+    expect((await automate({ action: "service", clientName: "Camille Bernard" })).rows[0]!.result.skipped).toBe(true);
+    expect(await count("payments")).toBe(0);
+    expect(await count("interventions")).toBe(2);
+  });
+  it("exclut les virements internes et respecte leur annulation, même sans brouillon", async () => {
+    await automaticReady();
+    await db.exec("delete from bank_transaction_drafts; update bank_transactions set operation_type='internal_transfer'");
+    expect((await automate({ action: "ignore" })).rows[0]!.result.kind).toBe("ignored");
+    await reconcile(tx, "undo");
+    expect((await automate({ action: "ignore" })).rows[0]!.result.skipped).toBe(true);
+    expect(await count("payments")).toBe(0);
+  });
+  it("interdit l’appel direct depuis le navigateur et les cibles d’une autre entreprise", async () => {
+    await automaticReady();
+    await db.exec("set role authenticated");
+    await expect(automate({ action: "service", clientName: "Camille Bernard" })).rejects.toThrow("permission denied");
+    await db.exec("reset role");
+    await expect(automate({ action: "service", clientId: tx, clientName: "Camille Bernard" })).rejects.toThrow("Client indisponible");
+    expect(await count("clients")).toBe(1);
+  });
+});
 
 describe("rapprochement Qonto exécuté dans PostgreSQL", () => {
   it("prépare uniquement les nouvelles opérations sans modifier les données comptables", async () => {

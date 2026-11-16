@@ -1,10 +1,11 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
-const mocks = vi.hoisted(() => ({ transactions: vi.fn(), context: vi.fn() }));
+const mocks = vi.hoisted(() => ({ transactions: vi.fn(), context: vi.fn(), automate: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("./token-crypto", () => ({ decryptToken: () => JSON.stringify({ login: "id", secret: "secret" }) }));
 vi.mock("./qonto-client", () => ({ QontoClient: class { transactions = mocks.transactions; } }));
 vi.mock("./qonto-context", () => ({ qontoContext: mocks.context }));
+vi.mock("./qonto-automation", () => ({ automateQonto: mocks.automate }));
 import { syncQonto } from "./qonto-sync";
 
 function database(connection: Record<string, unknown> | null) {
@@ -19,6 +20,21 @@ function database(connection: Record<string, unknown> | null) {
 }
 const connection = { credentials_encrypted: "encrypted", remote_organization_id: "qonto", accounts: [{ id: "bank", iban: "FR123", name: "Compte", currency: "EUR" }], cursor_at: "2026-09-01T00:00:00Z", import_since: "2026-09-01", window_to: "2026-09-08T00:00:00Z", account_index: 0, next_page: 1, auto_reconcile: false };
 beforeEach(() => { vi.clearAllMocks(); });
+it("intègre les nouvelles écritures après l’import complet, même sans rapprochement historique activé", async () => {
+  const now = new Date().toISOString();
+  const { db, rpc } = database({ ...connection, enabled: true, auto_intake: true, auto_create: true, auto_intake_from: "2026-09-01", auto_create_from: "2026-11-01", cursor_at: now, window_to: now });
+  mocks.transactions.mockResolvedValue({ transactions: [], meta: { next_page: null, total_pages: 1 } });
+  mocks.automate.mockResolvedValue({ services: 1, expenses: 2, matched: 1, review: 0, ignored: 0, pending: false });
+  expect(await syncQonto(db, "org")).toMatchObject({ automation: { services: 1, expenses: 2 }, pending: false });
+  expect(mocks.automate).toHaveBeenCalledWith(db, "org", "2026-11-01T00:00:00.000Z", expect.any(Number));
+  expect(rpc).toHaveBeenCalledWith("prepare_qonto_drafts", { target_org: "org" });
+});
+it("ne lance pas de création directe tant que l’historique bancaire est incomplet", async () => {
+  const { db } = database({ ...connection, enabled: true, auto_intake: true, auto_create: true });
+  mocks.transactions.mockResolvedValue({ transactions: [], meta: { next_page: 2, total_pages: 2 } });
+  expect(await syncQonto(db, "org")).toMatchObject({ pending: true, automation: null });
+  expect(mocks.automate).not.toHaveBeenCalled();
+});
 it("ne lance aucun appel Qonto si une synchronisation possède déjà le verrou", async () => {
   expect((await syncQonto(database(null).db, "org")).busy).toBe(true);
   expect(mocks.transactions).not.toHaveBeenCalled();
