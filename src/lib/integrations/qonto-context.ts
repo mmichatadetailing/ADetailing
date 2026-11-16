@@ -14,7 +14,7 @@ export async function qontoContext(db: SupabaseClient, org: string) {
     return { data: result.data as Row[], error: null };
   })] as const));
   const rows = Object.fromEntries(entries) as Record<typeof tables[number], Row[]>;
-  const clients = new Map(rows.clients.map((client) => [String(client.id), [client.company, `${client.first_name ?? ""} ${client.last_name ?? ""}`.trim()].filter(Boolean).map(String)]));
+  const clients = new Map(rows.clients.map((client) => [String(client.id), [client.company, `${client.first_name ?? ""} ${client.last_name ?? ""}`.trim(), `${client.last_name ?? ""} ${client.first_name ?? ""}`.trim()].filter(Boolean).map(String)]));
   const jobs = new Map(rows.interventions.map((job) => [String(job.id), job]));
   const invoices = new Map(rows.invoices.map((inv) => [String(inv.id), inv]));
   const contracts = new Map(rows.maintenance_contracts.map((contract) => [String(contract.id), contract]));
@@ -77,5 +77,16 @@ export async function qontoContext(db: SupabaseClient, org: string) {
     const transaction = transactionById.get(String(draft.bank_transaction_id));
     return transaction ? [{ ...draft, transaction } as unknown as BankDraft] : [];
   });
-  return { transactions, candidates: targets, drafts };
+  // Keep unresolved dossiers as blockers even when they cannot be matched by amount/date.
+  const blockers = [
+    ...rows.interventions.filter((job) => !job.archived_at && !["completed", "cancelled"].includes(String(job.status)))
+      .map((job) => ({ side: "credit" as const, identities: clientNames(job.client_id) })),
+    ...rows.maintenance_contracts.filter((contract) => !contract.archived_at)
+      .map((contract) => ({ side: "credit" as const, identities: clientNames(contract.client_id) })),
+    ...rows.expenses.filter((expense) => !expense.archived_at && expense.recurrence !== "one_off" && (!expense.ends_on || String(expense.ends_on) >= bankDate(new Date().toISOString())))
+      .map((expense) => ({ side: "debit" as const, identities: [String(expense.supplier ?? ""), String(expense.description ?? "")] })),
+  ];
+  return { transactions, candidates: targets, drafts, blockers,
+    clients: rows.clients.filter((client) => !client.archived_at).map((client) => ({ id: String(client.id), names: clientNames(client.id) })),
+  };
 }

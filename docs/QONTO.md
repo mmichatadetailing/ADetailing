@@ -9,8 +9,9 @@ factures facultatives, entretiens et échéances de charges du logiciel.
 Il ne déclenche aucun virement et ne modifie aucune opération dans Qonto.
 Les appels à Qonto sont exclusivement des lectures effectuées par le serveur.
 
-Une transaction importée ne devient pas automatiquement du chiffre d’affaires ou
-une nouvelle charge. Un paiement existant est relié, pas recréé. Une règle de
+En mode **Intégration automatique**, les nouvelles opérations courantes deviennent
+des charges réglées ou des prestations avec leur encaissement, sans validation.
+Un paiement existant est relié, pas recréé. Une règle de
 charge mensuelle est rapprochée sur une seule échéance, sans ajouter une deuxième
 dépense. Les montants et dates de règlement des charges rapprochées sont ensuite
 utilisés dans Finances, le dashboard, le bilan mensuel et l’export Excel.
@@ -33,6 +34,9 @@ affiché par Supabase avant de valider. La migration attendue est
 `202611050026_qonto_historical_groups.sql` pour les regroupements historiques.
 Appliquez aussi `202611050027_qonto_automatic_drafts.sql` pour la préparation
 automatique des nouveaux paiements et charges.
+La migration `202611160028_qonto_direct_integration.sql` ajoute l’intégration
+directe décrite ci-dessous. Elle ne crée aucune écriture lors de son application :
+elle active le traitement des règlements futurs au prochain passage de synchronisation.
 
 Ne passez pas cette étape : elle crée les tables bancaires, le suivi des règlements
 des charges et les protections contre les doublons. Les anciennes données ne sont
@@ -149,13 +153,70 @@ Aucune migration supplémentaire n’est nécessaire pour cette vue.
 
 Dans la vue **À traiter**, cliquez sur **Rapprocher**.
 
-### Nouvelles transactions : préparation automatique, validation manuelle
+### Nouvelles transactions : intégration directe sans validation
+
+Dans **Banque & rapprochement → Traitement des nouveaux mouvements Qonto**, choisissez
+**Intégration automatique**. Ce mode est activé par défaut par la nouvelle migration,
+mais respecte une synchronisation ou préparation précédemment mise en pause.
+Le point de départ est la date d’application de cette migration (ou de création
+de la connexion pour une nouvelle entreprise), pas le début de l’historique importé.
+
+À chaque synchronisation complète, le logiciel :
+
+1. Cherche une correspondance unique sur le nom/référence, le montant exact et
+   une date proche. Il peut relier un paiement existant ou encaisser une prestation
+   terminée, une facture interne ou une échéance d’entretien déjà enregistrée.
+2. Rapproche les débits des échéances de charges existantes, sans recréer leur règle.
+3. Crée une charge ponctuelle réglée pour un achat sans correspondance. La catégorie
+   d’un fournisseur déjà connu est réutilisée si elle est unique ; sinon elle est
+   « Achats Qonto ». Aucune TVA récupérable n’est déduite du seul mouvement bancaire.
+4. Pour un virement client sans dossier existant, crée la prestation, sa ligne de
+   montant et son paiement. Le client est reconnu ou sa fiche est créée à partir du
+   nom bancaire, sans inventer ses coordonnées. Selon le choix métier retenu, la
+   prestation est **Terminée**, avec une date de réalisation initialisée sur la
+   date bancaire et modifiable ensuite. Aucune durée n’est inventée. Son prix initial
+   correspond au montant reçu, et reste modifiable si ce versement était un acompte.
+
+Les encaissements alimentent immédiatement les statistiques à la **date bancaire**.
+Ces nouvelles prestations sont comptées comme réalisées à cette date. Le statut et
+la date des prestations déjà existantes ne sont pas modifiés par le rapprochement.
+Les écritures créées restent consultables et modifiables dans les pages habituelles.
+La banque affiche une mention « Automatique » et le résultat du traitement.
+Les filtres **Intégrées automatiquement** et **Exceptions d’automatisation** permettent
+de consulter séparément les réussites et les mouvements restés à examiner.
+
+**Exceptions conservées pour vérification :** homonymes, montants ou affectations
+ambigus, dossier déjà ouvert, changement de tarif d’un abonnement, nom client absent,
+remboursements, apports, emprunts, rémunérations et versements agrégés identifiables
+(Stripe, SumUp, etc.). Les virements identifiés entre les propres comptes Qonto
+sont exclus automatiquement. Les libellés bancaires ne permettent pas de garantir
+la nature de toute opération : les exceptions ne sont jamais transformées de force
+en chiffre d’affaires. Le motif est visible dans Banque et dans l’éditeur du brouillon.
+
+Les regroupements historiques restent **manuels**, conformément à leur fonctionnement
+actuel. Les anciennes transactions, les brouillons modifiés/supprimés et les traitements
+annulés manuellement ne sont pas réintégrés de force. Une erreur sur un mouvement
+ne provoque pas de création de remplacement et n’empêche pas les autres de passer.
+Si l’historique est incomplet, la création directe attend la fin de l’import ; si
+le budget d’exécution est atteint, elle reprend au passage suivant, sans doublon.
+
+Pour corriger le montant ou supprimer un paiement lié à Qonto, utilisez d’abord
+**Banque → Annuler le traitement**. Pour une prestation créée automatiquement,
+cela retire son encaissement mais conserve le dossier, qui redevient à payer.
+Une charge conserve sa fiche, mais perd son règlement bancaire. Corrigez ensuite
+la fiche ou rapprochez le mouvement de la bonne écriture.
+
+### Mode optionnel : préparation de brouillons, validation manuelle
+
+Pour conserver une validation systématique, choisissez **Préparer des brouillons
+à valider** dans le même sélecteur. Le fonctionnement ci-dessous concerne ce mode
+et les exceptions non traitées par l’intégration directe.
 
 La migration des brouillons active la préparation automatique pour les connexions
 Qonto existantes, avec un point de départ fixé à son application. Une nouvelle
 connexion utilise l’instant de sa création. La date et l’option sont visibles dans
-**Banque → Préparer automatiquement les nouvelles prestations et charges**.
-Le bouton permet de désactiver/réactiver la préparation sans effacer les propositions.
+**Banque → Traitement des nouveaux mouvements Qonto**.
+Le choix « Import bancaire uniquement » suspend la préparation sans effacer les propositions.
 
 - Seuls les règlements terminés, en euros, à partir de cet instant sont préparés.
   L’historique antérieur n’est pas recréé, même lors d’une nouvelle synchronisation.
