@@ -36,6 +36,7 @@ import { interventionStatusLabels, paymentStatusLabels } from "@/lib/domain/labe
 import { getServicePricingMode, servicePriceRuleLabel, suggestedServicePrice } from "@/lib/domain/service-pricing";
 import type { InterventionStatus } from "@/lib/domain/types";
 import { useDemoStore } from "@/lib/demo/store";
+import { paymentTimestamp } from "@/lib/domain/payment-date";
 import { formatDate, formatMoney } from "@/lib/utils";
 
 const stepIcons = { appointment: CalendarCheck2, service: Sparkles, payment: CircleDollarSign } satisfies Record<WorkflowStepId, typeof CalendarCheck2>;
@@ -51,10 +52,6 @@ function localDateParts(value?: string) {
 function todayDateValue() {
   const now = new Date();
   return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
-}
-
-function paymentTimestamp(date: string) {
-  return date === todayDateValue() ? new Date().toISOString() : new Date(`${date}T12:00:00`).toISOString();
 }
 
 function hours(minutes: number) {
@@ -246,6 +243,7 @@ export function InterventionDetail({ interventionId, startEditing = false, onDir
     if (!invoice || amount <= 0) return toast.error("Saisissez le montant reçu");
     if (Math.round(amount * 100) > workflow.outstanding) return toast.error("Le paiement dépasse le solde restant");
     if (!paymentDate) return toast.error("Sélectionnez la date du paiement");
+    if (paymentDate > todayDateValue()) return toast.error("La date du paiement ne peut pas être dans le futur.");
     data.addPayment(invoice.id, Math.round(amount * 100), paymentMethod, paymentTimestamp(paymentDate));
     setPaymentEuros(0);
     markSaved(["payment"], { payment: { amount: 0, method: paymentMethod, date: paymentDate } });
@@ -258,6 +256,7 @@ export function InterventionDetail({ interventionId, startEditing = false, onDir
     if (amount <= 0) return toast.error("Saisissez le montant reçu");
     if (Math.round(amount * 100) > manualOutstanding) return toast.error("Le paiement dépasse le solde restant");
     if (!paymentDate) return toast.error("Sélectionnez la date du paiement");
+    if (paymentDate > todayDateValue()) return toast.error("La date du paiement ne peut pas être dans le futur.");
     data.addInterventionPayment(current.id, Math.round(amount * 100), paymentMethod, paymentTimestamp(paymentDate));
     setPaymentEuros(0);
     markSaved(["payment"], { payment: { amount: 0, method: paymentMethod, date: paymentDate } });
@@ -276,6 +275,7 @@ export function InterventionDetail({ interventionId, startEditing = false, onDir
 
   const savePayment = () => {
     if (!editingPaymentId || !editingPaymentDate || editingPaymentEuros <= 0) return toast.error("Vérifiez le paiement");
+    if (editingPaymentDate > todayDateValue()) return toast.error("La date du paiement ne peut pas être dans le futur.");
     const otherPayments = relatedPayments.filter((payment) => payment.id !== editingPaymentId).reduce((sum, payment) => sum + payment.amount, 0);
     const dossierTotal = invoice?.totalIncludingTax ?? interventionTotal;
     if (otherPayments + Math.round(editingPaymentEuros * 100) > dossierTotal) return toast.error("Le paiement dépasse le montant total du dossier");

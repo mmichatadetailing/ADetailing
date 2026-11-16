@@ -57,15 +57,17 @@ const expenseSchema = z.object({
 
 const appointmentVehicleFormats = ["Citadine", "Berline", "SUV", "Monospace", "4x4", "Fourgon", "Autre"] as const;
 
-function ClientForm({ close }: { close: () => void }) {
+function ClientForm({ close, onDirtyChange, onBusyChange }: { close: () => void; onDirtyChange: (dirty: boolean) => void; onBusyChange: (busy: boolean) => void }) {
   const addClient = useDemoStore((state) => state.addClient);
   const { mode, createRecord } = useWorkspace();
   const settings = useDemoStore((state) => state.settings);
-  const { register, handleSubmit, control, formState: { errors, isSubmitting } } = useForm<z.infer<typeof clientSchema>>({
+  const { register, handleSubmit, control, formState: { errors, isSubmitting, isDirty } } = useForm<z.infer<typeof clientSchema>>({
     resolver: zodResolver(clientSchema),
     defaultValues: { kind: "individual", company: "", firstName: "", lastName: "", source: settings.leadSources[0], vehicleFormat: settings.vehicleFormats[0], email: "", phone: "", city: "" },
   });
   const clientKind = useWatch({ control, name: "kind" });
+  useEffect(() => { onDirtyChange(isDirty); }, [isDirty, onDirtyChange]);
+  useEffect(() => { onBusyChange(isSubmitting); }, [isSubmitting, onBusyChange]);
   return (
     <form className="grid gap-4" onSubmit={handleSubmit(async (values) => {
       try {
@@ -262,14 +264,16 @@ export function AppointmentForm({ close, initialSlot, allowedMemberIds, onCreate
   );
 }
 
-function ExpenseForm({ close }: { close: () => void }) {
+function ExpenseForm({ close, onDirtyChange, onBusyChange }: { close: () => void; onDirtyChange: (dirty: boolean) => void; onBusyChange: (busy: boolean) => void }) {
   const addExpense = useDemoStore((state) => state.addExpense);
   const { mode, createRecord } = useWorkspace();
-  const { register, handleSubmit, control, formState: { errors, isSubmitting } } = useForm<z.infer<typeof expenseSchema>>({
+  const { register, handleSubmit, control, formState: { errors, isSubmitting, isDirty } } = useForm<z.infer<typeof expenseSchema>>({
     resolver: zodResolver(expenseSchema),
     defaultValues: { date: new Date().toISOString().slice(0, 10), recurrence: "one_off", family: "variable", vatRate: 20, paid: true },
   });
   const recurrence = useWatch({ control, name: "recurrence" });
+  useEffect(() => { onDirtyChange(isDirty); }, [isDirty, onDirtyChange]);
+  useEffect(() => { onBusyChange(isSubmitting); }, [isSubmitting, onBusyChange]);
   return (
     <form className="grid gap-4" onSubmit={handleSubmit(async (values) => {
       try {
@@ -310,29 +314,50 @@ export function GlobalAdd() {
   const canManage = mode === "demo" || Boolean(workspace?.canManageBusiness);
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState<AddKind>("appointment");
-  const close = () => setOpen(false);
+  const [dirty, setDirty] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const close = () => { setOpen(false); setDirty(false); setBusy(false); };
+  const requestClose = () => {
+    if (busy || (dirty && !window.confirm("Abandonner la saisie non enregistrée ?"))) return;
+    close();
+  };
+  const selectKind = (value: AddKind) => {
+    if (kind === value || busy || (dirty && !window.confirm("Changer de formulaire et abandonner la saisie non enregistrée ?"))) return;
+    setDirty(false);
+    setKind(value);
+  };
+  useEffect(() => {
+    if (!open || (!dirty && !busy)) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [open, dirty, busy]);
   useEffect(() => {
     const openGlobalAdd = (event: Event) => {
       const requestedKind = (event as CustomEvent<AddKind>).detail;
+      const nextKind = requestedKind ? canManage || requestedKind === "appointment" ? requestedKind : "appointment" : kind;
+      if (open && nextKind === kind) return;
+      if (open && (busy || (dirty && !window.confirm("Abandonner la saisie non enregistrée ?")))) return;
       if (requestedKind) setKind(canManage || requestedKind === "appointment" ? requestedKind : "appointment");
+      setDirty(false);
       setOpen(true);
     };
     window.addEventListener("adetailing:open-add", openGlobalAdd);
     return () => window.removeEventListener("adetailing:open-add", openGlobalAdd);
-  }, [canManage]);
+  }, [canManage, open, busy, dirty, kind]);
   const addKinds = canManage ? ([['appointment', 'Prestation'], ['client', 'Client'], ['expense', 'Dépense']] as const) : ([['appointment', 'Prestation']] as const);
   return (
     <>
       <Button onClick={() => setOpen(true)} aria-label="Ajouter"><Plus className="size-4" /> <span className="hidden sm:inline">Ajouter</span></Button>
-      <Modal open={open} onClose={close} title="Ajouter" description="Une saisie courte, le reste pourra être complété plus tard.">
+      <Modal open={open} onClose={requestClose} title="Ajouter" description="Une saisie courte, le reste pourra être complété plus tard.">
         <div className={`mb-5 grid gap-2 rounded-xl bg-white/[0.035] p-1 ${canManage ? "grid-cols-3" : "grid-cols-1"}`}>
           {addKinds.map(([value, label]) => (
-            <button key={value} data-active={kind === value} className={`focus-ring tab-interactive rounded-lg px-3 py-2 text-xs font-semibold ${kind === value ? 'bg-brand-50 text-brand-700 shadow-sm' : 'text-zinc-500'}`} onClick={() => setKind(value)}>{label}</button>
+            <button key={value} disabled={busy} data-active={kind === value} className={`focus-ring tab-interactive rounded-lg px-3 py-2 text-xs font-semibold ${kind === value ? 'bg-brand-50 text-brand-700 shadow-sm' : 'text-zinc-500'}`} onClick={() => selectKind(value)}>{label}</button>
           ))}
         </div>
-        {kind === "appointment" && <AppointmentForm close={close} allowedMemberIds={!canManage && workspace ? [workspace.userId] : undefined} />}
-        {canManage && kind === "client" && <ClientForm close={close} />}
-        {canManage && kind === "expense" && <ExpenseForm close={close} />}
+        {kind === "appointment" && <AppointmentForm close={close} onDirtyChange={setDirty} onBusyChange={setBusy} allowedMemberIds={!canManage && workspace ? [workspace.userId] : undefined} />}
+        {canManage && kind === "client" && <ClientForm close={close} onDirtyChange={setDirty} onBusyChange={setBusy} />}
+        {canManage && kind === "expense" && <ExpenseForm close={close} onDirtyChange={setDirty} onBusyChange={setBusy} />}
       </Modal>
     </>
   );

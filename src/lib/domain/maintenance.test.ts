@@ -1,7 +1,33 @@
 import { describe, expect, it } from "vitest";
-import { maintenanceAnnualValue, maintenanceCollectionSummary, maintenanceMonthlyRevenue, maintenanceRenewalStatus, maintenanceSchedule, maintenanceTermEndDate, maintenanceWeekdayDate } from "./maintenance";
+import { dueMaintenanceAmount, isMaintenanceContractActive, maintenanceAnnualValue, maintenanceBillingState, maintenanceCollectionSummary, maintenanceMonthlyRevenue, maintenanceRenewalStatus, maintenanceSchedule, maintenanceTermEndDate, maintenanceWeekdayDate, nextMaintenanceVisit } from "./maintenance";
 
 describe("entretiens mensuels", () => {
+  it("ne présente pas une échéance annulée comme payable et distingue l’échéance du jour", () => {
+    const now = new Date(2026, 10, 16, 9);
+    expect(maintenanceBillingState({ status: "cancelled", dueOn: "2026-10-01" }, now)).toBe("cancelled");
+    expect(maintenanceBillingState({ status: "due", dueOn: "2026-11-16" }, now)).toBe("due");
+    expect(maintenanceBillingState({ status: "due", dueOn: "2026-11-15" }, now)).toBe("overdue");
+    expect(maintenanceBillingState({ status: "due", dueOn: "2026-11-17" }, now)).toBe("upcoming");
+    const base = { organizationId: "org", locationId: "loc", contractId: "contract", createdAt: "2026-01-01", updatedAt: "2026-01-01", periodStart: "2026-11-01", dueOn: "2026-11-16", amount: 1000 };
+    expect(dueMaintenanceAmount([
+      { ...base, id: "today", status: "due" }, { ...base, id: "late", status: "due", dueOn: "2026-11-10" },
+      { ...base, id: "canceled", status: "cancelled" }, { ...base, id: "paid", status: "paid" },
+      { ...base, id: "future", status: "due", dueOn: "2026-12-01" },
+    ], now)).toBe(2000);
+  });
+  it("exclut des revenus récurrents les contrats futurs, terminés ou en pause", () => {
+    const active = { status: "active" as const, firstVisitOn: "2026-11-01" };
+    const now = new Date(2026, 10, 16);
+    expect(isMaintenanceContractActive(active, now)).toBe(true);
+    expect(isMaintenanceContractActive({ ...active, firstVisitOn: "2026-12-01" }, now)).toBe(false);
+    expect(isMaintenanceContractActive({ ...active, endsOn: "2026-11-15" }, now)).toBe(false);
+    expect(isMaintenanceContractActive({ ...active, status: "paused" }, now)).toBe(false);
+  });
+  it("ne propose pas une visite déjà réalisée dans les prochaines visites", () => {
+    const base = { maintenanceContractId: "contract", startAt: "2026-11-16T09:00:00" };
+    const next = { ...base, startAt: "2026-12-16T09:00:00", status: "scheduled" as const };
+    expect(nextMaintenanceVisit("contract", [{ ...base, status: "completed" }, next], new Date(2026, 10, 16))).toBe(next);
+  });
   it("tolère une date temporairement vide pendant la saisie du formulaire", () => {
     expect(maintenanceTermEndDate("", 6)).toBe("");
     expect(maintenanceTermEndDate("date-invalide", 6)).toBe("");

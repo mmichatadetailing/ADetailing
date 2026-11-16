@@ -31,11 +31,12 @@ import {
   collectedInterventionRevenue,
   collectedRevenue,
   grossMargin,
-  hourlyMargin,
+  averageHourlyMargin,
   occupancyRate,
   paidExpenseAmountForMonth,
   projectedExpenseAmountForMonth,
   rankExpensesForMonths,
+  remainingExpenseAmountForMonths,
 } from "@/lib/domain/calculations";
 import { interventionStatusLabels } from "@/lib/domain/labels";
 import { buildDashboardChartData } from "@/lib/domain/dashboard-charts";
@@ -70,7 +71,7 @@ export default function DashboardPage() {
   const previousPeriodRange = { start: previousStatisticsPeriod.start, end: previousPeriodEnd };
   const previousPeriodReference = new Date(Math.max(previousStatisticsPeriod.start.getTime(), previousPeriodEnd.getTime() - 1));
   const futureInterventions = data.interventions
-    .filter((item) => item.startAt && new Date(item.startAt) >= now && item.status !== "cancelled")
+    .filter((item) => item.startAt && new Date(item.startAt) >= now && ["scheduled", "confirmed", "in_progress"].includes(item.status))
     .sort((a, b) => (a.startAt ?? "").localeCompare(b.startAt ?? ""));
   const upcoming = futureInterventions.slice(0, 4);
   const periodPayments = data.payments.filter((item) => isDateInRange(item.paidAt, periodRange));
@@ -78,15 +79,14 @@ export default function DashboardPage() {
   const completed = data.interventions.filter((item) => item.status === "completed" && isDateInRange(item.startAt, periodRange));
   const previousPayments = data.payments.filter((item) => isDateInRange(item.paidAt, previousPeriodRange));
   const previousCompleted = data.interventions.filter((item) => item.status === "completed" && isDateInRange(item.startAt, previousPeriodRange));
-  const averageHourly = completed.length
-    ? Math.round(completed.reduce((sum, item) => sum + (hourlyMargin(item) ?? 0), 0) / completed.length)
-    : 0;
+  const averageHourly = averageHourlyMargin(completed);
   const collected = collectedInterventionRevenue(revenueInterventions, periodPayments);
   const cashReceipts = collectedRevenue(periodPayments);
   const previousCollected = collectedInterventionRevenue(revenueInterventions, previousPayments);
   const previousCashReceipts = collectedRevenue(previousPayments);
   const projectedExpenses = statisticsPeriod.monthKeys.reduce((sum, month) => sum + projectedExpenseAmountForMonth(data.expenses, month), 0);
   const paidExpenses = statisticsPeriod.monthKeys.reduce((sum, month) => sum + paidExpenseAmountForMonth(data.expenses, month, periodReference), 0);
+  const remainingExpenses = remainingExpenseAmountForMonths(data.expenses, statisticsPeriod.monthKeys, periodReference);
   const previousProjectedExpenses = previousStatisticsPeriod.monthKeys.reduce((sum, month) => sum + projectedExpenseAmountForMonth(data.expenses, month), 0);
   const previousPaidExpenses = previousStatisticsPeriod.monthKeys.reduce((sum, month) => sum + paidExpenseAmountForMonth(data.expenses, month, previousPeriodReference), 0);
   const cashFlow = cashReceipts - paidExpenses;
@@ -147,10 +147,10 @@ export default function DashboardPage() {
     { label: "CA encaissé", value: formatMoney(collected), detail: statisticsPeriod.label, comparison: evolutionLabel(collected, previousCollected, previousLabel), icon: Banknote, color: "text-emerald-600", tone: "from-emerald-50/90 to-white", href: "/finances" },
     { label: statisticsPeriod.kind === "year" ? "Objectif annuel" : "Objectif du mois", value: objective > 0 ? `${Math.round(collected / objective * 100)} %` : "À définir", detail: objective > 0 ? `${formatMoney(Math.max(objective - collected, 0))} restant sur ${formatMoney(objective)}` : "Renseignez vos objectifs dans Paramètres", comparison: evolutionLabel(collected, previousCollected, previousLabel), icon: Target, color: "text-sky-600", tone: "from-sky-50/90 to-white", href: "/parametres#objectifs-chiffre-affaires" },
     { label: "Cash-flow décaissé", value: formatMoney(cashFlow), detail: `${formatMoney(cashReceipts)} reçu − ${formatMoney(paidExpenses)} réellement décaissé`, comparison: evolutionLabel(cashFlow, previousCashFlow, previousLabel), icon: WalletCards, color: cashFlow >= 0 ? "text-emerald-600" : "text-red-600", tone: "from-teal-50/90 to-white", href: "/finances" },
-    { label: "Charges prévues", value: formatMoney(projectedExpenses), detail: `${formatMoney(paidExpenses)} décaissé · ${formatMoney(Math.max(projectedExpenses - paidExpenses, 0))} restant`, comparison: evolutionLabel(projectedExpenses, previousProjectedExpenses, previousLabel), icon: TrendingDown, color: "text-orange-600", tone: "from-orange-50/90 to-white", href: "/finances" },
+    { label: "Charges prévues", value: formatMoney(projectedExpenses), detail: `${formatMoney(paidExpenses)} décaissé sur la période · ${formatMoney(remainingExpenses)} restant sur ces charges`, comparison: evolutionLabel(projectedExpenses, previousProjectedExpenses, previousLabel), icon: TrendingDown, color: "text-orange-600", tone: "from-orange-50/90 to-white", href: "/finances" },
     { label: "Prestations réalisées", value: String(completed.length), detail: statisticsPeriod.label, comparison: evolutionLabel(completed.length, previousCompleted.length, previousLabel), icon: Sparkles, color: "text-violet-600", tone: "from-violet-50/90 to-white", href: "/prestations" },
     { label: "Panier moyen", value: formatMoney(averageBasket), detail: `${completed.length} prestation(s) terminée(s)`, comparison: evolutionLabel(averageBasket, previousAverageBasket, previousLabel), icon: Gauge, color: "text-amber-600", tone: "from-amber-50/90 to-white", href: "/pilotage" },
-    { label: "Marge brute", value: formatMoney(margin), detail: `${formatMoney(averageHourly)}/h en moyenne`, comparison: evolutionLabel(margin, previousMargin, previousLabel), icon: TrendingUp, color: "text-fuchsia-600", tone: "from-fuchsia-50/90 to-white", href: "/pilotage" },
+    { label: "Marge brute", value: formatMoney(margin), detail: averageHourly === null ? "Durées non renseignées" : `${formatMoney(averageHourly)}/heure-personne`, comparison: evolutionLabel(margin, previousMargin, previousLabel), icon: TrendingUp, color: "text-fuchsia-600", tone: "from-fuchsia-50/90 to-white", href: "/pilotage" },
   ];
 
   return (

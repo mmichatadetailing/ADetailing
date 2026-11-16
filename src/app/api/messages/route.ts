@@ -56,7 +56,8 @@ export async function POST(request: Request) {
     if (created && input.entityType === "intervention" && input.entityId) {
       const { data: workers, error } = await supabase.from("intervention_workers").select("profile_id").eq("organization_id", workspace.organizationId).eq("intervention_id", input.entityId);
       if (error) throw error;
-      workers?.forEach((worker) => participantIds.add(worker.profile_id));
+      // A collaborator prepared before accepting their invitation has no profile yet.
+      workers?.forEach((worker) => { if (worker.profile_id) participantIds.add(worker.profile_id); });
     }
     const { error: participantError } = await supabase.from("conversation_members").upsert(
       [...participantIds].map((profileId) => ({ organization_id: workspace.organizationId, conversation_id: conversationId, profile_id: profileId })),

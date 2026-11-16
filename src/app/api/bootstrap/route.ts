@@ -10,12 +10,12 @@ export async function GET() {
     const { data: { user }, error: userError } = await supabase.auth.getUser();
     if (userError || !user) return NextResponse.json({ error: "Authentification requise." }, { status: 401 });
     try {
-      return NextResponse.json(await loadSupabaseAppData(supabase, user));
+      return NextResponse.json(await loadSupabaseAppData(supabase, user), { headers: { "Cache-Control": "private, no-store" } });
     } catch (error) {
       if (!(error instanceof Error) || !error.message.includes("Aucun espace de travail")) throw error;
       const { error: provisionError } = await supabase.rpc("ensure_user_workspace");
       if (provisionError) throw provisionError;
-      return NextResponse.json(await loadSupabaseAppData(supabase, user));
+      return NextResponse.json(await loadSupabaseAppData(supabase, user), { headers: { "Cache-Control": "private, no-store" } });
     }
   } catch (error) {
     console.error("Supabase bootstrap failed", error);

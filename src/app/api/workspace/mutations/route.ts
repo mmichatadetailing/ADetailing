@@ -100,16 +100,16 @@ const mutationSchema = z.discriminatedUnion("action", [
   }),
   z.object({ action: z.literal("completeIntervention"), interventionId: z.uuid(), actualDurationMinutes: z.number().int().min(0), productCost: z.number().int().min(0), travelCost: z.number().int().min(0), otherDirectCosts: z.number().int().min(0), workerMinutes: z.record(z.string(), z.number().int().min(0)) }),
   z.object({ action: z.literal("incrementChecklist"), interventionId: z.uuid() }),
-  z.object({ action: z.literal("addService"), ...serviceMutationFields }),
+  z.object({ action: z.literal("addService"), serviceId: z.uuid().optional(), ...serviceMutationFields }),
   z.object({ action: z.literal("updateService"), serviceId: z.uuid(), ...serviceMutationFields }),
-  z.object({ action: z.literal("duplicateService"), serviceId: z.uuid() }),
+  z.object({ action: z.literal("duplicateService"), serviceId: z.uuid(), copyId: z.uuid().optional() }),
   z.object({ action: z.literal("archiveService"), serviceId: z.uuid() }),
   z.object({ action: z.literal("reorderService"), serviceId: z.uuid(), direction: z.union([z.literal(-1), z.literal(1)]) }),
   z.object({ action: z.literal("updateObjective"), month: z.string().regex(/^\d{4}-\d{2}$/), revenueTarget: z.number().int().min(0) }),
   z.object({ action: z.literal("updateAnnualObjectives"), year: z.number().int().min(2000).max(2100), revenueTargets: z.array(z.number().int().min(0).max(100_000_000_000)).length(12) }),
   z.object({ action: z.literal("mergeClients"), primaryId: z.uuid(), duplicateId: z.uuid() }),
-  z.object({ action: z.literal("addPayment"), invoiceId: z.uuid(), amount: z.number().int().positive(), method: z.string().trim().min(2).max(80), paidAt: z.iso.datetime() }),
-  z.object({ action: z.literal("addInterventionPayment"), interventionId: z.uuid(), amount: z.number().int().positive(), method: z.string().trim().min(2).max(80), paidAt: z.iso.datetime() }),
+  z.object({ action: z.literal("addPayment"), paymentId: z.uuid().optional(), invoiceId: z.uuid(), amount: z.number().int().positive(), method: z.string().trim().min(2).max(80), paidAt: z.iso.datetime() }),
+  z.object({ action: z.literal("addInterventionPayment"), paymentId: z.uuid().optional(), interventionId: z.uuid(), amount: z.number().int().positive(), method: z.string().trim().min(2).max(80), paidAt: z.iso.datetime() }),
   z.object({ action: z.literal("updatePayment"), paymentId: z.uuid(), amount: z.number().int().positive(), method: z.string().trim().min(2).max(80), paidAt: z.iso.datetime() }),
   z.object({ action: z.literal("removePayment"), paymentId: z.uuid() }),
   z.object({ action: z.literal("linkInvoiceToIntervention"), interventionId: z.uuid(), invoiceId: z.uuid().nullable() }),
@@ -154,12 +154,17 @@ async function resolveTeamMembers(
 
 export async function POST(request: Request) {
   try {
-    const input = mutationSchema.parse(await request.json());
+    const body = await request.json();
+    const { expectedOrganizationId } = z.object({ expectedOrganizationId: z.uuid().optional() }).parse(body);
+    const input = mutationSchema.parse(body);
     const supabase = await createSupabaseServerClient();
     const workspace = await requireAuthenticatedWorkspace(supabase);
     const organizationId = workspace.organizationId;
     const locationId = workspace.locationId;
     const userId = workspace.user.id;
+    if (expectedOrganizationId && expectedOrganizationId !== organizationId) {
+      return NextResponse.json({ error: "L’entreprise active a changé. Rechargez la page avant de réessayer cette modification." }, { status: 409 });
+    }
 
     const managerOnlyActions = new Set([
       "removeClient", "updateClient", "updateExpense", "reviseExpense", "removeExpense", "removeIntervention", "updateIntervention",
@@ -523,7 +528,7 @@ export async function POST(request: Request) {
       const formatIds = new Map((formats ?? []).map((format) => [format.name, format.id]));
       const { data: lastServices, error: orderError } = await supabase.from("services").select("display_order").eq("organization_id", organizationId).order("display_order", { ascending: false }).limit(1);
       ensureNoError(orderError);
-      const { data: service, error } = await supabase.from("services").insert({ organization_id: organizationId, kind: input.kind, pricing_mode: input.pricingMode, category_id: category.id, name: input.name, client_description: "Description à compléter", internal_description: "", target_duration_minutes: input.targetDurationMinutes, target_product_cost_cents: input.targetProductCost, target_hourly_margin_cents: 0, display_order: (lastServices?.[0]?.display_order ?? 0) + 1, created_by: userId }).select("id").single();
+      const { data: service, error } = await supabase.from("services").insert({ id: input.serviceId, organization_id: organizationId, kind: input.kind, pricing_mode: input.pricingMode, category_id: category.id, name: input.name, client_description: "Description à compléter", internal_description: "", target_duration_minutes: input.targetDurationMinutes, target_product_cost_cents: input.targetProductCost, target_hourly_margin_cents: 0, display_order: (lastServices?.[0]?.display_order ?? 0) + 1, created_by: userId }).select("id").single();
       ensureNoError(error);
       if (!service) throw new Error("Offre introuvable après création.");
       const { error: priceError } = await supabase.from("service_prices").insert(input.prices.map((price) => ({ organization_id: organizationId, service_id: service.id, vehicle_format_id: price.vehicleFormat ? formatIds.get(price.vehicleFormat) ?? null : null, pricing_label: price.label, minimum_vehicle_count: price.minimumVehicleCount ?? null, maximum_vehicle_count: price.maximumVehicleCount ?? null, amount_cents: price.amount, maximum_amount_cents: price.maximumAmount, created_by: userId })));
@@ -535,7 +540,7 @@ export async function POST(request: Request) {
       const { data: source, error: sourceError } = await supabase.from("services").select("*,service_prices(*),service_aliases(*)").eq("organization_id", organizationId).eq("id", input.serviceId).single();
       ensureNoError(sourceError);
       if (!source) throw new Error("Offre introuvable.");
-      const { data: service, error } = await supabase.from("services").insert({ organization_id: organizationId, kind: source.kind, pricing_mode: source.pricing_mode ?? "vehicle_format", category_id: source.category_id, name: `${source.name} — copie ${Date.now().toString().slice(-4)}`, client_description: source.client_description, internal_description: source.internal_description, target_duration_minutes: source.target_duration_minutes, target_product_cost_cents: source.target_product_cost_cents, target_travel_cost_cents: source.target_travel_cost_cents, target_hourly_margin_cents: source.target_hourly_margin_cents, vat_rate_basis_points: source.vat_rate_basis_points, checklist_template_id: source.checklist_template_id, recommended_workers: source.recommended_workers, photos_required: source.photos_required, active: false, display_order: source.display_order + 1, created_by: userId }).select("id").single();
+      const { data: service, error } = await supabase.from("services").insert({ id: input.copyId, organization_id: organizationId, kind: source.kind, pricing_mode: source.pricing_mode ?? "vehicle_format", category_id: source.category_id, name: `${source.name} — copie ${Date.now().toString().slice(-4)}`, client_description: source.client_description, internal_description: source.internal_description, target_duration_minutes: source.target_duration_minutes, target_product_cost_cents: source.target_product_cost_cents, target_travel_cost_cents: source.target_travel_cost_cents, target_hourly_margin_cents: source.target_hourly_margin_cents, vat_rate_basis_points: source.vat_rate_basis_points, checklist_template_id: source.checklist_template_id, recommended_workers: source.recommended_workers, photos_required: source.photos_required, active: false, display_order: source.display_order + 1, created_by: userId }).select("id").single();
       ensureNoError(error);
       if (!service) throw new Error("Copie introuvable après création.");
       if (source.service_prices?.length) {
@@ -611,7 +616,7 @@ export async function POST(request: Request) {
       ensureNoError(paymentsError);
       const alreadyPaid = payments?.reduce((sum, payment) => sum + Number(payment.amount_cents), 0) ?? 0;
       if (alreadyPaid + input.amount > Number(invoice.total_including_tax_cents)) throw new Error("Le paiement dépasse le solde restant.");
-      const { data, error } = await supabase.from("payments").insert({ organization_id: organizationId, location_id: locationId, invoice_id: input.invoiceId, amount_cents: input.amount, paid_at: input.paidAt, method: input.method, created_by: userId }).select("id").single();
+      const { data, error } = await supabase.from("payments").insert({ id: input.paymentId, organization_id: organizationId, location_id: locationId, invoice_id: input.invoiceId, amount_cents: input.amount, paid_at: input.paidAt, method: input.method, created_by: userId }).select("id").single();
       ensureNoError(error);
       if (!data) throw new Error("Paiement introuvable après création.");
       return NextResponse.json({ ok: true, id: data.id });
@@ -633,7 +638,7 @@ export async function POST(request: Request) {
       ensureNoError(paymentsError);
       const alreadyPaid = payments?.reduce((sum, payment) => sum + Number(payment.amount_cents), 0) ?? 0;
       if (alreadyPaid + input.amount > total) throw new Error("Le paiement dépasse le solde restant de la prestation.");
-      const { data, error } = await supabase.from("payments").insert({ organization_id: organizationId, location_id: locationId, invoice_id: null, intervention_id: input.interventionId, amount_cents: input.amount, paid_at: input.paidAt, method: input.method, created_by: userId }).select("id").single();
+      const { data, error } = await supabase.from("payments").insert({ id: input.paymentId, organization_id: organizationId, location_id: locationId, invoice_id: null, intervention_id: input.interventionId, amount_cents: input.amount, paid_at: input.paidAt, method: input.method, created_by: userId }).select("id").single();
       ensureNoError(error);
       if (!data) throw new Error("Paiement introuvable après création.");
       return NextResponse.json({ ok: true, id: data.id });

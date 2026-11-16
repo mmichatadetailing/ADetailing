@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   actualPersonMinutes,
+  averageHourlyMargin,
   cashBalance,
   calculateVat,
   clientRevenueMetrics,
@@ -20,6 +21,7 @@ import {
   projectedExpenseAmountForMonth,
   rankExpensesForMonths,
   recurringExpenseMetrics,
+  remainingExpenseAmountForMonths,
   paymentsForIntervention,
   paymentsForInvoice,
   servicePerformance,
@@ -43,6 +45,25 @@ const invoice: Invoice = {
 const payment = (id: string, amount: number): Payment => ({ ...base, id, invoiceId: "f1", amount, paidAt: "2026-07-10", method: "Virement" });
 
 describe("calculs financiers", () => {
+  it("pondère la marge horaire par le temps de travail au lieu de moyenner les taux", () => {
+    const short = { ...intervention, workers: [{ memberId: "a", plannedMinutes: 60 }], items: [{ ...intervention.items[0]!, revenueAllocated: 18_000 }] };
+    const long = { ...intervention, workers: [{ memberId: "a", plannedMinutes: 600 }], items: [{ ...intervention.items[0]!, revenueAllocated: 58_000 }] };
+    // 100 € en 1 h + 500 € en 10 h = 600 € / 11 h, et non (100 + 50) / 2.
+    expect(averageHourlyMargin([short, long])).toBe(5455);
+    expect(averageHourlyMargin([short, { ...long, workers: [] }])).toBe(10_000);
+    expect(averageHourlyMargin([])).toBeNull();
+  });
+  it("ne déduit pas le paiement tardif d’une ancienne charge du restant des nouvelles charges", () => {
+    const late = { date: "2026-10-01", recurrence: "one_off" as const, amountIncludingTax: 30_000, paid: true, paidAt: "2026-11-02" };
+    const current = { date: "2026-11-01", recurrence: "one_off" as const, amountIncludingTax: 20_000, paid: false };
+    const today = new Date(2026, 10, 16);
+    expect(paidExpenseAmountForMonth([late, current], "2026-11", today)).toBe(30_000);
+    expect(remainingExpenseAmountForMonths([late, current], ["2026-11"], today)).toBe(20_000);
+    expect(remainingExpenseAmountForMonths([late, current], ["2026-11", "2026-11"], today)).toBe(20_000);
+  });
+  it("exclut les paiements futurs de la trésorerie à une date donnée", () => {
+    expect(cashBalance(1000, [{ ...payment("past", 2000), paidAt: "2026-11-01" }, { ...payment("future", 9000), paidAt: "2026-12-01" }], [], new Date(2026, 10, 16))).toBe(3000);
+  });
   it("calcule la marge brute en centimes", () => expect(grossMargin(intervention)).toBe(42_000));
   it("additionne les heures-personnes individuelles", () => expect(actualPersonMinutes(intervention)).toBe(420));
   it("calcule la marge horaire sur les heures-personnes", () => expect(hourlyMargin(intervention)).toBe(6_000));

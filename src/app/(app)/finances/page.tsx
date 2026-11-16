@@ -22,6 +22,7 @@ import {
   recurringExpenseMetrics,
 } from "@/lib/domain/calculations";
 import { getInterventionWorkflow } from "@/lib/domain/intervention-workflow";
+import { dueMaintenanceAmount } from "@/lib/domain/maintenance";
 import { financialDateKey, monthKey } from "@/lib/domain/periods";
 import type { Expense } from "@/lib/domain/types";
 import { useDemoStore, type NewExpenseInput } from "@/lib/demo/store";
@@ -149,7 +150,7 @@ export default function FinancesPage() {
     .reduce((sum, intervention) => {
       const invoice = data.invoices.find((item) => item.id === intervention.invoiceId);
       return sum + getInterventionWorkflow(intervention, invoice, data.payments).outstanding;
-    }, 0);
+    }, 0) + dueMaintenanceAmount(data.maintenanceBillingPeriods);
   const recoverableVat = selectedExpenses.filter((expense) => expense.vatRecoverable).reduce((sum, expense) => sum + expense.vatAmount, 0);
   const recurring = recurringExpenseMetrics(data.expenses, selectedMonth);
   const oneOff = monthSummary.oneOff;

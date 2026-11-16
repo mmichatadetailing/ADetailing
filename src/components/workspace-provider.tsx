@@ -9,7 +9,7 @@ import { useDemoStore } from "@/lib/demo/store";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
 import type { BootstrapPayload, TeamInvitation, WorkspaceIdentity } from "@/lib/supabase/data";
-import { hasPendingWorkspaceMutations, registerWorkspaceMutationHandler } from "@/lib/supabase/sync";
+import { hasPendingWorkspaceMutations, registerWorkspaceMutationHandler, subscribeWorkspaceMutations, waitForWorkspaceMutations } from "@/lib/supabase/sync";
 import { toast } from "sonner";
 
 export type QuickCreateInput =
@@ -45,16 +45,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<"loading" | "ready" | "error">(isSupabaseConfigured ? "loading" : "ready");
   const [error, setError] = useState("");
   const requestVersion = useRef(0);
+  const changingWorkspace = useRef(false);
 
   const load = useCallback(async (silent = false) => {
-    if (!isSupabaseConfigured) return;
+    if (!isSupabaseConfigured || hasPendingWorkspaceMutations()) return;
     const version = ++requestVersion.current;
     if (!silent) setStatus("loading");
     setError("");
     try {
       const response = await fetch("/api/bootstrap", { cache: "no-store" });
       const payload = await response.json() as BootstrapPayload & { error?: string };
-      if (version !== requestVersion.current) return;
+      if (version !== requestVersion.current || hasPendingWorkspaceMutations()) return;
       if (response.status === 401) {
         location.assign("/connexion");
         return;
@@ -75,9 +76,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
+    const unsubscribe = subscribeWorkspaceMutations(() => {
+      requestVersion.current += 1;
+      // Refresh once the whole batch is saved, never between two optimistic edits.
+      if (!hasPendingWorkspaceMutations() && !changingWorkspace.current) void load(true);
+    });
+    const protect = (event: BeforeUnloadEvent) => { if (hasPendingWorkspaceMutations()) event.preventDefault(); };
+    window.addEventListener("beforeunload", protect);
+    return () => { unsubscribe(); window.removeEventListener("beforeunload", protect); };
+  }, [load]);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
     const initialTimer = window.setTimeout(() => { void load(); }, 0);
-    const pollingTimer = window.setInterval(() => { if (document.visibilityState === "visible" && !hasPendingWorkspaceMutations()) void load(true); }, 30_000);
-    const onFocus = () => { if (!hasPendingWorkspaceMutations()) void load(true); };
+    const pollingTimer = window.setInterval(() => { if (document.visibilityState === "visible" && !hasPendingWorkspaceMutations() && !changingWorkspace.current) void load(true); }, 30_000);
+    const onFocus = () => { if (!hasPendingWorkspaceMutations() && !changingWorkspace.current) void load(true); };
     window.addEventListener("focus", onFocus);
     return () => {
       window.clearTimeout(initialTimer);
@@ -87,23 +100,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [load]);
 
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
+    if (!isSupabaseConfigured || !workspace?.organizationId) return;
     return registerWorkspaceMutationHandler(async (mutation) => {
       try {
         // Invalide une lecture lancée avant cette modification optimiste.
         requestVersion.current += 1;
-        const response = await fetch("/api/workspace/mutations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(mutation) });
+        const response = await fetch("/api/workspace/mutations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...mutation, expectedOrganizationId: workspace.organizationId }) });
         const payload = await response.json() as { error?: string };
         if (!response.ok) throw new Error(payload.error || "Enregistrement impossible.");
         if (calendarMutationActions.has(mutation.action)) requestGoogleCalendarSync();
-        await load(true);
       } catch (cause) {
         toast.error(cause instanceof Error ? cause.message : "La modification n’a pas été enregistrée.");
-        await load(true);
         throw cause;
       }
     });
-  }, [load]);
+  }, [workspace?.organizationId]);
 
   const createRecord = useCallback(async (input: QuickCreateInput) => {
     if (!isSupabaseConfigured) throw new Error("Cette action Supabase n’est pas disponible en mode démonstration.");
@@ -125,9 +136,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const switchOrganization = useCallback(async (organizationId: string) => {
-    if (!isSupabaseConfigured || organizationId === workspace?.organizationId) return;
+    if (!isSupabaseConfigured || organizationId === workspace?.organizationId || changingWorkspace.current) return;
+    changingWorkspace.current = true;
+    requestVersion.current += 1;
     setStatus("loading");
     try {
+      await waitForWorkspaceMutations();
       const response = await fetch("/api/workspace/switch", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ organizationId }) });
       const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error || "Changement d’entreprise impossible.");
@@ -135,12 +149,23 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     } catch (cause) {
       setStatus("ready");
       throw cause;
-    }
+    } finally { changingWorkspace.current = false; }
   }, [load, workspace?.organizationId]);
 
   const signOut = useCallback(async () => {
-    if (isSupabaseConfigured) await createSupabaseBrowserClient().auth.signOut();
-    location.assign("/connexion");
+    if (changingWorkspace.current) return;
+    changingWorkspace.current = true;
+    requestVersion.current += 1;
+    try {
+      await waitForWorkspaceMutations();
+      if (isSupabaseConfigured) {
+        const { error } = await createSupabaseBrowserClient().auth.signOut();
+        if (error) throw error;
+      }
+      location.assign("/connexion");
+    } catch {
+      toast.error("La déconnexion a échoué. Réessayez.");
+    } finally { changingWorkspace.current = false; }
   }, []);
 
   const value = useMemo<WorkspaceContextValue>(() => ({ mode: isSupabaseConfigured ? "supabase" : "demo", workspace, invitations, refresh, createRecord, sendMessage, switchOrganization, signOut }), [workspace, invitations, refresh, createRecord, sendMessage, switchOrganization, signOut]);

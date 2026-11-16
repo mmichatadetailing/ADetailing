@@ -294,6 +294,20 @@ export function hourlyMargin(intervention: Intervention): Money | null {
   return cents(new Decimal(grossMargin(intervention)).mul(60).div(minutes));
 }
 
+export function averageHourlyMargin(interventions: Intervention[]): Money | null {
+  const timed = interventions.filter((intervention) => actualPersonMinutes(intervention) > 0);
+  const minutes = timed.reduce((sum, intervention) => sum + actualPersonMinutes(intervention), 0);
+  if (minutes === 0) return null;
+  return cents(new Decimal(timed.reduce((sum, intervention) => sum + grossMargin(intervention), 0)).mul(60).div(minutes));
+}
+
+export function remainingExpenseAmountForMonths(expenses: ExpenseSchedule[], months: string[], reference = new Date()): Money {
+  return [...new Set(months)].reduce((sum, month) => {
+    const summary = expenseMonthSummary(expenses, month, reference);
+    return sum + summary.due + summary.upcoming;
+  }, 0);
+}
+
 export function calculateVat(amountExcludingTax: Money, vatRateBasisPoints: number): Money {
   return cents(new Decimal(amountExcludingTax).mul(vatRateBasisPoints).div(10_000));
 }
@@ -468,5 +482,6 @@ export function cashBalance(initialCash: Money, payments: Payment[], expenses: E
       paidExpenses += paidExpenseAmountForMonth(expenses, month, reference);
     }
   }
-  return initialCash + collectedRevenue(payments) - paidExpenses;
+  const received = payments.filter((payment) => new Date(payment.paidAt).getTime() <= reference.getTime());
+  return initialCash + collectedRevenue(received) - paidExpenses;
 }

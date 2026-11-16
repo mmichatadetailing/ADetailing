@@ -579,7 +579,7 @@ export const useDemoStore = create<DemoStore>()(
             ...state.activities,
           ],
         }));
-        persistMutation({ action: "addPayment", invoiceId, amount, method, paidAt });
+        persistMutation({ action: "addPayment", paymentId: payment.id, invoiceId, amount, method, paidAt });
         return payment.id;
       },
       addInterventionPayment: (interventionId, amount, method, paidAt) => {
@@ -598,7 +598,7 @@ export const useDemoStore = create<DemoStore>()(
             ...state.activities,
           ],
         }));
-        persistMutation({ action: "addInterventionPayment", interventionId, amount, method, paidAt });
+        persistMutation({ action: "addInterventionPayment", paymentId: payment.id, interventionId, amount, method, paidAt });
         return payment.id;
       },
       updatePayment: (paymentId, input) => {
@@ -951,6 +951,9 @@ export const useDemoStore = create<DemoStore>()(
         }));
       },
       setMaintenanceBillingPaid: (periodId, paid, paidAt, method) => {
+        const selectedPeriod = get().maintenanceBillingPeriods.find((period) => period.id === periodId);
+        if (!selectedPeriod || selectedPeriod.status === "cancelled") throw new Error("Cette échéance est annulée ou introuvable.");
+        if (paid && (!Number.isFinite(new Date(paidAt).getTime()) || new Date(paidAt).getTime() > Date.now())) throw new Error("La date du paiement ne peut pas être dans le futur.");
         set((state) => {
           const period = state.maintenanceBillingPeriods.find((item) => item.id === periodId);
           if (!period) return state;
@@ -988,7 +991,7 @@ export const useDemoStore = create<DemoStore>()(
           photosRequired: false,
         };
         set((state) => ({ services: [...state.services, service] }));
-        persistMutation({ action: "addService", ...input });
+        persistMutation({ action: "addService", serviceId: service.id, ...input });
         return service.id;
       },
       updateService: (serviceId, input) => {
@@ -1019,7 +1022,7 @@ export const useDemoStore = create<DemoStore>()(
           active: false,
         };
         set((state) => ({ services: [...state.services, copy] }));
-        persistMutation({ action: "duplicateService", serviceId });
+        persistMutation({ action: "duplicateService", serviceId, copyId: copy.id });
         return copy.id;
       },
       archiveService: (serviceId) => {
@@ -1222,6 +1225,8 @@ export const useDemoStore = create<DemoStore>()(
         invoices: state.invoices,
         payments: state.payments,
         interventions: state.interventions,
+        maintenanceContracts: state.maintenanceContracts,
+        maintenanceBillingPeriods: state.maintenanceBillingPeriods,
         planningEvents: state.planningEvents,
         expenses: state.expenses,
         assets: state.assets,

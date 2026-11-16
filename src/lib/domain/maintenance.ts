@@ -56,6 +56,25 @@ export function maintenanceAnnualValue(contract: Pick<MaintenanceContract, "bill
   return maintenanceMonthlyRevenue(contract) * 12;
 }
 
+export function isMaintenanceContractActive(
+  contract: Pick<MaintenanceContract, "status" | "firstVisitOn" | "endsOn" | "archivedAt">,
+  reference = new Date(),
+) {
+  const today = dateKey(reference);
+  return !contract.archivedAt && contract.status === "active" && contract.firstVisitOn <= today && (!contract.endsOn || contract.endsOn >= today);
+}
+
+export function maintenanceBillingState(period: Pick<MaintenanceBillingPeriod, "status" | "dueOn">, reference = new Date()) {
+  if (period.status === "paid" || period.status === "cancelled") return period.status;
+  const today = dateKey(reference);
+  return period.dueOn < today ? "overdue" : period.dueOn === today ? "due" : "upcoming";
+}
+
+export function dueMaintenanceAmount(periods: MaintenanceBillingPeriod[], reference = new Date()) {
+  return periods.filter((period) => ["due", "overdue"].includes(maintenanceBillingState(period, reference)))
+    .reduce((sum, period) => sum + period.amount, 0);
+}
+
 export function maintenanceSchedule(
   contract: Pick<MaintenanceContract, "firstVisitOn" | "visitDay" | "endsOn" | "billingFrequency" | "billingAmount" | "termMonths">,
   through: string,
@@ -105,7 +124,7 @@ export function nextMaintenanceVisit(
 ) {
   const referenceKey = dateKey(reference);
   return interventions
-    .filter((intervention) => intervention.maintenanceContractId === contractId && intervention.startAt && intervention.startAt.slice(0, 10) >= referenceKey && intervention.status !== "cancelled")
+    .filter((intervention) => intervention.maintenanceContractId === contractId && intervention.startAt && intervention.startAt.slice(0, 10) >= referenceKey && !["cancelled", "completed"].includes(intervention.status))
     .sort((left, right) => left.startAt!.localeCompare(right.startAt!))[0];
 }
 
@@ -137,7 +156,7 @@ export function maintenanceRouteGroups(
   const groups = new Map<string, MaintenanceRouteGroup>();
 
   for (const intervention of interventions) {
-    if (!intervention.maintenanceContractId || !intervention.startAt || intervention.status === "cancelled") continue;
+    if (!intervention.maintenanceContractId || !intervention.startAt || ["cancelled", "completed"].includes(intervention.status)) continue;
     const date = intervention.startAt.slice(0, 10);
     if (date < firstDay || date > lastDay) continue;
     const contract = contractsById.get(intervention.maintenanceContractId);

@@ -17,7 +17,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { useWorkspace } from "@/components/workspace-provider";
@@ -26,8 +26,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
+import { useDraftChanges } from "@/components/use-draft-changes";
 import {
   maintenanceAnnualValue,
+  isMaintenanceContractActive,
+  maintenanceBillingState,
   maintenanceCollectionSummary,
   maintenanceMonthlyRevenue,
   maintenanceRenewalStatus,
@@ -40,6 +43,8 @@ import { suggestedServicePrice } from "@/lib/domain/service-pricing";
 import type { MaintenanceBillingPeriod, MaintenanceContract } from "@/lib/domain/types";
 import { useDemoStore, type MaintenanceContractInput } from "@/lib/demo/store";
 import { formatDate, formatMoney } from "@/lib/utils";
+import { paymentTimestamp } from "@/lib/domain/payment-date";
+import { financialDateKey } from "@/lib/domain/periods";
 
 const billingLabels = { monthly: "Paiement mensuel", annual: "Paiement annuel", prepaid: "Paiement unique" } as const;
 const statusLabels = { active: "Actif", paused: "En pause", ended: "Terminé" } as const;
@@ -75,7 +80,7 @@ function clientName(client: { company?: string; firstName: string; lastName: str
   return client?.company || `${client?.firstName ?? ""} ${client?.lastName ?? ""}`.trim() || "Client inconnu";
 }
 
-function ContractForm({ contract, onCancel, onSave }: { contract?: MaintenanceContract; onCancel: () => void; onSave: (input: MaintenanceContractInput) => Promise<void> }) {
+function ContractForm({ contract, onCancel, onSave, onDirtyChange, onBusyChange }: { contract?: MaintenanceContract; onCancel: () => void; onSave: (input: MaintenanceContractInput) => Promise<void>; onDirtyChange: (dirty: boolean) => void; onBusyChange: (busy: boolean) => void }) {
   const data = useDemoStore();
   const clients = data.clients.filter((client) => !client.archivedAt);
   const services = data.services.filter((service) => service.active && service.kind === "subscription");
@@ -104,6 +109,8 @@ function ContractForm({ contract, onCancel, onSave }: { contract?: MaintenanceCo
   const [notes, setNotes] = useState(contract?.notes ?? "");
   const [endsOn, setEndsOn] = useState(contract?.endsOn ?? "");
   const [saving, setSaving] = useState(false);
+  useDraftChanges({ contract: { clientId, serviceId, title, status, billingFrequency, termMonths, renewalReminderDays, billingAmountEuros, vehicleCount, firstVisitOn, preferredStartTime, durationHours, memberId, address, notes, endsOn } }, onDirtyChange);
+  useEffect(() => { onBusyChange(saving); }, [saving, onBusyChange]);
 
   const selectedService = services.find((service) => service.id === serviceId);
   const suggestion = suggestedServicePrice(selectedService, { vehicleCount });
@@ -228,6 +235,21 @@ export default function EntretiensPage() {
   const [paymentDate, setPaymentDate] = useState(localDateKey());
   const [paymentMethod, setPaymentMethod] = useState("Virement");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [contractDirty, setContractDirty] = useState(false);
+  const [contractBusy, setContractBusy] = useState(false);
+  const [cancelingPeriod, setCancelingPeriod] = useState<MaintenanceBillingPeriod | null>(null);
+  const closeContract = () => {
+    if (contractBusy) return;
+    if (contractDirty && !window.confirm("Abandonner les modifications non enregistrées de cet entretien ?")) return;
+    setEditingContract(null);
+    setContractDirty(false);
+  };
+  useEffect(() => {
+    if (!editingContract || (!contractDirty && !contractBusy)) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [editingContract, contractDirty, contractBusy]);
   const today = localDateKey();
   const currentMonth = today.slice(0, 7);
   const currentContracts = data.maintenanceContracts.filter((contract) => !contract.archivedAt);
@@ -236,14 +258,14 @@ export default function EntretiensPage() {
     : currentContracts.filter((contract) => contract.assignedMemberIds.includes(workspace.userId));
   const visibleContractIds = new Set(visibleContracts.map((contract) => contract.id));
   const visibleBillingPeriods = data.maintenanceBillingPeriods.filter((period) => visibleContractIds.has(period.contractId));
-  const activeContracts = visibleContracts.filter((contract) => contract.status === "active" && (contract.billingFrequency !== "prepaid" || !contract.endsOn || contract.endsOn >= today));
+  const activeContracts = visibleContracts.filter((contract) => isMaintenanceContractActive(contract));
   const mrr = activeContracts.reduce((sum, contract) => sum + maintenanceMonthlyRevenue(contract), 0);
   const annualValue = activeContracts.reduce((sum, contract) => sum + maintenanceAnnualValue(contract), 0);
   const monthlyVisits = data.interventions.filter((intervention) => intervention.maintenanceContractId && visibleContractIds.has(intervention.maintenanceContractId) && intervention.startAt?.slice(0, 7) === currentMonth && intervention.status !== "cancelled");
   const completedVisits = monthlyVisits.filter((intervention) => intervention.status === "completed").length;
   const collection = maintenanceCollectionSummary(visibleBillingPeriods);
   const upcomingVisits = data.interventions
-    .filter((intervention) => intervention.maintenanceContractId && visibleContractIds.has(intervention.maintenanceContractId) && intervention.startAt && intervention.startAt.slice(0, 10) >= today && intervention.status !== "cancelled")
+    .filter((intervention) => intervention.maintenanceContractId && visibleContractIds.has(intervention.maintenanceContractId) && intervention.startAt && intervention.startAt.slice(0, 10) >= today && !["cancelled", "completed"].includes(intervention.status))
     .sort((left, right) => left.startAt!.localeCompare(right.startAt!))
     .slice(0, 12);
   const routes = maintenanceRouteGroups(data.interventions.filter((intervention) => !intervention.maintenanceContractId || visibleContractIds.has(intervention.maintenanceContractId)), visibleContracts, data.clients).slice(0, 8);
@@ -270,10 +292,11 @@ export default function EntretiensPage() {
       if (mode === "demo") data.saveMaintenanceContract(contract?.id, input);
       else await request({ action: contract ? "update" : "create", contractId: contract?.id, ...input, serviceId: input.serviceId ?? null, endsOn: input.endsOn ?? null });
       setEditingContract(null);
+      setContractDirty(false);
+      setContractBusy(false);
       toast.success(contract ? "Contrat mis à jour" : "Entretien mensuel créé", { description: contract ? "Les futures visites et échéances ont été recalculées." : input.billingFrequency === "prepaid" ? `Les ${input.termMonths} visites couvertes sont déjà dans le planning.` : "Les douze prochaines visites sont déjà dans le planning." });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Enregistrement impossible.");
-      throw error;
     }
   };
 
@@ -311,13 +334,19 @@ export default function EntretiensPage() {
     if (paid && !paymentDate) return toast.error("Choisissez la date du paiement.");
     setBusyId(period.id);
     try {
-      const paidAt = new Date(`${paymentDate}T12:00:00`).toISOString();
+      const paidAt = paid ? paymentTimestamp(paymentDate) : (period.paidAt ?? new Date().toISOString());
       if (mode === "demo") data.setMaintenanceBillingPaid(period.id, paid, paidAt, paymentMethod);
       else await request({ action: "setPayment", periodId: period.id, paid, paidAt, method: paymentMethod });
       setPaymentPeriod(null);
+      setCancelingPeriod(null);
       toast.success(paid ? "Encaissement enregistré" : "Encaissement annulé", { description: paid ? "Le chiffre d’affaires encaissé est actualisé." : "L’échéance repasse à encaisser." });
     } catch (error) { toast.error(error instanceof Error ? error.message : "Modification impossible."); }
     finally { setBusyId(null); }
+  };
+  const openPayment = (period: MaintenanceBillingPeriod) => {
+    setPaymentDate(period.paidAt ? financialDateKey(period.paidAt) : localDateKey());
+    setPaymentMethod(period.paymentMethod || "Virement");
+    setPaymentPeriod(period);
   };
 
   return (
@@ -391,24 +420,33 @@ export default function EntretiensPage() {
             {[...visibleBillingPeriods].sort((a, b) => b.dueOn.localeCompare(a.dueOn)).map((period) => {
               const contract = data.maintenanceContracts.find((item) => item.id === period.contractId);
               const client = data.clients.find((item) => item.id === contract?.clientId);
-              const overdue = period.status === "due" && period.dueOn < today;
-              return <tr key={period.id} className="hover:bg-zinc-50"><td className="px-4 py-4 pl-5 font-semibold">{formatDate(period.dueOn)}</td><td className="px-4 py-4">{clientName(client)}</td><td className="px-4 py-4 text-zinc-600">{contract?.title}</td><td className="px-4 py-4 text-zinc-500">{contract ? billingLabel(contract) : "—"}</td><td className="px-4 py-4 font-bold">{formatMoney(period.amount)}</td><td className="px-4 py-4"><Badge variant={period.status === "paid" ? "green" : overdue ? "red" : "yellow"}>{period.status === "paid" ? `Payé${period.paidAt ? ` · ${formatDate(period.paidAt)}` : ""}` : overdue ? "En retard" : "À venir"}</Badge></td><td className="px-4 py-4">{canManage && <Button size="sm" variant={period.status === "paid" ? "ghost" : "secondary"} disabled={busyId === period.id} onClick={() => { if (period.status === "paid") void setPaid(period, false); else { setPaymentDate(localDateKey()); setPaymentPeriod(period); } }}>{period.status === "paid" ? "Annuler le paiement" : "Marquer encaissé"}</Button>}</td></tr>;
+              const billingState = maintenanceBillingState(period);
+              const periodLabel = { paid: "Payé", cancelled: "Annulée", overdue: "En retard", due: "À encaisser aujourd’hui", upcoming: "À venir" }[billingState];
+              return <tr key={period.id} className="hover:bg-zinc-50"><td className="px-4 py-4 pl-5 font-semibold">{formatDate(period.dueOn)}</td><td className="px-4 py-4">{clientName(client)}</td><td className="px-4 py-4 text-zinc-600">{contract?.title}</td><td className="px-4 py-4 text-zinc-500">{contract ? billingLabel(contract) : "—"}</td><td className="px-4 py-4 font-bold">{formatMoney(period.amount)}</td><td className="px-4 py-4"><Badge variant={billingState === "paid" ? "green" : billingState === "cancelled" ? "neutral" : billingState === "overdue" ? "red" : "yellow"}>{periodLabel}{period.status === "paid" && period.paidAt ? ` · ${formatDate(period.paidAt)}` : ""}</Badge></td><td className="px-4 py-4">{canManage && period.status !== "cancelled" && <div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" disabled={busyId !== null} onClick={() => openPayment(period)}>{period.status === "paid" ? "Modifier le paiement" : "Marquer encaissé"}</Button>{period.status === "paid" && <Button size="sm" variant="ghost" disabled={busyId !== null} onClick={() => setCancelingPeriod(period)}>Annuler le paiement</Button>}</div>}</td></tr>;
             })}
             {visibleBillingPeriods.length === 0 && <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-zinc-500">Aucune échéance pour le moment.</td></tr>}
           </tbody></table>
         </CardContent>
       </Card>
 
-      <Modal open={editingContract !== null} onClose={() => setEditingContract(null)} title={editingContract === "new" ? "Créer un entretien mensuel" : "Modifier le contrat"} description="Visites mensuelles · paiement mensuel, annuel ou unique" className="sm:max-w-4xl">
-        {editingContract && <ContractForm key={editingContract === "new" ? "new" : editingContract.id} contract={editingContract === "new" ? undefined : editingContract} onCancel={() => setEditingContract(null)} onSave={(input) => saveContract(editingContract === "new" ? undefined : editingContract, input)} />}
+      <Modal open={editingContract !== null} onClose={closeContract} title={editingContract === "new" ? "Créer un entretien mensuel" : "Modifier le contrat"} description="Visites mensuelles · paiement mensuel, annuel ou unique" className="sm:max-w-4xl">
+        {editingContract && <ContractForm key={editingContract === "new" ? "new" : editingContract.id} contract={editingContract === "new" ? undefined : editingContract} onCancel={closeContract} onDirtyChange={setContractDirty} onBusyChange={setContractBusy} onSave={(input) => saveContract(editingContract === "new" ? undefined : editingContract, input)} />}
+      </Modal>
+
+      <Modal open={Boolean(cancelingPeriod)} onClose={() => { if (!busyId) setCancelingPeriod(null); }} title="Annuler cet encaissement ?">
+        <p className="text-sm text-zinc-600">Le paiement sera retiré du chiffre d’affaires et l’échéance repassera à encaisser. Les visites seront conservées.</p>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="ghost" disabled={busyId !== null} onClick={() => setCancelingPeriod(null)}>Conserver le paiement</Button>
+          <Button variant="danger" disabled={busyId !== null} onClick={() => cancelingPeriod && void setPaid(cancelingPeriod, false)}>Confirmer l’annulation</Button>
+        </div>
       </Modal>
 
       <Modal open={Boolean(deletingContract)} onClose={() => setDeletingContract(null)} title="Supprimer cet entretien mensuel ?" description={deletingContract ? `${deletingContract.title} · ${clientName(data.clients.find((client) => client.id === deletingContract.clientId))}` : undefined}>
         <div className="grid gap-4"><div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm leading-6 text-red-900"><p className="font-bold">Cette action arrête définitivement ce contrat.</p><ul className="mt-2 list-disc space-y-1 pl-5 text-xs"><li>les rendez-vous futurs non réalisés seront supprimés du planning ;</li><li>les échéances non encaissées seront annulées ;</li><li>les prestations déjà réalisées et les paiements encaissés resteront dans les statistiques et l’historique.</li></ul></div><div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => setDeletingContract(null)}>Conserver</Button><Button variant="danger" disabled={!deletingContract || busyId === deletingContract.id} onClick={() => deletingContract && void removeContract(deletingContract)}><Trash2 className="size-4" /> {busyId === deletingContract?.id ? "Suppression…" : "Supprimer l’entretien"}</Button></div></div>
       </Modal>
 
-      <Modal open={Boolean(paymentPeriod)} onClose={() => setPaymentPeriod(null)} title="Enregistrer l’encaissement" description={paymentPeriod ? `${formatMoney(paymentPeriod.amount)} · échéance du ${formatDate(paymentPeriod.dueOn)}` : undefined}>
-        <div className="grid gap-4"><div className="grid gap-4 sm:grid-cols-2"><Field label="Date du paiement"><Input type="date" max={localDateKey()} value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} /></Field><Field label="Moyen de paiement"><Select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option>Virement</option><option>Carte bancaire</option><option>Prélèvement</option><option>Espèces</option><option>Chèque</option><option>Autre</option></Select></Field></div><div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs leading-5 text-emerald-900"><CheckCircle2 className="mr-2 inline size-4" />Cet encaissement sera ajouté au chiffre d’affaires réel, sans rendre une facture obligatoire.</div><div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => setPaymentPeriod(null)}>Annuler</Button><Button disabled={!paymentPeriod || busyId === paymentPeriod.id} onClick={() => paymentPeriod && void setPaid(paymentPeriod, true)}><Banknote className="size-4" /> Valider l’encaissement</Button></div></div>
+      <Modal open={Boolean(paymentPeriod)} onClose={() => { if (!busyId) setPaymentPeriod(null); }} title={paymentPeriod?.status === "paid" ? "Modifier l’encaissement" : "Enregistrer l’encaissement"} description={paymentPeriod ? `${formatMoney(paymentPeriod.amount)} · échéance du ${formatDate(paymentPeriod.dueOn)}` : undefined}>
+        <div className="grid gap-4"><div className="grid gap-4 sm:grid-cols-2"><Field label="Date du paiement"><Input type="date" max={localDateKey()} value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} /></Field><Field label="Moyen de paiement"><Select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option>Virement</option><option>Carte bancaire</option><option>Prélèvement</option><option>Espèces</option><option>Chèque</option><option>Autre</option></Select></Field></div><div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs leading-5 text-emerald-900"><CheckCircle2 className="mr-2 inline size-4" />Le chiffre d’affaires sera mis à jour à la date choisie, sans doublon ni facture obligatoire.</div><div className="flex justify-end gap-2"><Button variant="ghost" disabled={busyId !== null} onClick={() => setPaymentPeriod(null)}>Annuler</Button><Button disabled={!paymentPeriod || busyId === paymentPeriod.id} onClick={() => paymentPeriod && void setPaid(paymentPeriod, true)}><Banknote className="size-4" /> Valider l’encaissement</Button></div></div>
       </Modal>
     </div>
   );
