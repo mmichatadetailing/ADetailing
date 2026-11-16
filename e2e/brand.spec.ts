@@ -8,6 +8,10 @@ test("la charte ADetailing conserve des cartes claires et des actions contrasté
   const cards = page.locator(".brand-kpi");
   await expect(cards).toHaveCount(7);
   for (const card of await cards.all()) await expect(card).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await expect(cards.nth(0)).toHaveAttribute("data-tone", "emerald");
+  await expect(cards.nth(1)).toHaveAttribute("data-tone", "blue");
+  await expect(cards.nth(3)).toHaveAttribute("data-tone", "amber");
+  expect(new Set(await cards.evaluateAll((elements) => elements.map((element) => getComputedStyle(element, "::before").backgroundColor))).size).toBeGreaterThanOrEqual(4);
   const action = page.getByRole("button", { name: "Ajouter", exact: true });
   const contrast = await action.evaluate((button) => {
     const luminance = (color: string) => {
@@ -15,7 +19,9 @@ test("la charte ADetailing conserve des cartes claires et des actions contrasté
         const value = Number(part) / 255;
         return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
       });
-      return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
+      const [red, green, blue] = rgb;
+      if (red === undefined || green === undefined || blue === undefined) throw new Error(`Couleur RGB invalide : ${color}`);
+      return red * 0.2126 + green * 0.7152 + blue * 0.0722;
     };
     const style = getComputedStyle(button);
     const colors = [luminance(style.color), luminance(style.backgroundColor)];
@@ -45,4 +51,23 @@ test("la connexion utilise les ressources locales et un logo lisible sur chaque 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(remoteBrandRequests).toEqual([]);
   await page.screenshot({ path: testInfo.outputPath("connexion.png") });
+});
+
+test("les repères de navigation restent cohérents sur ordinateur et mobile", async ({ page, isMobile }, testInfo) => {
+  await page.goto("/planning");
+  await expect(page.locator("#app-shell")).toHaveAttribute("data-tone", "blue");
+  if (isMobile) await page.getByRole("button", { name: "Ouvrir le menu", exact: true }).click();
+  const menu = page.getByRole("navigation", { name: "Menu principal", exact: true });
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("link", { name: "Planning", exact: true })).toHaveAttribute("data-tone", "blue");
+  await expect(menu.getByRole("link", { name: "Clients", exact: true })).toHaveAttribute("data-tone", "violet");
+  const finances = menu.getByRole("link", { name: "Finances", exact: true });
+  await expect(finances).toHaveAttribute("data-tone", "emerald");
+  await finances.click();
+  await expect(page.locator("#app-shell")).toHaveAttribute("data-tone", "emerald");
+  const active = page.locator(isMobile ? '.mobile-nav-link[aria-current="page"]' : '.app-nav-link[aria-current="page"]');
+  await expect(active).toHaveText("Finances");
+  await expect(active).toHaveCSS("background-color", "rgb(234, 247, 240)");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("navigation-finances.png") });
 });

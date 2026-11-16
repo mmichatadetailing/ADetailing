@@ -26,7 +26,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 import { Button } from "./ui/button";
 import { GlobalAdd } from "./global-add";
 import { GlobalSearch } from "./global-search";
@@ -34,6 +33,7 @@ import { useWorkspace } from "./workspace-provider";
 import { lockBodyScroll } from "@/lib/scroll-lock";
 import { DataExport } from "./data-export";
 import { BrandLogo } from "./brand-logo";
+import { sectionTone } from "@/lib/navigation-colors";
 
 const groups = [
   {
@@ -89,8 +89,8 @@ function Navigation({ close }: { close?: () => void }) {
             {group.items.filter((item) => item.href !== "/factures" || canViewInvoices).map((item) => {
               const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
-                <Link key={item.href} href={item.href} onClick={close} aria-current={active ? "page" : undefined} className={cn("app-nav-link focus-ring row-interactive group flex min-h-10 items-center gap-3 rounded-full px-3 text-[12px] font-medium", active ? "text-on-accent" : "text-zinc-500 hover:text-zinc-200")}>
-                  <item.icon className={cn("size-[17px] shrink-0 transition-colors duration-200", active ? "text-on-accent" : "text-zinc-600 group-hover:text-brand-500")} />
+                <Link key={item.href} href={item.href} onClick={close} aria-current={active ? "page" : undefined} data-tone={sectionTone(item.href)} className="app-nav-link focus-ring row-interactive group flex min-h-10 items-center gap-3 rounded-full px-3 text-[12px] font-medium text-zinc-500">
+                  <span className="app-nav-icon"><item.icon className="size-[16px]" /></span>
                   <span className="truncate">{item.label}</span>
                 </Link>
               );
@@ -137,7 +137,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     return () => { document.removeEventListener("pointerdown", dismiss); document.removeEventListener("keydown", escape); };
   }, [accountOpen]);
   return (
-    <div id="app-shell" className="min-h-screen lg:grid lg:grid-cols-[250px_minmax(0,1fr)]">
+    <div id="app-shell" data-tone={sectionTone(pathname)} className="min-h-screen lg:grid lg:grid-cols-[250px_minmax(0,1fr)]">
       <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[80] focus:rounded-xl focus:bg-white focus:p-3 focus:shadow-lg">Aller au contenu</a>
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-[250px] border-r border-black/[0.08] bg-white lg:flex lg:flex-col">
         <div className="flex h-[76px] items-center border-b border-white/[0.06] px-6"><Brand /></div>
@@ -181,7 +181,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           { href: "/clients", label: "Clients", icon: ContactRound },
           { href: "/prestations", label: "Prestations", icon: Sparkles },
           { href: "/finances", label: "Finances", icon: CircleDollarSign },
-        ].map((item) => { const active = pathname === item.href || pathname.startsWith(`${item.href}/`); return <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} className={cn("focus-ring row-interactive group my-1 flex min-h-[54px] flex-col items-center justify-center gap-1 rounded-xl text-[9px] font-bold", active ? "bg-brand-50 text-brand-600" : "text-zinc-500")}><item.icon className="size-[18px] transition-transform duration-200 group-hover:-translate-y-0.5" />{item.label}</Link>; })}
+        ].map((item) => { const active = pathname === item.href || pathname.startsWith(`${item.href}/`); return <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} data-tone={sectionTone(item.href)} className="mobile-nav-link focus-ring row-interactive group my-1 flex min-h-[54px] flex-col items-center justify-center gap-1 rounded-xl text-[9px] font-bold text-zinc-500"><item.icon className="size-[18px] transition-transform duration-200 group-hover:-translate-y-0.5" />{item.label}</Link>; })}
       </nav>
     </div>
   );

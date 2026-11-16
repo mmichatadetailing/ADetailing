@@ -68,7 +68,7 @@ export function DashboardCharts({
       <Card className="overflow-hidden">
         <CardHeader className="flex-col gap-4 sm:flex-row">
           <div className="flex items-start gap-3">
-            <span className="grid size-10 shrink-0 place-items-center rounded-full bg-brand-50 text-brand-600"><Target className="size-[18px]" /></span>
+            <span className="grid size-10 shrink-0 place-items-center rounded-full tone-icon" data-tone="blue"><Target className="size-[18px]" /></span>
             <div>
               <h2 className="font-bold">Objectif & encaissements</h2>
               <p className="mt-1 text-xs text-zinc-500">Exercice {year} · encaissements des prestations et des entretiens, comptés une seule fois.</p>
@@ -80,17 +80,17 @@ export function DashboardCharts({
           <div className="mb-5 grid gap-3 rounded-2xl border border-black/[0.06] bg-brand-50/60 p-4 shadow-sm sm:grid-cols-2">
             <div>
               <p className="text-[10px] font-bold tracking-[.12em] text-zinc-600 uppercase">CA encaissé · {isAnnualView ? "année" : "mois"}</p>
-              <p className="mt-1 text-xl font-semibold tracking-tight text-brand-600">{formatMoney(periodCollected)}</p>
+              <p className="mt-1 text-xl font-semibold tracking-tight text-emerald-700">{formatMoney(periodCollected)}</p>
             </div>
             <div className="sm:border-l sm:border-zinc-200 sm:pl-4">
               <p className="text-[10px] font-bold tracking-[.12em] text-zinc-600 uppercase">{isAnnualView ? "Objectif annuel" : "Objectif du mois"}</p>
-              <p className="mt-1 text-xl font-semibold tracking-tight">{formatMoney(periodObjective)}</p>
+              <p className="tone-text mt-1 text-xl font-semibold tracking-tight" data-tone="blue">{formatMoney(periodObjective)}</p>
               {isAnnualView && <p className="mt-1 text-[10px] text-zinc-500">Somme des 12 objectifs mensuels</p>}
             </div>
           </div>
           <div className="mb-3 flex flex-wrap items-center gap-4 text-[11px] font-semibold text-zinc-500">
-            <span className="flex items-center gap-2"><span className="size-2.5 rounded-sm bg-brand-500" /> Encaissements</span>
-            <span className="flex items-center gap-2"><span className="h-0 w-5 border-t-2 border-dashed border-[#888f81]" /> Objectif</span>
+            <span className="flex items-center gap-2"><span className="size-2.5 rounded-sm bg-[#16735a]" /> Encaissements</span>
+            <span className="flex items-center gap-2"><span className="h-0 w-5 border-t-2 border-dashed border-[#216a9b]" /> Objectif</span>
           </div>
           <div className="overflow-x-auto pb-2">
             <div className="h-[285px] min-w-0">
@@ -98,8 +98,8 @@ export function DashboardCharts({
                 <ComposedChart data={revenue} margin={{ top: 12, right: 8, left: 4, bottom: 0 }}>
                   <defs>
                     <linearGradient id="dashboardRevenueBar" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#555b50" />
-                      <stop offset="100%" stopColor="#292b29" />
+                      <stop offset="0%" stopColor="#299174" />
+                      <stop offset="100%" stopColor="#16735a" />
                     </linearGradient>
                   </defs>
                   <CartesianGrid vertical={false} stroke="rgba(41,50,71,.085)" strokeDasharray="4 5" />
@@ -114,7 +114,7 @@ export function DashboardCharts({
                   <Bar dataKey="collected" name="CA encaissé" fill="url(#dashboardRevenueBar)" radius={[7, 7, 3, 3]} maxBarSize={30} animationDuration={700}>
                     {revenue.map((item) => <Cell key={item.key} fill="url(#dashboardRevenueBar)" opacity={!focusMonth || item.key === focusMonth ? 1 : 0.22} />)}
                   </Bar>
-                  <Line dataKey="objective" name="Objectif" type="monotone" stroke="#888f81" strokeWidth={2.5} strokeDasharray="6 5" connectNulls={false} dot={{ r: 4, fill: "#ffffff", stroke: "#888f81", strokeWidth: 2 }} activeDot={{ r: 6, fill: "#888f81", stroke: "#ffffff", strokeWidth: 3 }} animationDuration={700} />
+                  <Line dataKey="objective" name="Objectif" type="monotone" stroke="#216a9b" strokeWidth={2.5} strokeDasharray="6 5" connectNulls={false} dot={{ r: 4, fill: "#ffffff", stroke: "#216a9b", strokeWidth: 2 }} activeDot={{ r: 6, fill: "#216a9b", stroke: "#ffffff", strokeWidth: 3 }} animationDuration={700} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
@@ -125,7 +125,7 @@ export function DashboardCharts({
       <Card className="overflow-hidden">
         <CardHeader className="flex-col gap-4 sm:flex-row">
           <div className="flex items-start gap-3">
-            <span className="grid size-10 shrink-0 place-items-center rounded-full bg-brand-50 text-brand-600"><WalletCards className="size-[18px]" /></span>
+            <span className="grid size-10 shrink-0 place-items-center rounded-full tone-icon" data-tone="emerald"><WalletCards className="size-[18px]" /></span>
             <div>
               <h2 className="font-bold">Encaissements & charges</h2>
               <p className="mt-1 text-xs text-zinc-500">Toutes les échéances mensuelles et annuelles sont comptées dans leur mois.</p>
@@ -143,7 +143,7 @@ export function DashboardCharts({
                   {formatMoney(annualCashFlow)}
                 </p>
               </div>
-              <div className="sm:border-l sm:border-zinc-200 sm:pl-4"><p className="text-[10px] font-bold tracking-[.12em] text-zinc-500 uppercase">Charges prévues</p><p className="mt-1 text-lg font-semibold text-zinc-200">{formatMoney(periodExpenses)}</p></div>
+              <div className="sm:border-l sm:border-zinc-200 sm:pl-4"><p className="text-[10px] font-bold tracking-[.12em] text-zinc-500 uppercase">Charges prévues</p><p className="tone-text mt-1 text-lg font-semibold" data-tone="amber">{formatMoney(periodExpenses)}</p></div>
               <div className="sm:border-l sm:border-zinc-200 sm:pl-4"><p className="text-[10px] font-bold tracking-[.12em] text-zinc-500 uppercase">Déjà décaissé</p><p className="mt-1 text-lg font-semibold text-zinc-800">{formatMoney(periodPaidExpenses)}</p></div>
             </div>
           </div>
@@ -158,12 +158,12 @@ export function DashboardCharts({
                 <BarChart data={cashFlow} margin={{ top: 12, right: 8, left: 4, bottom: 0 }}>
                   <defs>
                     <linearGradient id="dashboardCashPositive" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#38b88a" />
-                      <stop offset="100%" stopColor="#0f8a67" />
+                      <stop offset="0%" stopColor="#52ad8b" />
+                      <stop offset="100%" stopColor="#16735a" />
                     </linearGradient>
                     <linearGradient id="dashboardCashNegative" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#e85d6b" />
-                      <stop offset="100%" stopColor="#c23b4a" />
+                      <stop offset="0%" stopColor="#df7182" />
+                      <stop offset="100%" stopColor="#b43c50" />
                     </linearGradient>
                   </defs>
                   <CartesianGrid vertical={false} stroke="rgba(41,50,71,.085)" strokeDasharray="4 5" />
