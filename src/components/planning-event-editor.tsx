@@ -149,7 +149,7 @@ export function PlanningEventEditor({
           </Field>
         </div>
 
-        <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm font-semibold text-slate-700">
+        <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-line bg-slate-50 p-3 text-sm font-semibold text-slate-700">
           <input type="checkbox" checked={allDay} onChange={(input) => changeAllDay(input.target.checked)} className="size-4 accent-violet-500" />
           Toute la journée
         </label>
@@ -164,7 +164,7 @@ export function PlanningEventEditor({
         </div>
 
         <Field label={canAssignTeam ? "Collaborateurs concernés" : "Collaborateur"}>
-          <div className="flex flex-wrap gap-2 rounded-xl border border-zinc-200 bg-white p-3">
+          <div className="flex flex-wrap gap-2 rounded-xl border border-line bg-surface p-3">
             {members.map((member) => {
               const selected = memberIds.includes(member.id);
               return (
@@ -174,7 +174,7 @@ export function PlanningEventEditor({
                   aria-pressed={selected}
                   onClick={() => toggleMember(member.id)}
                   disabled={!canAssignTeam && member.id !== currentUserId}
-                  className={`focus-ring rounded-lg border px-3 py-2 text-xs font-bold transition ${selected ? "border-violet-300 bg-violet-50 text-violet-700" : "border-zinc-200 bg-white text-zinc-600 hover:border-violet-200"}`}
+                  className={`focus-ring rounded-lg border px-3 py-2 text-xs font-bold transition ${selected ? "border-violet-300 bg-violet-50 text-violet-700" : "border-line bg-surface text-zinc-600 hover:border-violet-200"}`}
                 >
                   {member.firstName} {member.lastName}
                 </button>

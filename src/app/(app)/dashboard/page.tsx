@@ -21,6 +21,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Avatar } from "@/components/avatar";
 import { DashboardCharts } from "@/components/dashboard-charts";
+import { QontoTreasuryCard } from "@/components/banking/qonto-treasury-card";
 import { PageHeader } from "@/components/page-header";
 import { useWorkspace } from "@/components/workspace-provider";
 import { StatusBadge } from "@/components/status-badge";
@@ -55,7 +56,8 @@ function evolutionLabel(current: number, previous: number, previousLabel: string
 export default function DashboardPage() {
   const [periodKey, setPeriodKey] = useState<CompanyStatsPeriodKey>(() => `year:${new Date().getFullYear()}`);
   const data = useDemoStore();
-  const { workspace } = useWorkspace();
+  const { workspace, mode } = useWorkspace();
+  const showTreasury = mode === "demo" || Boolean(workspace?.canManageBusiness);
   const now = new Date();
   const todayLabel = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(now);
   const periodGroups = useMemo(() => getCompanyStatsPeriodOptions(), []);
@@ -158,7 +160,7 @@ export default function DashboardPage() {
       <PageHeader eyebrow={`${data.settings.locationCity || "Votre activité"} · ${todayLabel}`} title={`Bonjour ${workspace?.firstName || "Melvyn"}, voici l’essentiel.`} actions={
         <label className="grid gap-1 text-left">
           <span className="text-[10px] font-bold tracking-[.12em] text-zinc-500 uppercase">Période analysée</span>
-          <select value={periodKey} onChange={(event) => setPeriodKey(event.target.value as CompanyStatsPeriodKey)} className="focus-ring min-h-11 min-w-52 rounded-xl border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-800 shadow-sm">
+          <select value={periodKey} onChange={(event) => setPeriodKey(event.target.value as CompanyStatsPeriodKey)} className="focus-ring min-h-11 min-w-52 rounded-xl border border-line bg-surface px-3 text-sm font-semibold text-zinc-800 shadow-sm">
             {periodGroups.map((group) => (
               <optgroup key={group.year} label={group.year === now.getFullYear() ? `${group.year} · année en cours` : `${group.year} · N−1`}>
                 {group.options.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
@@ -170,7 +172,7 @@ export default function DashboardPage() {
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-12">
         {kpis.map((kpi, index) => (
-          <Link href={kpi.href} key={kpi.label} className={`focus-ring group rounded-2xl ${index === kpis.length - 1 ? "sm:col-span-2 xl:col-span-4" : kpis.length % 4 === 3 && index >= kpis.length - 3 ? "xl:col-span-4" : "xl:col-span-3"}`}>
+          <Link href={kpi.href} key={kpi.label} className={`focus-ring group rounded-2xl ${showTreasury ? "xl:col-span-3" : index === kpis.length - 1 ? "sm:col-span-2 xl:col-span-4" : kpis.length % 4 === 3 && index >= kpis.length - 3 ? "xl:col-span-4" : "xl:col-span-3"}`}>
             <Card data-tone={kpi.tone} className={`brand-kpi h-full transition duration-200 group-hover:-translate-y-0.5 group-hover:border-brand-400/30 group-hover:shadow-md`}>
               <CardContent className="p-4 sm:p-5">
                 <div className="flex items-start justify-between"><span className="text-xs font-semibold text-zinc-500">{kpi.label}</span><span className="tone-icon grid size-8 shrink-0 place-items-center rounded-full"><kpi.icon className="size-[16px]" /></span></div>
@@ -181,6 +183,7 @@ export default function DashboardPage() {
             </Card>
           </Link>
         ))}
+        {showTreasury && <QontoTreasuryCard />}
       </section>
 
       <DashboardCharts year={dashboardYear} revenue={dashboardCharts.revenue} cashFlow={dashboardCharts.cashFlow} focusMonth={statisticsPeriod.month} periodLabel={statisticsPeriod.label} />
@@ -198,13 +201,13 @@ export default function DashboardPage() {
         </CardHeader>
         <CardContent className="grid gap-2">
           {expenseRanking.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-black/15 bg-white/75 px-5 py-9 text-center">
+            <div className="rounded-2xl border border-dashed border-contrast/15 bg-surface/75 px-5 py-9 text-center">
               <ReceiptText className="mx-auto size-6 text-zinc-400" />
               <p className="mt-2 text-sm font-bold text-zinc-800">Aucune dépense sur cette période</p>
               <p className="mt-1 text-xs text-zinc-500">Les charges ajoutées dans Finances apparaîtront ici automatiquement.</p>
             </div>
           ) : expenseRanking.map((entry, index) => (
-            <Link href="/finances" key={entry.expense.id} className="focus-ring group grid gap-3 rounded-2xl border border-zinc-100 bg-white/90 p-3.5 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-md sm:grid-cols-[40px_minmax(0,1fr)_minmax(150px,.55fr)_120px] sm:items-center">
+            <Link href="/finances" key={entry.expense.id} className="focus-ring group grid gap-3 rounded-2xl border border-line bg-surface/90 p-3.5 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-md sm:grid-cols-[40px_minmax(0,1fr)_minmax(150px,.55fr)_120px] sm:items-center">
               <span className={`grid size-9 place-items-center rounded-xl text-sm font-extrabold ${index < 3 ? "tone-icon" : "bg-zinc-100 text-zinc-600"}`}>#{index + 1}</span>
               <span className="min-w-0">
                 <span className="block truncate text-sm font-bold text-zinc-900">{entry.expense.description || entry.expense.supplier || "Dépense sans libellé"}</span>
@@ -231,7 +234,7 @@ export default function DashboardPage() {
                 const vehicle = data.vehicles.find((entry) => entry.id === item.vehicleId);
                 const member = data.team.find((entry) => entry.id === item.workers[0]?.memberId);
                 return (
-                  <div key={item.id} className="group grid gap-3 px-5 py-4 transition hover:bg-white/[0.022] sm:grid-cols-[92px_minmax(0,1fr)_auto] sm:items-center">
+                  <div key={item.id} className="group grid gap-3 px-5 py-4 transition hover:bg-surface/[0.022] sm:grid-cols-[92px_minmax(0,1fr)_auto] sm:items-center">
                     <div><p className="text-sm font-bold text-zinc-200">{formatDate(item.startAt, { weekday: "short", day: "2-digit", month: "short" })}</p><p className="mt-1 text-xs text-zinc-500">{formatDate(item.startAt, { hour: "2-digit", minute: "2-digit" })} · {Math.round(item.plannedDurationMinutes / 60 * 10) / 10} h</p></div>
                     <div className="flex min-w-0 items-center gap-3"><Avatar label={member?.initials ?? "?"} color={member?.color} /><div className="min-w-0"><Link href={`/prestations?intervention=${item.id}`} className="focus-ring block truncate rounded-md text-sm font-semibold hover:text-brand-600" aria-label={`Ouvrir ${item.title}`}>{client?.company || `${client?.firstName ?? ""} ${client?.lastName ?? ""}`.trim() || item.title}</Link><p className="truncate text-xs text-zinc-500">{vehicle ? `${vehicle.make} ${vehicle.model}` : item.vehicleFormat || "Véhicule non renseigné"} · {item.title.split("—")[0]}</p></div></div>
                     <div className="flex items-center gap-2"><StatusBadge status={item.status}>{interventionStatusLabels[item.status]}</StatusBadge>{client?.phone && <a href={`tel:${client.phone}`} className="focus-ring hidden size-8 place-items-center rounded-lg text-zinc-600 hover:bg-brand-50 hover:text-brand-600 sm:grid" aria-label={`Appeler ${client.company || `${client.firstName} ${client.lastName}`}`}><Phone className="size-3.5" /></a>}{item.address && <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.address)}`} target="_blank" rel="noreferrer" className="focus-ring hidden size-8 place-items-center rounded-lg text-zinc-600 hover:bg-brand-50 hover:text-brand-600 sm:grid" aria-label="Itinéraire"><MapPin className="size-3.5" /></a>}</div>
@@ -245,7 +248,7 @@ export default function DashboardPage() {
         <Card>
           <CardHeader><div><h2 className="font-bold">À faire aujourd’hui</h2><p className="mt-1 text-xs text-zinc-500">Calculé depuis vos données actives.</p></div><Badge variant="orange">{todayActions.length} action(s)</Badge></CardHeader>
           <CardContent className="grid gap-2">
-            {todayActions.length === 0 ? <div className="rounded-2xl border border-dashed border-emerald-200 bg-emerald-50 p-6 text-center"><CheckCircle2 className="mx-auto size-6 text-emerald-600" /><p className="mt-2 text-sm font-bold text-emerald-800">Tout est à jour</p><p className="mt-1 text-xs text-emerald-700">Aucune action prioritaire détectée.</p></div> : todayActions.map((task) => <Link href={task.href} key={`${task.href}-${task.title}`} className="focus-ring flex items-start gap-3 rounded-xl border border-transparent p-3 text-left transition hover:border-white/[0.07] hover:bg-white/[0.025]"><span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-white/[0.04]"><task.icon className={`size-4 ${task.color}`} /></span><span className="min-w-0"><span className="block text-xs font-semibold text-zinc-200">{task.title}</span><span className="mt-1 block text-[11px] text-zinc-600">{task.detail}</span></span><ChevronRight className="ml-auto mt-2 size-3.5 text-zinc-700" /></Link>)}
+            {todayActions.length === 0 ? <div className="rounded-2xl border border-dashed border-emerald-200 bg-emerald-50 p-6 text-center"><CheckCircle2 className="mx-auto size-6 text-emerald-600" /><p className="mt-2 text-sm font-bold text-emerald-800">Tout est à jour</p><p className="mt-1 text-xs text-emerald-700">Aucune action prioritaire détectée.</p></div> : todayActions.map((task) => <Link href={task.href} key={`${task.href}-${task.title}`} className="focus-ring flex items-start gap-3 rounded-xl border border-transparent p-3 text-left transition hover:border-white/[0.07] hover:bg-surface/[0.025]"><span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-surface/[0.04]"><task.icon className={`size-4 ${task.color}`} /></span><span className="min-w-0"><span className="block text-xs font-semibold text-zinc-200">{task.title}</span><span className="mt-1 block text-[11px] text-zinc-600">{task.detail}</span></span><ChevronRight className="ml-auto mt-2 size-3.5 text-zinc-700" /></Link>)}
           </CardContent>
         </Card>
       </section>
@@ -253,7 +256,7 @@ export default function DashboardPage() {
       <Card>
         <CardHeader><div><h2 className="font-bold">Encaissements récents · {statisticsPeriod.label}</h2><p className="mt-1 text-xs text-zinc-500">Les paiements réellement reçus. La présence d’une facture n’est pas nécessaire.</p></div><Link href="/prestations" className="text-xs font-semibold text-brand-600 hover:text-brand-700">Ouvrir les prestations</Link></CardHeader>
         <CardContent className="overflow-x-auto px-0 pb-1">
-          <table className="w-full min-w-[620px] text-left text-xs"><thead className="text-[10px] tracking-wider text-zinc-600 uppercase"><tr><th className="px-5 py-3 font-semibold">Date</th><th className="px-3 py-3 font-semibold">Prestation</th><th className="px-3 py-3 font-semibold">Client</th><th className="px-3 py-3 font-semibold">Mode</th><th className="px-5 py-3 text-right font-semibold">Montant encaissé</th></tr></thead><tbody className="divide-y divide-zinc-100">{recentInterventionPayments.length === 0 ? <tr><td colSpan={5} className="px-5 py-8 text-center text-zinc-500">Aucun encaissement de prestation sur cette période.</td></tr> : recentInterventionPayments.map((payment) => { const intervention = payment.interventionId ? data.interventions.find((item) => item.id === payment.interventionId) : payment.invoiceId ? data.interventions.find((item) => item.invoiceId === payment.invoiceId) : undefined; const billingPeriod = payment.maintenanceBillingPeriodId ? data.maintenanceBillingPeriods.find((item) => item.id === payment.maintenanceBillingPeriodId) : undefined; const maintenanceContractId = payment.maintenanceContractId ?? billingPeriod?.contractId; const maintenanceContract = maintenanceContractId ? data.maintenanceContracts.find((item) => item.id === maintenanceContractId) : undefined; const client = data.clients.find((entry) => entry.id === (intervention?.clientId ?? maintenanceContract?.clientId)); return <tr key={payment.id} className="hover:bg-brand-50/50"><td className="px-5 py-3 text-zinc-500">{formatDate(payment.paidAt)}</td><td className="px-3 py-3 font-semibold text-zinc-900">{maintenanceContract?.title ?? intervention?.title ?? "Prestation liée"}{maintenanceContract && <span className="ml-2 text-[10px] font-semibold text-violet-600">Entretien</span>}</td><td className="px-3 py-3 text-zinc-600">{client?.company || `${client?.firstName ?? ""} ${client?.lastName ?? ""}`.trim() || "—"}</td><td className="px-3 py-3 text-zinc-500">{payment.method}</td><td className="px-5 py-3 text-right font-bold text-emerald-700">{formatMoney(payment.amount)}</td></tr>; })}</tbody></table>
+          <table className="w-full min-w-[620px] text-left text-xs"><thead className="text-[10px] tracking-wider text-zinc-600 uppercase"><tr><th className="px-5 py-3 font-semibold">Date</th><th className="px-3 py-3 font-semibold">Prestation</th><th className="px-3 py-3 font-semibold">Client</th><th className="px-3 py-3 font-semibold">Mode</th><th className="px-5 py-3 text-right font-semibold">Montant encaissé</th></tr></thead><tbody className="divide-y divide-line">{recentInterventionPayments.length === 0 ? <tr><td colSpan={5} className="px-5 py-8 text-center text-zinc-500">Aucun encaissement de prestation sur cette période.</td></tr> : recentInterventionPayments.map((payment) => { const intervention = payment.interventionId ? data.interventions.find((item) => item.id === payment.interventionId) : payment.invoiceId ? data.interventions.find((item) => item.invoiceId === payment.invoiceId) : undefined; const billingPeriod = payment.maintenanceBillingPeriodId ? data.maintenanceBillingPeriods.find((item) => item.id === payment.maintenanceBillingPeriodId) : undefined; const maintenanceContractId = payment.maintenanceContractId ?? billingPeriod?.contractId; const maintenanceContract = maintenanceContractId ? data.maintenanceContracts.find((item) => item.id === maintenanceContractId) : undefined; const client = data.clients.find((entry) => entry.id === (intervention?.clientId ?? maintenanceContract?.clientId)); return <tr key={payment.id} className="hover:bg-brand-50/50"><td className="px-5 py-3 text-zinc-500">{formatDate(payment.paidAt)}</td><td className="px-3 py-3 font-semibold text-zinc-900">{maintenanceContract?.title ?? intervention?.title ?? "Prestation liée"}{maintenanceContract && <span className="ml-2 text-[10px] font-semibold text-violet-600">Entretien</span>}</td><td className="px-3 py-3 text-zinc-600">{client?.company || `${client?.firstName ?? ""} ${client?.lastName ?? ""}`.trim() || "—"}</td><td className="px-3 py-3 text-zinc-500">{payment.method}</td><td className="px-5 py-3 text-right font-bold text-emerald-700">{formatMoney(payment.amount)}</td></tr>; })}</tbody></table>
         </CardContent>
       </Card>
 

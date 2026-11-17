@@ -79,7 +79,7 @@ export function PlanningSidePanel({ title, description, contentKey, dirty, busy,
   if (typeof document === "undefined") return null;
   return createPortal(
     <section ref={panelRef} className="planning-side-panel" data-planning-panel role={mobile ? "dialog" : "complementary"} aria-modal={mobile || undefined} aria-labelledby={titleId} aria-busy={busy}>
-      <header className="shrink-0 border-b border-black/[.08] bg-white p-4">
+      <header className="shrink-0 border-b border-contrast/[.08] bg-surface p-4">
         <div className="mb-3 flex items-center justify-between gap-2">
           <Button ref={closeRef} variant="ghost" size="sm" disabled={busy} onClick={onClose} aria-label="Fermer la fiche et revenir au calendrier"><ArrowLeft className="size-4 lg:hidden" /><PanelRightClose className="hidden size-4 lg:block" /> <span className="lg:hidden">Retour au calendrier</span><span className="hidden lg:inline">Fermer la fiche</span></Button>
           <div className="flex items-center gap-1">{actions}<Button size="icon" variant="ghost" className="size-8 min-h-8" disabled={busy || !onPrevious} onClick={onPrevious} aria-label="Événement précédent"><ChevronLeft className="size-4" /></Button><Button size="icon" variant="ghost" className="size-8 min-h-8" disabled={busy || !onNext} onClick={onNext} aria-label="Événement suivant"><ChevronRight className="size-4" /></Button></div>

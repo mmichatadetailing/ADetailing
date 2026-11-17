@@ -63,7 +63,7 @@ function PdfPage({ pdf, page, zoom }: { pdf: LoadedPdf; page: number; zoom: numb
   const failed = renderError?.page === page && renderError.width === width && renderError.zoom === zoom;
   const showFrame = paintedPage !== null && (!failed || paintedPage === page);
   // Reserve scrollbar space even before the canvas is shown so rendering cannot change its own input width.
-  return <div ref={container} role="region" aria-label="Aperçu du document PDF" tabIndex={0} className="focus-ring h-[58dvh] min-h-44 overflow-auto rounded-xl border border-black/10 bg-slate-100 p-2 [scrollbar-gutter:stable] sm:p-4">
+  return <div ref={container} role="region" aria-label="Aperçu du document PDF" tabIndex={0} className="focus-ring h-[58dvh] min-h-44 overflow-auto rounded-xl border border-contrast/10 bg-slate-100 p-2 [scrollbar-gutter:stable] sm:p-4">
     {paintedPage === null && !failed && <p role="status" className="flex items-center justify-center gap-2 py-10 text-sm text-zinc-500"><LoaderCircle aria-hidden="true" className="size-4 animate-spin" /> Affichage de la page…</p>}
     {failed && <p role="alert" className="py-10 text-center text-sm text-red-800">Cette page ne peut pas être affichée. Vous pouvez télécharger le PDF.</p>}
     <canvas ref={canvas} role="img" aria-label={`Page ${paintedPage ?? page} de la facture`} className={`mx-auto max-w-none bg-white shadow-sm ${showFrame ? "block" : "hidden"}`} />

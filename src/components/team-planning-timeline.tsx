@@ -178,11 +178,11 @@ export function TeamPlanningTimeline({
   };
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[0_3px_16px_rgba(22,25,20,.03)]">
+    <div className="overflow-hidden rounded-2xl border border-line bg-surface shadow-[0_3px_16px_rgba(22,25,20,.03)]">
       <div ref={scrollContainer} className="max-h-[70dvh] overflow-auto">
         <div style={{ minWidth: RESOURCE_WIDTH + timelineWidth }}>
-          <div className="sticky top-0 z-30 flex border-b border-zinc-200 bg-white/95 shadow-sm backdrop-blur-xl">
-            <div className="sticky left-0 z-40 flex shrink-0 items-center gap-2 border-r border-zinc-200 bg-white px-4" style={{ width: RESOURCE_WIDTH }}>
+          <div className="sticky top-0 z-30 flex border-b border-line bg-surface/95 shadow-sm backdrop-blur-xl">
+            <div className="sticky left-0 z-40 flex shrink-0 items-center gap-2 border-r border-line bg-surface px-4" style={{ width: RESOURCE_WIDTH }}>
               <CalendarDays className="size-4 text-brand-500" />
               <div><p className="text-xs font-extrabold text-zinc-900">Collaborateurs</p><p className="text-[10px] text-zinc-500">Équipe & disponibilité</p></div>
             </div>
@@ -190,8 +190,8 @@ export function TeamPlanningTimeline({
               {days.map((day) => {
                 const todayDay = isSamePlanningDay(day, today);
                 return (
-                  <div key={day.toISOString()} className={cn("shrink-0 border-r border-zinc-200", todayDay && "bg-brand-50/65")} style={{ width: dayWidth }}>
-                    {showDayLabels && <div className="flex h-12 items-center justify-between border-b border-zinc-100 px-4">
+                  <div key={day.toISOString()} className={cn("shrink-0 border-r border-line", todayDay && "bg-brand-50/65")} style={{ width: dayWidth }}>
+                    {showDayLabels && <div className="flex h-12 items-center justify-between border-b border-line px-4">
                       <div><p className={cn("text-xs font-extrabold capitalize", todayDay ? "text-brand-700" : "text-zinc-900")}>{formatDate(day.toISOString(), { weekday: "long" })}</p><p className="text-[10px] text-zinc-500">{formatDate(day.toISOString(), { day: "2-digit", month: "long" })}</p></div>
                       {todayDay && <Badge>Aujourd’hui</Badge>}
                     </div>}
@@ -204,14 +204,14 @@ export function TeamPlanningTimeline({
             </div>
           </div>
 
-          <div className="flex h-10 border-b border-black/10 bg-brand-50">
-            <div className="sticky left-0 z-20 flex shrink-0 items-center border-r border-black/10 bg-brand-50 px-4 text-xs font-semibold text-zinc-200" style={{ width: RESOURCE_WIDTH }}>Équipe ADetailing</div>
+          <div className="flex h-10 border-b border-contrast/10 bg-brand-50">
+            <div className="sticky left-0 z-20 flex shrink-0 items-center border-r border-contrast/10 bg-brand-50 px-4 text-xs font-semibold text-zinc-200" style={{ width: RESOURCE_WIDTH }}>Équipe ADetailing</div>
             <div className="flex items-center px-4 text-[10px] font-medium text-zinc-500" style={{ width: timelineWidth }}>{members.length} personne(s) affichée(s) · glissez une prestation pour modifier son horaire ou son affectation</div>
           </div>
 
           {members.map((member) => (
-            <div key={member.id} className="flex border-b border-zinc-200 last:border-b-0" style={{ minHeight: ROW_HEIGHT }}>
-              <div className="sticky left-0 z-20 flex shrink-0 items-center gap-3 border-r border-zinc-200 bg-white px-4 shadow-[8px_0_18px_rgba(41,50,71,.035)]" style={{ width: RESOURCE_WIDTH }}>
+            <div key={member.id} className="flex border-b border-line last:border-b-0" style={{ minHeight: ROW_HEIGHT }}>
+              <div className="sticky left-0 z-20 flex shrink-0 items-center gap-3 border-r border-line bg-surface px-4 shadow-[8px_0_18px_rgba(41,50,71,.035)]" style={{ width: RESOURCE_WIDTH }}>
                 <Avatar label={member.initials} color={member.color} />
                 <div className="min-w-0"><p className="truncate text-xs font-extrabold text-zinc-900">{member.firstName} {member.lastName}</p><p className="mt-1 flex items-center gap-1 text-[10px] text-zinc-500"><Clock3 className="size-3" /> {new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 1 }).format(member.weeklyCapacityMinutes / 60)} h/semaine</p>{member.id === currentUserId && <p className="mt-1 text-[9px] font-bold text-emerald-700">Votre ligne</p>}</div>
                 {member.active && <button type="button" className="focus-ring ml-auto grid size-7 shrink-0 place-items-center rounded-lg text-brand-600 hover:bg-brand-50" aria-label={`Ajouter pour ${member.firstName} ${member.lastName}`} title="Ajouter sur cette ligne" onClick={() => { const start = new Date(days[0] ?? today); start.setHours(9, 0, 0, 0); onEmptySlot(member.id, start); }}><Plus className="size-4" /></button>}
@@ -226,7 +226,7 @@ export function TeamPlanningTimeline({
                   return (
                     <div
                       key={`${member.id}-${day.toISOString()}`}
-                      className={cn("group/day relative shrink-0 select-none border-r border-zinc-200 transition-colors hover:bg-brand-50/35", member.active && "cursor-crosshair", todayDay && "bg-orange-50/25")}
+                      className={cn("group/day relative shrink-0 select-none border-r border-line transition-colors hover:bg-brand-50/35", member.active && "cursor-crosshair", todayDay && "bg-orange-50/25")}
                       style={{ width: dayWidth, height: ROW_HEIGHT }}
                       aria-label={`Planning de ${member.firstName} le ${formatDate(day.toISOString())}`}
                       onPointerDown={(event) => {
@@ -262,7 +262,7 @@ export function TeamPlanningTimeline({
                       onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }}
                       onDrop={(event) => { event.preventDefault(); const payload = readDrag(event); if (canDrag && payload) onMove(payload, member.id, dateFromPointer(event, day)); }}
                     >
-                      {HOURS.map((hour) => <span key={hour} className="pointer-events-none absolute inset-y-0 border-l border-zinc-100" style={{ left: `${(hour - PLANNING_START_HOUR) / (PLANNING_END_HOUR - PLANNING_START_HOUR) * 100}%` }} />)}
+                      {HOURS.map((hour) => <span key={hour} className="pointer-events-none absolute inset-y-0 border-l border-line" style={{ left: `${(hour - PLANNING_START_HOUR) / (PLANNING_END_HOUR - PLANNING_START_HOUR) * 100}%` }} />)}
                       {selectedPosition && selectedRange && <div className="pointer-events-none absolute inset-y-1 z-30 overflow-hidden rounded-xl border-2 border-brand-500 bg-orange-100/85 p-2 text-xs font-bold text-orange-900" style={{ left: `${selectedPosition.left}%`, width: `${selectedPosition.width}%` }}>{formatDate(selectedRange.start.toISOString(), { hour: "2-digit", minute: "2-digit" })} – {formatDate(selectedRange.end.toISOString(), { hour: "2-digit", minute: "2-digit" })}</div>}
                       {todayDay && nowRatio >= 0 && nowRatio <= 1 && <span className="pointer-events-none absolute inset-y-0 z-10 w-px bg-red-400" style={{ left: `${nowRatio * 100}%` }}><span className="absolute -left-1 top-0 size-2 rounded-full bg-red-500" /></span>}
                       {events.map((entry) => {
@@ -319,7 +319,7 @@ export function TeamPlanningTimeline({
                             onClick={(event) => { event.stopPropagation(); onSelect(intervention); }}
                             onDragStart={(event) => { event.stopPropagation(); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData(DRAG_TYPE, JSON.stringify({ interventionId: intervention.id, sourceMemberId: member.id } satisfies DragPayload)); }}
                             className={cn("focus-ring absolute z-20 flex h-10 cursor-grab items-center gap-2 overflow-hidden rounded-xl border px-2 text-left shadow-[0_7px_18px_rgba(47,40,72,.11)] transition hover:z-30 hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(47,40,72,.17)] active:cursor-grabbing", conflicted && "ring-2 ring-red-400")}
-                            style={{ left: `${position.left}%`, width: `max(44px, calc(${position.width}% - 5px))`, maxWidth: `calc(${100 - position.left}% - 4px)`, top: 8 + lane * 47, borderColor: memberColor, borderLeftWidth: 4, backgroundColor: transparentColor(memberColor, "1f"), color: "#172033" }}
+                            style={{ left: `${position.left}%`, width: `max(44px, calc(${position.width}% - 5px))`, maxWidth: `calc(${100 - position.left}% - 4px)`, top: 8 + lane * 47, borderColor: memberColor, borderLeftWidth: 4, backgroundColor: transparentColor(memberColor, "1f"), color: "var(--text)" }}
                           >
                             <GripVertical className="size-3 shrink-0 opacity-45" />
                             <span className="min-w-0 flex-1"><span className="block truncate text-[10px] font-extrabold">{client?.company || client?.firstName || "Client"} · {intervention.title.split("—")[0]?.trim()}</span><span className="mt-0.5 block truncate text-[9px] font-semibold opacity-65">{formatDate(intervention.startAt, { hour: "2-digit", minute: "2-digit" })}–{formatDate(intervention.endAt, { hour: "2-digit", minute: "2-digit" })} · {interventionStatusLabels[intervention.status]}</span></span>

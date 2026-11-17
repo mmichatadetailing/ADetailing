@@ -71,9 +71,9 @@ export function Modal({
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={description ? descriptionId : undefined}
-        className={cn("modal-panel max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl border border-black/[0.1] bg-white shadow-[0_28px_90px_rgba(22,25,20,.2)] sm:my-auto sm:max-w-xl sm:rounded-3xl", className)}
+        className={cn("modal-panel max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl border border-contrast/[0.1] bg-surface shadow-[0_28px_90px_rgba(22,25,20,.2)] sm:my-auto sm:max-w-xl sm:rounded-3xl", className)}
       >
-        <header className="sticky top-0 z-10 flex items-start justify-between border-b border-black/[0.07] bg-white/95 p-5 backdrop-blur-xl">
+        <header className="sticky top-0 z-10 flex items-start justify-between border-b border-contrast/[0.07] bg-surface/95 p-5 backdrop-blur-xl">
           <div>
             <h2 id={titleId} className="text-lg font-semibold tracking-tight">{title}</h2>
             {description && <p id={descriptionId} className="mt-1 text-sm text-zinc-500">{description}</p>}

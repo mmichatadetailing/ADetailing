@@ -442,9 +442,9 @@ export default function PlanningPage() {
       title: `${clientLabel} · ${item.title}`,
       start: item.startAt!,
       end: item.endAt!,
-      backgroundColor: /^#[0-9a-f]{6}$/i.test(color) ? `${color}24` : "#fff4ed",
+      backgroundColor: /^#[0-9a-f]{6}$/i.test(color) ? `${color}24` : "var(--color-orange-50)",
       borderColor: color,
-      textColor: "#172033",
+      textColor: "var(--text)",
       extendedProps: { source: "adetailing" },
     };
   }), ...filteredPlanningEvents.map((event) => ({
@@ -454,9 +454,9 @@ export default function PlanningPage() {
     end: event.endAt,
     allDay: event.allDay,
     editable: !calendarInteractionLocked && (teamPlanning || (event.memberIds.length === 1 && event.memberIds[0] === currentUserId)),
-    backgroundColor: internalPlanningConflicts.planningEventIds.has(event.id) ? "#fef2f2" : `${event.color ?? "#8b5cf6"}1c`,
+    backgroundColor: internalPlanningConflicts.planningEventIds.has(event.id) ? "var(--color-red-50)" : `${event.color ?? "#8b5cf6"}1c`,
     borderColor: internalPlanningConflicts.planningEventIds.has(event.id) ? "#ef4444" : event.color ?? "#8b5cf6",
-    textColor: "#27223a",
+    textColor: "var(--text)",
     extendedProps: { source: "planning" },
   })), ...filteredGoogleEvents.map((event) => ({
     id: event.id,
@@ -467,9 +467,9 @@ export default function PlanningPage() {
     editable: false,
     startEditable: false,
     durationEditable: false,
-    backgroundColor: googleConflictIds.has(event.id) ? "#fef2f2" : "#f0f9ff",
+    backgroundColor: googleConflictIds.has(event.id) ? "var(--color-red-50)" : "var(--color-sky-50)",
     borderColor: googleConflictIds.has(event.id) ? "#ef4444" : event.color,
-    textColor: "#0c4a6e",
+    textColor: "var(--color-sky-900)",
     classNames: event.busy ? ["google-calendar-event"] : ["google-calendar-event", "opacity-70"],
     extendedProps: { source: "google" },
   }))], [calendarInteractionLocked, currentUserId, data.clients, filteredGoogleEvents, filteredPlanningEvents, filteredScheduled, googleConflictIds, internalPlanningConflicts.planningEventIds, planningMembers, teamPlanning]);
@@ -950,7 +950,7 @@ export default function PlanningPage() {
       {selected && <InterventionDetail key={`${selected.id}-${editOnOpen}`} interventionId={selected.id} startEditing={editOnOpen} onDirtyChange={setPanelDirty} />}
         {selectedGoogleEvent && (
           <div className="grid gap-4">
-            <p className="rounded-xl border border-sky-100 bg-white p-3 text-sm text-slate-600">{selectedGoogleEvent.ownedByCurrentUser ? "Événement synchronisé en lecture seule. Modifiez-le dans Google Calendar, puis actualisez la synchronisation." : `Événement partagé depuis le calendrier Google de ${selectedGoogleEvent.ownerName ?? "ce collaborateur"}. Seul son propriétaire peut le modifier.`}</p>
+            <p className="rounded-xl border border-sky-100 bg-surface p-3 text-sm text-slate-600">{selectedGoogleEvent.ownedByCurrentUser ? "Événement synchronisé en lecture seule. Modifiez-le dans Google Calendar, puis actualisez la synchronisation." : `Événement partagé depuis le calendrier Google de ${selectedGoogleEvent.ownerName ?? "ce collaborateur"}. Seul son propriétaire peut le modifier.`}</p>
             <div className="rounded-2xl border border-sky-100 bg-sky-50/80 p-4 text-sm text-sky-950">
               <p className="flex items-start gap-2"><Clock3 className="mt-0.5 size-4 shrink-0 text-sky-600" /><span>{selectedGoogleEvent.allDay ? "Toute la journée" : `${formatDate(selectedGoogleEvent.start, { weekday: "long", day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit" })} — ${formatDate(selectedGoogleEvent.end, { hour: "2-digit", minute: "2-digit" })}`}</span></p>
               {selectedGoogleEvent.location && <p className="mt-3 flex items-start gap-2"><MapPin className="mt-0.5 size-4 shrink-0 text-sky-600" /><span>{selectedGoogleEvent.location}</span></p>}
@@ -961,7 +961,7 @@ export default function PlanningPage() {
                 href={selectedGoogleEvent.htmlLink}
                 target="_blank"
                 rel="noreferrer"
-                className="focus-ring inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-px hover:bg-sky-700 hover:shadow-md"
+                className="focus-ring inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-sky-600 px-4 text-sm font-semibold text-on-accent shadow-sm transition hover:-translate-y-px hover:bg-sky-700 hover:shadow-md"
               >
                 <ExternalLink className="size-4" /> Ouvrir dans Google Calendar
               </a>
@@ -1027,7 +1027,7 @@ export default function PlanningPage() {
             <div><p className="text-sm font-bold">Vérifiez avant de déplacer</p><p className="mt-1 text-xs leading-5">Nouveau départ : {formatDate(pendingMove.start.toISOString(), { weekday: "long", day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit" })}</p></div>
           </div>
           <ul className="grid gap-2" aria-label="Éléments en conflit">
-            {pendingMove.conflicts.slice(0, 5).map((conflict) => <li key={`${conflict.source}:${conflict.id}`} className="rounded-xl border border-black/[0.08] bg-zinc-50 px-4 py-3"><p className="text-sm font-bold text-slate-900">{conflict.title}</p><p className="mt-1 text-xs text-slate-600">{conflict.source === "google" ? "Google Calendar" : conflict.source === "planning" ? "Événement interne" : "Prestation"} · {formatDate(conflict.startAt, { hour: "2-digit", minute: "2-digit" })}–{formatDate(conflict.endAt, { hour: "2-digit", minute: "2-digit" })}</p></li>)}
+            {pendingMove.conflicts.slice(0, 5).map((conflict) => <li key={`${conflict.source}:${conflict.id}`} className="rounded-xl border border-contrast/[0.08] bg-zinc-50 px-4 py-3"><p className="text-sm font-bold text-slate-900">{conflict.title}</p><p className="mt-1 text-xs text-slate-600">{conflict.source === "google" ? "Google Calendar" : conflict.source === "planning" ? "Événement interne" : "Prestation"} · {formatDate(conflict.startAt, { hour: "2-digit", minute: "2-digit" })}–{formatDate(conflict.endAt, { hour: "2-digit", minute: "2-digit" })}</p></li>)}
             {pendingMove.conflicts.length > 5 && <li className="px-1 text-xs font-semibold text-slate-500">+ {pendingMove.conflicts.length - 5} autre(s) élément(s)</li>}
           </ul>
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

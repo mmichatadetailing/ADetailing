@@ -197,7 +197,7 @@ export default function TeamPage() {
           </CardHeader>
           <CardContent className="grid gap-2">
             {pendingInvitations.map((invitation) => (
-              <div key={invitation.id} className="flex flex-col gap-3 rounded-2xl border border-zinc-200 p-4 sm:flex-row sm:items-center">
+              <div key={invitation.id} className="flex flex-col gap-3 rounded-2xl border border-line p-4 sm:flex-row sm:items-center">
                 <Avatar label={`${invitation.firstName[0] ?? ""}${invitation.lastName[0] ?? ""}`.toUpperCase() || "?"} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-bold">{`${invitation.firstName} ${invitation.lastName}`.trim() || "Invitation en attente"}</p>
@@ -265,7 +265,7 @@ export default function TeamPage() {
                   </div>
                 )}
 
-                <div className="mt-5 rounded-xl border border-zinc-200 bg-zinc-50 p-4">
+                <div className="mt-5 rounded-xl border border-line bg-zinc-50 p-4">
                   <div className="flex items-center justify-between"><p className="flex items-center gap-2 text-xs font-semibold"><CalendarClock className="size-3.5 text-sky-500" /> Charge planifiée</p><p className="text-xs font-bold">{Math.round(rate)} %</p></div>
                   <Progress value={rate} className="mt-3" />
                   <p className="mt-2 text-[10px] text-zinc-600">{formatHours(planned)} h planifiées sur {formatHours(member.weeklyCapacityMinutes)} h disponibles</p>

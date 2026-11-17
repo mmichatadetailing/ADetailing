@@ -185,7 +185,7 @@ export function GoogleCalendarSettings({ enabled }: { enabled: boolean }) {
   const startConnection = () => { window.location.assign("/api/integrations/google/start"); };
 
   return (
-    <div className="rounded-2xl border border-black/10 bg-brand-50/50 p-4 shadow-sm">
+    <div className="rounded-2xl border border-contrast/10 bg-brand-50/50 p-4 shadow-sm">
       <div className="flex items-start gap-3">
         <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-sky-100 text-sky-600">
           <CalendarDays className="size-5" />
@@ -199,7 +199,7 @@ export function GoogleCalendarSettings({ enabled }: { enabled: boolean }) {
         </div>
       </div>
 
-      {loading && <div className="mt-4 flex items-center gap-2 rounded-xl bg-white/80 p-3 text-xs text-zinc-500"><LoaderCircle className="size-4 animate-spin" /> Lecture de vos calendriers…</div>}
+      {loading && <div className="mt-4 flex items-center gap-2 rounded-xl bg-surface/80 p-3 text-xs text-zinc-500"><LoaderCircle className="size-4 animate-spin" /> Lecture de vos calendriers…</div>}
 
       {!loading && loadError && (
         <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3">
@@ -208,7 +208,7 @@ export function GoogleCalendarSettings({ enabled }: { enabled: boolean }) {
         </div>
       )}
 
-      {!loading && !loadError && !enabled && <p className="mt-4 rounded-xl bg-white/80 p-3 text-xs text-zinc-600">Activez Supabase pour connecter un calendrier à un compte utilisateur.</p>}
+      {!loading && !loadError && !enabled && <p className="mt-4 rounded-xl bg-surface/80 p-3 text-xs text-zinc-600">Activez Supabase pour connecter un calendrier à un compte utilisateur.</p>}
 
       {!loading && !loadError && enabled && configured === false && (
         <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
@@ -223,7 +223,7 @@ export function GoogleCalendarSettings({ enabled }: { enabled: boolean }) {
       {!loading && !loadError && connections.map((connection) => {
         const writableCalendars = connection.calendars.filter((calendar) => ["owner", "writer"].includes(calendar.accessRole ?? ""));
         return (
-          <div key={connection.id} className="mt-4 rounded-xl border border-black/[0.08] bg-white p-4 shadow-sm">
+          <div key={connection.id} className="mt-4 rounded-xl border border-contrast/[0.08] bg-surface p-4 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="truncate text-sm font-bold text-zinc-200">{connection.email}</p>
@@ -246,7 +246,7 @@ export function GoogleCalendarSettings({ enabled }: { enabled: boolean }) {
                     {writableCalendars.map((calendar) => <option key={calendar.id} value={calendar.id}>{calendar.summary}{calendar.primary ? " · principal" : ""}</option>)}
                   </Select>
                 </label>
-                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-black/[0.07] bg-zinc-50 p-3 transition-colors hover:border-sky-200 hover:bg-sky-50/60">
+                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-contrast/[0.07] bg-zinc-50 p-3 transition-colors hover:border-sky-200 hover:bg-sky-50/60">
                   <input type="checkbox" checked={connection.syncEnabled} onChange={(event) => updateConnection(connection.id, { syncEnabled: event.target.checked })} className="mt-0.5 size-4 accent-sky-500" />
                   <span><span className="block text-xs font-bold text-zinc-300">Synchronisation activée</span><span className="mt-1 block text-[11px] leading-4 text-zinc-500">Met à jour vos prestations dans Google et partage les créneaux Google sur votre ligne du planning d’équipe.</span></span>
                 </label>

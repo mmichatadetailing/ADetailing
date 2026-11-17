@@ -208,7 +208,7 @@ export default function CataloguePage() {
       />
 
       <div className="-mx-4 overflow-x-auto px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-        <div className="flex w-max gap-1 rounded-xl border border-white/[0.07] bg-white/[0.025] p-1">
+        <div className="flex w-max gap-1 rounded-xl border border-white/[0.07] bg-surface/[0.025] p-1">
           {tabs.map((item) => <button key={item.id} onClick={() => setTab(item.id)} className={`focus-ring rounded-lg px-3 py-2 text-xs font-semibold transition ${tab === item.id ? "bg-brand-50 text-brand-700 shadow-sm" : "text-zinc-500 hover:text-zinc-300"}`}>{item.label}</button>)}
         </div>
       </div>
@@ -266,7 +266,7 @@ export default function CataloguePage() {
               <p className="mt-1 text-xs text-sky-800">Cette logique déterminera le tarif conseillé lors de la création d’une prestation.</p>
               <div className="mt-4 grid gap-2 sm:grid-cols-3">
                 {(Object.entries(servicePricingModeLabels) as Array<[ServicePricingMode, string]>).map(([mode, label]) => (
-                  <button key={mode} type="button" aria-pressed={form.pricingMode === mode} onClick={() => setForm((state) => ({ ...state, pricingMode: mode }))} className={`focus-ring rounded-xl border p-3 text-left text-xs font-bold transition ${form.pricingMode === mode ? "border-sky-400 bg-white text-sky-800 shadow-sm" : "border-sky-100 bg-white/60 text-zinc-600 hover:border-sky-300"}`}>{label}</button>
+                  <button key={mode} type="button" aria-pressed={form.pricingMode === mode} onClick={() => setForm((state) => ({ ...state, pricingMode: mode }))} className={`focus-ring rounded-xl border p-3 text-left text-xs font-bold transition ${form.pricingMode === mode ? "border-sky-400 bg-surface text-sky-800 shadow-sm" : "border-sky-100 bg-surface/60 text-zinc-600 hover:border-sky-300"}`}>{label}</button>
                 ))}
               </div>
             </div>
@@ -276,7 +276,7 @@ export default function CataloguePage() {
             <div className="rounded-2xl border border-violet-200 bg-violet-50/60 p-4">
               <div><p className="text-sm font-bold text-violet-900">Fourchettes TTC par type de véhicule</p><p className="mt-1 text-xs text-violet-700">Indiquez le minimum et le maximum habituellement pratiqués pour chaque catégorie.</p></div>
               <div className="mt-4 grid gap-3">
-                {priceFormats.map((format) => <div key={format} className="grid items-end gap-3 rounded-xl border border-violet-100 bg-white p-3 sm:grid-cols-[1fr_120px_120px]"><p className="self-center text-xs font-bold">{format}</p><Field label="Minimum (€)"><Input min="0" type="number" step="0.01" value={form.priceRanges[format]?.minimum ?? 0} onChange={(event) => setRange(format, "minimum", Number(event.target.value))} /></Field><Field label="Maximum (€)"><Input min={form.priceRanges[format]?.minimum ?? 0} type="number" step="0.01" value={form.priceRanges[format]?.maximum ?? 0} onChange={(event) => setRange(format, "maximum", Number(event.target.value))} /></Field></div>)}
+                {priceFormats.map((format) => <div key={format} className="grid items-end gap-3 rounded-xl border border-violet-100 bg-surface p-3 sm:grid-cols-[1fr_120px_120px]"><p className="self-center text-xs font-bold">{format}</p><Field label="Minimum (€)"><Input min="0" type="number" step="0.01" value={form.priceRanges[format]?.minimum ?? 0} onChange={(event) => setRange(format, "minimum", Number(event.target.value))} /></Field><Field label="Maximum (€)"><Input min={form.priceRanges[format]?.minimum ?? 0} type="number" step="0.01" value={form.priceRanges[format]?.maximum ?? 0} onChange={(event) => setRange(format, "maximum", Number(event.target.value))} /></Field></div>)}
               </div>
             </div>
           ) : form.pricingMode === "vehicle_count" ? (
@@ -287,7 +287,7 @@ export default function CataloguePage() {
               </div>
               <div className="mt-4 grid gap-3">
                 {form.vehicleCountTiers.map((tier) => (
-                  <div key={tier.id} className="grid items-end gap-3 rounded-xl border border-emerald-100 bg-white p-3 sm:grid-cols-[110px_110px_1fr_auto]">
+                  <div key={tier.id} className="grid items-end gap-3 rounded-xl border border-emerald-100 bg-surface p-3 sm:grid-cols-[110px_110px_1fr_auto]">
                     <Field label="De"><Input min="1" step="1" type="number" value={tier.minimumVehicles} onChange={(event) => updateVehicleCountTier(tier.id, { minimumVehicles: Number(event.target.value) })} /></Field>
                     <Field label="À"><Input min={tier.minimumVehicles} step="1" type="number" value={tier.maximumVehicles ?? ""} placeholder="Et +" onChange={(event) => updateVehicleCountTier(tier.id, { maximumVehicles: event.target.value === "" ? undefined : Number(event.target.value) })} /></Field>
                     <Field label="Prix TTC / véhicule (€)"><Input min="0" step="0.01" type="number" value={tier.price} onChange={(event) => updateVehicleCountTier(tier.id, { price: Number(event.target.value) })} /></Field>
@@ -305,7 +305,7 @@ export default function CataloguePage() {
               </div>
               <div className="mt-4 grid gap-3">
                 {form.customPrices.map((price) => (
-                  <div key={price.id} className="grid items-end gap-3 rounded-xl border border-amber-100 bg-white p-3 sm:grid-cols-[1fr_120px_120px_auto]">
+                  <div key={price.id} className="grid items-end gap-3 rounded-xl border border-amber-100 bg-surface p-3 sm:grid-cols-[1fr_120px_120px_auto]">
                     <Field label="Nom de la règle"><Input value={price.label} onChange={(event) => updateCustomPrice(price.id, { label: event.target.value })} /></Field>
                     <Field label="Minimum (€)"><Input min="0" step="0.01" type="number" value={price.minimum} onChange={(event) => updateCustomPrice(price.id, { minimum: Number(event.target.value), maximum: Math.max(price.maximum, Number(event.target.value)) })} /></Field>
                     <Field label="Maximum (€)"><Input min={price.minimum} step="0.01" type="number" value={price.maximum} onChange={(event) => updateCustomPrice(price.id, { maximum: Number(event.target.value) })} /></Field>

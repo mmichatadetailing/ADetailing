@@ -1,7 +1,11 @@
 @import "tailwindcss";
 
-@theme inline {
+@theme {
   --font-sans: var(--font-montserrat), "Segoe UI", Arial, sans-serif;
+  --color-surface: var(--surface);
+  --color-content: var(--text);
+  --color-contrast: var(--contrast);
+  --color-line: var(--border);
   --color-white: #ffffff;
   --color-on-accent: #fafaf8;
   --color-brand-50: #f2f2ef;
@@ -41,6 +45,7 @@
   --background: #f5f5f2;
   --surface: #ffffff;
   --surface-raised: #fafaf8;
+  --contrast: #000000;
   --border: rgba(30, 32, 28, 0.12);
   --muted: #6c7068;
   --text: #20221f;
@@ -52,6 +57,135 @@
   --tone-color: #565954;
   --tone-soft: #f2f2ef;
   --tone-border: #d3d5cf;
+  --selection: #dce0d6;
+  --scrollbar: #c8ccc3;
+  --glass-highlight: rgba(255, 255, 255, 0.72);
+  --chart-grid: rgba(41, 50, 71, 0.085);
+  --chart-cursor: rgba(41, 43, 41, 0.04);
+  --chart-blue: #216a9b;
+  --chart-green: #16735a;
+  --chart-green-top: #52ad8b;
+  --chart-red: #b43c50;
+  --chart-red-top: #df7182;
+}
+
+/* Real surfaces and foregrounds, not an inversion filter: photos and PDFs keep
+   their original colors. Light mode remains the default for existing users. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #0e1116;
+  --surface: #181d25;
+  --surface-raised: #202732;
+  --contrast: #edf1f7;
+  --border: rgba(214, 224, 238, 0.14);
+  --muted: #a9b3c3;
+  --text: #edf1f7;
+  --accent: #f3f4f1;
+  --focus-ring: #7ab7ee;
+  --interaction-border: rgba(214, 224, 238, 0.32);
+  --interaction-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  --selection: #365574;
+  --scrollbar: #485568;
+  --glass-highlight: rgba(255, 255, 255, 0.04);
+  --color-on-accent: #14191f;
+  --color-brand-50: #232b35;
+  --color-brand-100: #2d3744;
+  --color-brand-200: #3e4b5c;
+  --color-brand-300: #b5bdc8;
+  --color-brand-400: #d3d9e0;
+  --color-brand-500: #e6e9e3;
+  --color-brand-600: #f6f8f3;
+  --color-brand-700: #ffffff;
+  --color-ink-950: var(--background);
+  --color-ink-900: var(--surface);
+  --color-ink-850: var(--surface);
+  --color-ink-800: var(--surface-raised);
+  --color-ink-700: #343f4e;
+  --color-zinc-50: #202732;
+  --color-zinc-100: #293240;
+  --color-zinc-200: #edf1f7;
+  --color-zinc-300: #d7dfe9;
+  --color-zinc-400: #b8c3d1;
+  --color-zinc-500: #a9b3c3;
+  --color-zinc-600: #a4afbe;
+  --color-zinc-700: #bdc7d5;
+  --color-zinc-800: #d7dfe9;
+  --color-zinc-900: #edf1f7;
+  --color-zinc-950: #f7fafc;
+  --color-slate-50: #202732;
+  --color-slate-100: #293240;
+  --color-slate-200: #343f4e;
+  --color-slate-300: #a4b0c2;
+  --color-slate-400: #a7b2c2;
+  --color-slate-500: #a6b2c4;
+  --color-slate-600: #b9c4d3;
+  --color-slate-700: #cbd5e1;
+  --color-slate-800: #dde5ef;
+  --color-slate-900: #edf1f7;
+  --color-orange-50: #30231d;
+  --color-orange-100: #3f2b21;
+  --color-orange-200: #70452c;
+  --color-orange-300: #ffb28b;
+  --color-orange-600: #ffb28b;
+  --color-orange-700: #ffc29f;
+  --color-orange-800: #ffd4bb;
+  --color-orange-900: #ffe5d4;
+  --color-emerald-50: #142b27;
+  --color-emerald-100: #193a30;
+  --color-emerald-200: #2b5d4b;
+  --color-emerald-300: #63dbb4;
+  --color-emerald-600: #60d5a8;
+  --color-emerald-700: #7bdfba;
+  --color-emerald-800: #a2ebcf;
+  --color-emerald-900: #c0f5df;
+  --color-emerald-950: #d8ffee;
+  --color-sky-50: #162935;
+  --color-sky-100: #1b364a;
+  --color-sky-200: #2c526e;
+  --color-sky-300: #7dc8f1;
+  --color-sky-600: #7dc8f1;
+  --color-sky-700: #9dd8f5;
+  --color-sky-800: #b9e7fb;
+  --color-sky-900: #d5f1ff;
+  --color-sky-950: #e5f7ff;
+  --color-red-50: #321e26;
+  --color-red-100: #482530;
+  --color-red-200: #743645;
+  --color-red-300: #ffa2b3;
+  --color-red-600: #ff9aac;
+  --color-red-700: #ffb2c1;
+  --color-red-800: #ffcbd6;
+  --color-red-900: #ffe1e9;
+  --color-amber-50: #302719;
+  --color-amber-100: #42331c;
+  --color-amber-200: #efd29d;
+  --color-amber-300: #ffd28b;
+  --color-amber-600: #f7c67b;
+  --color-amber-700: #f9d399;
+  --color-amber-800: #ffe0b2;
+  --color-amber-900: #ffebcd;
+  --color-amber-950: #fff2df;
+  --color-violet-50: #252137;
+  --color-violet-100: #342b4a;
+  --color-violet-200: #52416f;
+  --color-violet-300: #c4acff;
+  --color-violet-500: #b195ef;
+  --color-violet-600: #c4adff;
+  --color-violet-700: #d1bbff;
+  --color-violet-800: #e1d2ff;
+  --color-violet-900: #eee4ff;
+  --color-fuchsia-300: #f4a0da;
+  --color-cyan-300: #7fdce5;
+  --tone-color: #b8c3d1;
+  --tone-soft: #232b35;
+  --tone-border: #3e4b5c;
+  --chart-grid: rgba(214, 224, 238, 0.12);
+  --chart-cursor: rgba(214, 224, 238, 0.06);
+  --chart-blue: #7dc8f1;
+  --chart-green: #5ccba2;
+  --chart-green-top: #86e1be;
+  --chart-red: #ed879c;
+  --chart-red-top: #ffb0be;
 }
 
 /* Restrained functional accents; financial/error status colors remain independent. */
@@ -63,6 +197,21 @@
 [data-tone="rose"] { --tone-color: #b43c50; --tone-soft: #fff0f3; --tone-border: #efc6ce; }
 [data-tone="neutral"] { --tone-color: #565954; --tone-soft: #f2f2ef; --tone-border: #d3d5cf; }
 
+:root[data-theme="dark"] [data-tone="blue"] { --tone-color: #8acaf1; --tone-soft: #192d3e; --tone-border: #335570; }
+:root[data-theme="dark"] [data-tone="emerald"] { --tone-color: #80dcb6; --tone-soft: #182e28; --tone-border: #355d4e; }
+:root[data-theme="dark"] [data-tone="amber"] { --tone-color: #edbd7e; --tone-soft: #30271e; --tone-border: #6c5030; }
+:root[data-theme="dark"] [data-tone="violet"] { --tone-color: #c5abf3; --tone-soft: #2b233c; --tone-border: #584572; }
+:root[data-theme="dark"] [data-tone="teal"] { --tone-color: #8bd7d9; --tone-soft: #1b2d32; --tone-border: #34595f; }
+:root[data-theme="dark"] [data-tone="rose"] { --tone-color: #f1a0b2; --tone-soft: #35232d; --tone-border: #714252; }
+:root[data-theme="dark"] [data-tone="neutral"] { --tone-color: #b8c3d1; --tone-soft: #232b35; --tone-border: #3e4b5c; }
+
+.brand-logo { filter: brightness(0); }
+.brand-logo[data-inverted="true"], :root[data-theme="dark"] .brand-logo { filter: brightness(0) invert(1); }
+.theme-icon-dark, :root[data-theme="dark"] .theme-icon-light { display: none; }
+:root[data-theme="dark"] .theme-icon-dark { display: block; }
+.member-avatar { color: var(--member-color); }
+:root[data-theme="dark"] .member-avatar { color: color-mix(in srgb, var(--member-color) 60%, var(--text)); }
+
 .tone-icon {
   background-color: var(--tone-soft);
   color: var(--tone-color);
@@ -73,15 +222,18 @@
 
 * {
   box-sizing: border-box;
-  border-color: var(--border);
+}
+
+@layer base {
+  * { border-color: var(--border); }
 }
 
 :where([class*="border-white"]) {
-  border-color: rgba(41, 50, 71, 0.1);
+  border-color: var(--border);
 }
 
 :where([class*="divide-white"]) > :not(:last-child) {
-  border-color: rgba(41, 50, 71, 0.075);
+  border-color: var(--border);
 }
 
 html {
@@ -152,7 +304,7 @@ textarea:disabled,
 }
 
 ::selection {
-  background: #dce0d6;
+  background: var(--selection);
 }
 
 ::-webkit-scrollbar {
@@ -161,7 +313,7 @@ textarea:disabled,
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #c8ccc3;
+  background: var(--scrollbar);
   border: 3px solid transparent;
   border-radius: 999px;
   background-clip: padding-box;
@@ -169,7 +321,7 @@ textarea:disabled,
 
 .glass {
   background: color-mix(in srgb, var(--surface) 84%, transparent);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.72) inset;
+  box-shadow: 0 1px 0 var(--glass-highlight) inset;
   backdrop-filter: blur(18px);
 }
 
@@ -243,7 +395,7 @@ table tbody tr {
 
 @media (hover: hover) and (pointer: fine) {
   .ui-card:hover {
-    border-color: rgba(30, 32, 28, 0.18);
+    border-color: var(--interaction-border);
   }
 
   .surface-interactive:hover {
@@ -269,8 +421,8 @@ table tbody tr {
   }
 
   .tab-interactive:hover:not([aria-selected="true"]):not([data-active="true"]) {
-    background-color: rgba(41, 50, 71, 0.055);
-    color: #344054;
+    background-color: var(--surface-raised);
+    color: var(--text);
   }
 
   .icon-interactive:hover {
@@ -373,7 +525,7 @@ table tbody tr {
 
 .app-nav-link[aria-current="page"] .app-nav-icon {
   background: var(--tone-color);
-  color: #ffffff;
+  color: var(--color-on-accent);
 }
 
 .app-nav-icon {
@@ -461,12 +613,15 @@ table thead { background: var(--surface-raised); }
 }
 
 .fc {
-  --fc-border-color: rgba(41, 50, 71, 0.1);
-  --fc-page-bg-color: transparent;
-  --fc-neutral-bg-color: #f0f1ed;
-  --fc-list-event-hover-bg-color: #f5f5f2;
-  --fc-today-bg-color: rgba(110, 120, 100, 0.06);
-  --fc-now-indicator-color: #292b29;
+  --fc-border-color: var(--border);
+  --fc-page-bg-color: var(--surface);
+  --fc-neutral-bg-color: var(--surface-raised);
+  --fc-neutral-text-color: var(--muted);
+  --fc-more-link-bg-color: var(--surface-raised);
+  --fc-more-link-text-color: var(--text);
+  --fc-list-event-hover-bg-color: var(--surface-raised);
+  --fc-today-bg-color: var(--chart-cursor);
+  --fc-now-indicator-color: var(--accent);
   --fc-event-text-color: #fffdf9;
   font-size: 0.84rem;
 }
@@ -477,9 +632,9 @@ table thead { background: var(--surface-raised); }
 }
 
 .fc .fc-button-primary {
-  border-color: rgba(41, 50, 71, 0.11);
-  background: #ffffff;
-  color: #3f4a60;
+  border-color: var(--border);
+  background: var(--surface);
+  color: var(--text);
   box-shadow: none;
   text-transform: capitalize;
 }
@@ -492,15 +647,15 @@ table thead { background: var(--surface-raised); }
 }
 
 .fc .fc-button-primary:disabled {
-  border-color: rgba(41, 50, 71, 0.08);
-  background: #eef0f5;
-  color: #7f899a;
+  border-color: var(--border);
+  background: var(--surface-raised);
+  color: var(--muted);
 }
 
 .fc-theme-standard td,
 .fc-theme-standard th,
 .fc-theme-standard .fc-scrollgrid {
-  border-color: rgba(41, 50, 71, 0.1);
+  border-color: var(--border);
 }
 
 .fc .fc-col-header-cell-cushion,
@@ -508,7 +663,7 @@ table thead { background: var(--surface-raised); }
 .fc .fc-timegrid-slot-label-cushion,
 .fc .fc-list-day-text,
 .fc .fc-list-day-side-text {
-  color: #59657a;
+  color: var(--muted);
 }
 
 .fc .fc-event {
@@ -546,9 +701,9 @@ table thead { background: var(--surface-raised); }
   flex-direction: column;
   width: var(--planning-panel-width);
   overflow: hidden;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border);
   border-radius: 20px;
-  background: #fafaf8;
+  background: var(--surface);
   box-shadow: 0 12px 40px rgb(22 25 20 / 12%);
   animation: planning-panel-enter 160ms ease-out;
 }

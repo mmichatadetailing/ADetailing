@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
-import { Toaster } from "sonner";
+import { ThemeProvider } from "@/components/theme-provider";
+import { THEME_BOOTSTRAP_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
 const montserrat = localFont({ src: "../../public/brand/montserrat.woff2", variable: "--font-montserrat", display: "swap", weight: "100 900" });
@@ -21,10 +22,10 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="fr" className={montserrat.variable} data-scroll-behavior="smooth">
+    <html lang="fr" className={montserrat.variable} data-scroll-behavior="smooth" suppressHydrationWarning>
+      <head><script id="adetailing-theme" dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP_SCRIPT }} /></head>
       <body>
-        {children}
-        <Toaster theme="light" richColors closeButton position="bottom-right" />
+        <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>
   );

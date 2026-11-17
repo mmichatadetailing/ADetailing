@@ -32,14 +32,14 @@ export const PlanningUnscheduledTray = forwardRef<HTMLElement, {
   const title = teamPlanning ? "Prestations non planifiées" : "Mes prestations à planifier";
 
   return (
-    <aside ref={ref} id="planning-unscheduled" tabIndex={-1} aria-labelledby="planning-unscheduled-title" className="scroll-mt-[calc(var(--app-header-height)+170px)] overflow-hidden rounded-2xl border border-amber-200/80 bg-gradient-to-r from-amber-50/90 via-white to-orange-50/70 shadow-[0_7px_24px_rgba(120,85,40,.08)]">
+    <aside ref={ref} id="planning-unscheduled" tabIndex={-1} aria-labelledby="planning-unscheduled-title" className="scroll-mt-[calc(var(--app-header-height)+170px)] overflow-hidden rounded-2xl border border-amber-200/80 bg-gradient-to-r from-amber-50/90 via-surface to-orange-50/70 shadow-[0_7px_24px_rgba(120,85,40,.08)]">
       <button type="button" onClick={onToggle} aria-expanded={expanded} aria-controls="planning-unscheduled-items" className="focus-ring flex min-h-14 w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-amber-50/70">
         <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-amber-100 text-amber-800"><CalendarPlus2 className="size-4" /></span>
         <span className="min-w-0 flex-1">
           <span id="planning-unscheduled-title" className="block truncate text-sm font-extrabold text-slate-900">{title}</span>
           <span className="block truncate text-[11px] text-slate-600">{expanded ? (canDrag ? "Glissez une carte vers la timeline ou ouvrez sa fiche." : "Ouvrez une fiche pour compléter sa planification.") : "Le calendrier conserve toute sa largeur."}</span>
         </span>
-        <span className="shrink-0 rounded-full border border-amber-200 bg-white px-2.5 py-1 text-xs font-extrabold text-amber-800">{interventions.length}</span>
+        <span className="shrink-0 rounded-full border border-amber-200 bg-surface px-2.5 py-1 text-xs font-extrabold text-amber-800">{interventions.length}</span>
         <ChevronDown className={cn("size-4 shrink-0 text-slate-500 transition-transform", expanded && "rotate-180")} />
       </button>
 
@@ -60,7 +60,7 @@ export const PlanningUnscheduledTray = forwardRef<HTMLElement, {
                     event.dataTransfer.setData(planningDragType, JSON.stringify({ interventionId: intervention.id } satisfies MovePayload));
                   }}
                   onClick={() => onOpen(intervention)}
-                  className={cn("focus-ring surface-interactive group flex h-full w-full items-start gap-2.5 rounded-xl border border-black/[.08] bg-white p-3 text-left shadow-sm", canDrag && "cursor-grab active:cursor-grabbing")}
+                  className={cn("focus-ring surface-interactive group flex h-full w-full items-start gap-2.5 rounded-xl border border-contrast/[.08] bg-surface p-3 text-left shadow-sm", canDrag && "cursor-grab active:cursor-grabbing")}
                 >
                   <GripVertical className={cn("mt-0.5 size-3.5 shrink-0 text-slate-300 transition-colors", canDrag && "group-hover:text-amber-600")} />
                   <span className="min-w-0 flex-1">

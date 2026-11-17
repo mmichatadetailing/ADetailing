@@ -20,11 +20,11 @@ import { Badge } from "./ui/badge";
 import { Card, CardContent, CardHeader } from "./ui/card";
 
 const tooltipStyle = {
-  background: "rgba(255,255,255,.97)",
-  border: "1px solid rgba(41,50,71,.1)",
+  background: "var(--surface)",
+  border: "1px solid var(--border)",
   borderRadius: 14,
   boxShadow: "0 12px 32px rgba(22,25,20,.1)",
-  color: "#20221f",
+  color: "var(--text)",
   fontSize: 12,
 };
 
@@ -77,20 +77,20 @@ export function DashboardCharts({
           <Badge>{periodLabel}</Badge>
         </CardHeader>
         <CardContent className="pt-1">
-          <div className="mb-5 grid gap-3 rounded-2xl border border-black/[0.06] bg-brand-50/60 p-4 shadow-sm sm:grid-cols-2">
+          <div className="mb-5 grid gap-3 rounded-2xl border border-contrast/[0.06] bg-brand-50/60 p-4 shadow-sm sm:grid-cols-2">
             <div>
               <p className="text-[10px] font-bold tracking-[.12em] text-zinc-600 uppercase">CA encaissé · {isAnnualView ? "année" : "mois"}</p>
               <p className="mt-1 text-xl font-semibold tracking-tight text-emerald-700">{formatMoney(periodCollected)}</p>
             </div>
-            <div className="sm:border-l sm:border-zinc-200 sm:pl-4">
+            <div className="sm:border-l sm:border-line sm:pl-4">
               <p className="text-[10px] font-bold tracking-[.12em] text-zinc-600 uppercase">{isAnnualView ? "Objectif annuel" : "Objectif du mois"}</p>
               <p className="tone-text mt-1 text-xl font-semibold tracking-tight" data-tone="blue">{formatMoney(periodObjective)}</p>
               {isAnnualView && <p className="mt-1 text-[10px] text-zinc-500">Somme des 12 objectifs mensuels</p>}
             </div>
           </div>
           <div className="mb-3 flex flex-wrap items-center gap-4 text-[11px] font-semibold text-zinc-500">
-            <span className="flex items-center gap-2"><span className="size-2.5 rounded-sm bg-[#16735a]" /> Encaissements</span>
-            <span className="flex items-center gap-2"><span className="h-0 w-5 border-t-2 border-dashed border-[#216a9b]" /> Objectif</span>
+            <span className="flex items-center gap-2"><span className="size-2.5 rounded-sm bg-[var(--chart-green)]" /> Encaissements</span>
+            <span className="flex items-center gap-2"><span className="h-0 w-5 border-t-2 border-dashed border-[var(--chart-blue)]" /> Objectif</span>
           </div>
           <div className="overflow-x-auto pb-2">
             <div className="h-[285px] min-w-0">
@@ -98,23 +98,23 @@ export function DashboardCharts({
                 <ComposedChart data={revenue} margin={{ top: 12, right: 8, left: 4, bottom: 0 }}>
                   <defs>
                     <linearGradient id="dashboardRevenueBar" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#299174" />
-                      <stop offset="100%" stopColor="#16735a" />
+                      <stop offset="0%" stopColor="var(--chart-green-top)" />
+                      <stop offset="100%" stopColor="var(--chart-green)" />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid vertical={false} stroke="rgba(41,50,71,.085)" strokeDasharray="4 5" />
-                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#6c7068", fontSize: 10, fontWeight: 600 }} dy={8} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fill: "#74796f", fontSize: 10 }} tickFormatter={formatAxisMoney} width={42} />
+                  <CartesianGrid vertical={false} stroke="var(--chart-grid)" strokeDasharray="4 5" />
+                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "var(--muted)", fontSize: 10, fontWeight: 600 }} dy={8} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: "var(--muted)", fontSize: 10 }} tickFormatter={formatAxisMoney} width={42} />
                   <Tooltip
-                    cursor={{ fill: "rgba(41,43,41,.04)" }}
+                    cursor={{ fill: "var(--chart-cursor)" }}
                     contentStyle={tooltipStyle}
-                    labelStyle={{ color: "#20221f", fontWeight: 800, marginBottom: 6 }}
+                    labelStyle={{ color: "var(--text)", fontWeight: 800, marginBottom: 6 }}
                     formatter={(value, name) => [tooltipMoney(value), name === "collected" || name === "CA encaissé" ? "CA encaissé" : "Objectif"]}
                   />
                   <Bar dataKey="collected" name="CA encaissé" fill="url(#dashboardRevenueBar)" radius={[7, 7, 3, 3]} maxBarSize={30} animationDuration={700}>
                     {revenue.map((item) => <Cell key={item.key} fill="url(#dashboardRevenueBar)" opacity={!focusMonth || item.key === focusMonth ? 1 : 0.22} />)}
                   </Bar>
-                  <Line dataKey="objective" name="Objectif" type="monotone" stroke="#216a9b" strokeWidth={2.5} strokeDasharray="6 5" connectNulls={false} dot={{ r: 4, fill: "#ffffff", stroke: "#216a9b", strokeWidth: 2 }} activeDot={{ r: 6, fill: "#216a9b", stroke: "#ffffff", strokeWidth: 3 }} animationDuration={700} />
+                  <Line dataKey="objective" name="Objectif" type="monotone" stroke="var(--chart-blue)" strokeWidth={2.5} strokeDasharray="6 5" connectNulls={false} dot={{ r: 4, fill: "var(--surface)", stroke: "var(--chart-blue)", strokeWidth: 2 }} activeDot={{ r: 6, fill: "var(--chart-blue)", stroke: "var(--surface)", strokeWidth: 3 }} animationDuration={700} />
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
@@ -134,7 +134,7 @@ export function DashboardCharts({
           <Badge variant={annualCashFlow >= 0 ? "green" : "red"}>{annualCashFlow >= 0 ? "Positif" : "Négatif"}</Badge>
         </CardHeader>
         <CardContent className="pt-1">
-          <div className="mb-5 rounded-2xl border border-black/[0.06] bg-brand-50/60 p-4 shadow-sm">
+          <div className="mb-5 rounded-2xl border border-contrast/[0.06] bg-brand-50/60 p-4 shadow-sm">
             <div className="grid gap-3 sm:grid-cols-3">
               <div>
                 <p className="text-[10px] font-bold tracking-[.12em] text-zinc-500 uppercase">Solde après charges prévues</p>
@@ -143,13 +143,13 @@ export function DashboardCharts({
                   {formatMoney(annualCashFlow)}
                 </p>
               </div>
-              <div className="sm:border-l sm:border-zinc-200 sm:pl-4"><p className="text-[10px] font-bold tracking-[.12em] text-zinc-500 uppercase">Charges prévues</p><p className="tone-text mt-1 text-lg font-semibold" data-tone="amber">{formatMoney(periodExpenses)}</p></div>
-              <div className="sm:border-l sm:border-zinc-200 sm:pl-4"><p className="text-[10px] font-bold tracking-[.12em] text-zinc-500 uppercase">Déjà décaissé</p><p className="mt-1 text-lg font-semibold text-zinc-800">{formatMoney(periodPaidExpenses)}</p></div>
+              <div className="sm:border-l sm:border-line sm:pl-4"><p className="text-[10px] font-bold tracking-[.12em] text-zinc-500 uppercase">Charges prévues</p><p className="tone-text mt-1 text-lg font-semibold" data-tone="amber">{formatMoney(periodExpenses)}</p></div>
+              <div className="sm:border-l sm:border-line sm:pl-4"><p className="text-[10px] font-bold tracking-[.12em] text-zinc-500 uppercase">Déjà décaissé</p><p className="mt-1 text-lg font-semibold text-zinc-800">{formatMoney(periodPaidExpenses)}</p></div>
             </div>
           </div>
           <div className="mb-3 flex flex-wrap items-center gap-4 text-[11px] font-semibold text-zinc-500">
-            <span className="flex items-center gap-2"><span className="size-2.5 rounded-sm bg-emerald-500" /> Solde positif</span>
-            <span className="flex items-center gap-2"><span className="size-2.5 rounded-sm bg-red-500" /> Solde négatif</span>
+            <span className="flex items-center gap-2"><span className="size-2.5 rounded-sm bg-[var(--chart-green)]" /> Solde positif</span>
+            <span className="flex items-center gap-2"><span className="size-2.5 rounded-sm bg-[var(--chart-red)]" /> Solde négatif</span>
             <span className="ml-auto">{positiveMonths} mois positif(s) · {negativeMonths} négatif(s)</span>
           </div>
           <div className="overflow-x-auto pb-2">
@@ -158,22 +158,22 @@ export function DashboardCharts({
                 <BarChart data={cashFlow} margin={{ top: 12, right: 8, left: 4, bottom: 0 }}>
                   <defs>
                     <linearGradient id="dashboardCashPositive" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#52ad8b" />
-                      <stop offset="100%" stopColor="#16735a" />
+                      <stop offset="0%" stopColor="var(--chart-green-top)" />
+                      <stop offset="100%" stopColor="var(--chart-green)" />
                     </linearGradient>
                     <linearGradient id="dashboardCashNegative" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#df7182" />
-                      <stop offset="100%" stopColor="#b43c50" />
+                      <stop offset="0%" stopColor="var(--chart-red-top)" />
+                      <stop offset="100%" stopColor="var(--chart-red)" />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid vertical={false} stroke="rgba(41,50,71,.085)" strokeDasharray="4 5" />
-                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "#6c7068", fontSize: 10, fontWeight: 600 }} dy={8} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fill: "#74796f", fontSize: 10 }} tickFormatter={formatAxisMoney} width={42} />
-                  <ReferenceLine y={0} stroke="#74796f" strokeWidth={1.4} />
+                  <CartesianGrid vertical={false} stroke="var(--chart-grid)" strokeDasharray="4 5" />
+                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: "var(--muted)", fontSize: 10, fontWeight: 600 }} dy={8} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fill: "var(--muted)", fontSize: 10 }} tickFormatter={formatAxisMoney} width={42} />
+                  <ReferenceLine y={0} stroke="var(--muted)" strokeWidth={1.4} />
                   <Tooltip
-                    cursor={{ fill: "rgba(41,43,41,.04)" }}
+                    cursor={{ fill: "var(--chart-cursor)" }}
                     contentStyle={tooltipStyle}
-                    labelStyle={{ color: "#20221f", fontWeight: 800, marginBottom: 6 }}
+                    labelStyle={{ color: "var(--text)", fontWeight: 800, marginBottom: 6 }}
                     formatter={(value) => [tooltipMoney(value), "Encaissements − charges prévues"]}
                   />
                   <Bar dataKey="cashFlow" name="Solde après charges prévues" radius={[7, 7, 7, 7]} maxBarSize={28} animationDuration={700}>
