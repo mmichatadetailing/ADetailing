@@ -105,13 +105,13 @@ export function PlanningToolbar({
   return (
     <div
       ref={containerRef}
-      className="planning-toolbar sticky top-[var(--app-header-height)] z-20 rounded-2xl border border-black/[.08] bg-white/95 shadow-[0_4px_18px_rgba(22,25,20,.05)] backdrop-blur-xl"
+      className="planning-toolbar sticky top-[var(--app-header-height)] z-20 rounded-2xl border border-contrast/[.08] bg-surface/95 shadow-[0_4px_18px_rgba(22,25,20,.05)] backdrop-blur-xl"
       data-planning-controls
       onBlur={(event) => { if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) setPanel(null); }}
     >
       <nav aria-label="Navigation du planning" className="planning-toolbar-main">
         <div className="planning-toolbar-quick-actions">
-        <div className="planning-toolbar-navigation flex shrink-0 items-center rounded-xl border border-black/[.08] bg-slate-50/80 p-0.5">
+        <div className="planning-toolbar-navigation flex shrink-0 items-center rounded-xl border border-contrast/[.08] bg-slate-50/80 p-0.5">
           <Button variant="ghost" size="icon" className="size-9 min-h-9 sm:size-10" aria-label="Période précédente" title="Période précédente (←)" onClick={() => { setPanel(null); onNavigate(-1); }}><ChevronLeft className="size-4" /></Button>
           <Button variant="ghost" size="sm" className="min-h-9 px-2 sm:min-h-10" title="Aujourd’hui (T)" onClick={() => { setPanel(null); onToday(); }}>Aujourd’hui</Button>
           <Button variant="ghost" size="icon" className="size-9 min-h-9 sm:size-10" aria-label="Période suivante" title="Période suivante (→)" onClick={() => { setPanel(null); onNavigate(1); }}><ChevronRight className="size-4" /></Button>
@@ -119,7 +119,7 @@ export function PlanningToolbar({
 
         <Button ref={filtersRef} variant="secondary" className={cn("planning-toolbar-filters min-h-10 shrink-0 gap-1.5 px-2.5 shadow-none", (panel === "filters" || activeFilters.length > 0) && "border-brand-400/40 bg-brand-50 text-brand-600")} aria-label={`Filtres${activeFilters.length ? ` : ${activeFilters.length} actif(s)` : ""}`} aria-expanded={panel === "filters"} aria-controls={panel === "filters" ? panelId : undefined} title="Filtrer le planning" onClick={() => setPanel((current) => current === "filters" ? null : "filters")}>
           <SlidersHorizontal className="size-4" /><span className="planning-toolbar-filter-label">Filtres</span>
-          {activeFilters.length > 0 && <span className="planning-toolbar-filter-count grid size-4 place-items-center rounded-full bg-brand-600 text-[10px] text-white">{activeFilters.length}</span>}
+          {activeFilters.length > 0 && <span className="planning-toolbar-filter-count grid size-4 place-items-center rounded-full bg-brand-600 text-[10px] text-on-accent">{activeFilters.length}</span>}
         </Button>
         <Button className="planning-toolbar-add min-h-10 shrink-0 gap-1.5 px-3 text-xs" aria-label="Ajouter un événement" title="Ajouter un événement" onClick={() => { setPanel(null); onAdd(); }}><Plus className="size-4" /><span className="planning-toolbar-add-label">Ajouter</span></Button>
         </div>
@@ -139,8 +139,8 @@ export function PlanningToolbar({
         </button>
 
         <div className="planning-toolbar-views shrink-0">
-          <div className="planning-toolbar-view-buttons items-center gap-0.5 rounded-xl border border-black/[.08] bg-slate-50/80 p-0.5" role="group" aria-label="Vue du planning">
-            {views.map((entry) => <Button key={entry.id} size="sm" variant="ghost" aria-pressed={view === entry.id} className={cn("min-h-10 px-3", view === entry.id && "bg-white text-brand-600 shadow-sm ring-1 ring-black/5")} onClick={() => { setPanel(null); onChangeView(entry.id); }}>{entry.label}</Button>)}
+          <div className="planning-toolbar-view-buttons items-center gap-0.5 rounded-xl border border-contrast/[.08] bg-slate-50/80 p-0.5" role="group" aria-label="Vue du planning">
+            {views.map((entry) => <Button key={entry.id} size="sm" variant="ghost" aria-pressed={view === entry.id} className={cn("min-h-10 px-3", view === entry.id && "bg-surface text-brand-600 shadow-sm ring-1 ring-contrast/5")} onClick={() => { setPanel(null); onChangeView(entry.id); }}>{entry.label}</Button>)}
           </div>
           <Select aria-label="Vue du planning" className="planning-toolbar-view-select min-h-10 w-[106px] rounded-xl py-1 text-xs shadow-none" value={view} onChange={(event) => { setPanel(null); onChangeView(event.target.value as CalendarView); }}>
             {views.map((entry) => <option key={entry.id} value={entry.id}>{entry.label}</option>)}
@@ -149,7 +149,7 @@ export function PlanningToolbar({
         </div>
       </nav>
 
-      <div className="flex min-h-9 items-center gap-2 border-t border-black/[.05] px-2.5 py-1 text-[11px] text-slate-600 sm:px-3">
+      <div className="flex min-h-9 items-center gap-2 border-t border-contrast/[.05] px-2.5 py-1 text-[11px] text-slate-600 sm:px-3">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1">
           {activeFilters.length > 0 ? (
             <button type="button" className="focus-ring inline-flex max-w-full items-center gap-1 rounded-md text-brand-600 hover:underline" onClick={onResetFilters} title={`Effacer les filtres : ${activeFilters.join(", ")}`} aria-label="Effacer tous les filtres"><span className="max-w-[180px] truncate sm:max-w-[280px]">{activeFilters.join(" · ")}</span><X className="size-3 shrink-0" /></button>
@@ -168,7 +168,7 @@ export function PlanningToolbar({
         <Button ref={helpRef} size="icon" variant="ghost" className="size-7 min-h-7 shrink-0" aria-label="Légende et raccourcis" title="Légende et raccourcis" aria-expanded={panel === "help"} aria-controls={panel === "help" ? panelId : undefined} onClick={() => setPanel((current) => current === "help" ? null : "help")}><HelpCircle className="size-4" /></Button>
       </div>
 
-      {panel && <div ref={panelRef} id={panelId} role="region" aria-label={panel === "filters" ? "Filtres du planning" : "Aide du planning"} className="absolute right-0 left-0 top-[calc(100%+.5rem)] max-h-[calc(100dvh-var(--app-header-height)-210px)] overflow-y-auto rounded-2xl border border-black/10 bg-white p-4 shadow-[0_18px_48px_rgba(47,40,72,.18)] sm:left-auto sm:w-[380px]">
+      {panel && <div ref={panelRef} id={panelId} role="region" aria-label={panel === "filters" ? "Filtres du planning" : "Aide du planning"} className="absolute right-0 left-0 top-[calc(100%+.5rem)] max-h-[calc(100dvh-var(--app-header-height)-210px)] overflow-y-auto rounded-2xl border border-contrast/10 bg-surface p-4 shadow-[0_18px_48px_rgba(47,40,72,.18)] sm:left-auto sm:w-[380px]">
         {panel === "filters" ? <>
           <div className="mb-4 flex items-center justify-between gap-2"><h2 className="text-sm font-bold text-slate-900">Filtres du planning</h2><Button variant="ghost" size="sm" disabled={!activeFilters.length} onClick={onResetFilters}>Réinitialiser</Button></div>
           <div className="grid gap-3">
@@ -185,7 +185,7 @@ export function PlanningToolbar({
             <li className="flex items-center gap-2"><span className="size-2.5 rounded-full bg-sky-500" /> Google Calendar</li>
             <li className="flex items-center gap-2"><span className="size-2.5 rounded-full ring-2 ring-red-500" /> Conflit de planning</li>
           </ul>
-          <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 border-t border-black/[.06] pt-3 text-xs text-slate-600"><dt>← / →</dt><dd>Période précédente / suivante</dd><dt>T</dt><dd>Aujourd’hui</dd><dt>J / S / M / L</dt><dd>Jour / Semaine / Mois / Timeline</dd></dl>
+          <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 border-t border-contrast/[.06] pt-3 text-xs text-slate-600"><dt>← / →</dt><dd>Période précédente / suivante</dd><dt>T</dt><dd>Aujourd’hui</dd><dt>J / S / M / L</dt><dd>Jour / Semaine / Mois / Timeline</dd></dl>
         </>}
       </div>}
     </div>

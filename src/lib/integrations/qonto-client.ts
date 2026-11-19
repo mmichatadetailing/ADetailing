@@ -2,6 +2,7 @@ import { z } from "zod";
 import Decimal from "decimal.js";
 import type { QontoInvoice } from "@/lib/domain/qonto-invoices";
 import { downloadQontoInvoicePdf, unavailableInvoicePdf } from "@/lib/integrations/qonto-invoice-pdf";
+import { summarizeQontoBalances } from "@/lib/domain/qonto-balance";
 const remoteTransaction = z.object({
   transaction_id: z.string().min(1).optional(), id: z.string().min(1), amount_cents: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   currency: z.string(), side: z.enum(["credit", "debit"]), status: z.enum(["pending", "completed", "declined", "reversed"]),
@@ -54,6 +55,9 @@ export class QontoClient {
   async organization() {
     const result = z.object({ organization: z.object({ id: z.string(), legal_name: z.string(), bank_accounts: z.array(z.object({ id: z.string().optional(), iban: z.string(), name: z.string(), currency: z.string(), status: z.string().optional() })) }) }).parse(await this.get("organization"));
     return { id: result.organization.id, name: result.organization.legal_name, accounts: result.organization.bank_accounts.filter((account) => account.currency === "EUR").map((account) => ({ ...account, id: account.id ?? account.iban })) };
+  }
+  async balance(organizationId: string, signal?: AbortSignal) {
+    return summarizeQontoBalances(await this.get("organization", new URLSearchParams({ include_external_accounts: "false" }), signal), organizationId);
   }
   async transactions(account: QontoAccount, from: string, to: string, page: number) {
     const params = new URLSearchParams({ iban: account.iban, updated_at_from: from, updated_at_to: to, sort_by: "updated_at:asc", per_page: "100", page: String(page) });

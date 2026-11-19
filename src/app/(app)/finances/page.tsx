@@ -121,7 +121,7 @@ function ExpenseEditor({ expense, onCancel, onSave }: { expense: Expense; onCanc
         <Field label="Montant TTC (€)"><Input min="0.01" step="0.01" type="number" value={amountEuros} onChange={(event) => setAmountEuros(Number(event.target.value))} /></Field>
         <Field label="TVA (%)"><Input min="0" max="100" step="0.1" type="number" value={vatRate} onChange={(event) => setVatRate(Number(event.target.value))} /></Field>
       </div>
-      <label className="flex items-center gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-sm font-semibold text-zinc-700"><input type="checkbox" className="accent-brand-500" checked={paid} onChange={(event) => setPaid(event.target.checked)} /> {recurrence === "one_off" ? "Dépense déjà payée" : "Prélèvement automatique à chaque échéance"}</label>
+      <label className="flex items-center gap-3 rounded-xl border border-line bg-zinc-50 p-3 text-sm font-semibold text-zinc-700"><input type="checkbox" className="accent-brand-500" checked={paid} onChange={(event) => setPaid(event.target.checked)} /> {recurrence === "one_off" ? "Dépense déjà payée" : "Prélèvement automatique à chaque échéance"}</label>
       {recurrence !== "one_off" && <p className="-mt-2 text-[11px] leading-5 text-zinc-500">Même décochée, la charge reste incluse dans le total prévu. Cochez uniquement si elle doit être déduite automatiquement de la trésorerie le jour prévu.</p>}
       <div className="flex justify-end gap-2 pt-2"><Button variant="ghost" onClick={onCancel}>Annuler</Button><Button type="submit"><Save className="size-4" /> {isRecurringRevision ? "Appliquer à partir de cette date" : "Enregistrer les modifications"}</Button></div>
     </form>
@@ -199,7 +199,7 @@ export default function FinancesPage() {
           <p className="flex items-center gap-2 text-sm font-bold text-red-700"><TriangleAlert className="size-4" /> Cette charge disparaîtra de vos calculs</p>
           <p className="mt-2 text-xs leading-5 text-red-600">{deletingExpense?.recurrence === "one_off" ? "Le décaissement ponctuel ne sera plus comptabilisé dans la trésorerie ni dans les statistiques." : "Les projections de la version actuelle seront retirées. Les anciens tarifs déjà historisés resteront conservés."}</p>
         </div>
-        {deletingExpense && <div className="mt-4 grid gap-2 rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-xs text-zinc-600"><p><strong className="text-zinc-900">{deletingExpense.description}</strong> · {formatMoney(deletingExpense.amountIncludingTax)}</p><p>{recurrenceLabels[deletingExpense.recurrence]} · première date le {formatDate(deletingExpense.date)}</p></div>}
+        {deletingExpense && <div className="mt-4 grid gap-2 rounded-xl border border-line bg-zinc-50 p-4 text-xs text-zinc-600"><p><strong className="text-zinc-900">{deletingExpense.description}</strong> · {formatMoney(deletingExpense.amountIncludingTax)}</p><p>{recurrenceLabels[deletingExpense.recurrence]} · première date le {formatDate(deletingExpense.date)}</p></div>}
         <div className="mt-5 flex justify-end gap-2"><Button variant="ghost" onClick={() => setDeletingExpense(null)}>Annuler</Button><Button variant="danger" onClick={deleteExpense}><Trash2 className="size-4" /> Supprimer définitivement</Button></div>
       </Modal>
 
@@ -225,7 +225,7 @@ export default function FinancesPage() {
       {cash < data.settings.cashSafetyBuffer && (
         <div className="flex items-start gap-3 rounded-2xl border border-red-400/20 bg-red-400/[0.055] p-4">
           <ShieldCheck className="mt-0.5 size-5 text-red-300" />
-          <div><p className="text-sm font-bold text-red-200">Trésorerie sous la marge de sécurité</p><p className="mt-1 text-xs text-zinc-500">La marge configurée est de {formatMoney(data.settings.cashSafetyBuffer)}.</p></div>
+          <div><p className="text-sm font-bold text-red-300">Trésorerie sous la marge de sécurité</p><p className="mt-1 text-xs text-zinc-500">La marge configurée est de {formatMoney(data.settings.cashSafetyBuffer)}.</p></div>
         </div>
       )}
 
@@ -243,14 +243,14 @@ export default function FinancesPage() {
         </CardHeader>
         <CardContent className="grid gap-2">
           {monthSummary.occurrences.map((occurrence) => (
-            <div key={occurrence.expense.id} className="grid gap-3 rounded-2xl border border-zinc-200 bg-zinc-50/80 p-4 transition hover:border-orange-200 hover:bg-orange-50/60 sm:grid-cols-[110px_minmax(0,1fr)_auto_auto] sm:items-center">
+            <div key={occurrence.expense.id} className="grid gap-3 rounded-2xl border border-line bg-zinc-50/80 p-4 transition hover:border-orange-200 hover:bg-orange-50/60 sm:grid-cols-[110px_minmax(0,1fr)_auto_auto] sm:items-center">
               <div><p className="text-xs font-bold text-zinc-900">{formatDate(occurrence.dueDate, { day: "2-digit", month: "long" })}</p><p className="mt-1 text-[10px] text-zinc-500">{recurrenceLabels[occurrence.expense.recurrence]}</p></div>
               <div className="min-w-0"><p className="truncate text-sm font-bold text-zinc-900">{occurrence.expense.description}</p><p className="mt-1 truncate text-xs text-zinc-500">{occurrence.expense.category}{occurrence.expense.supplier ? ` · ${occurrence.expense.supplier}` : ""}</p></div>
               <div className="flex items-center gap-2 sm:justify-end"><Badge variant={occurrence.status === "paid" ? "green" : occurrence.status === "due" ? "yellow" : "blue"}>{occurrenceLabels[occurrence.status]}</Badge><p className="min-w-20 text-right text-sm font-extrabold text-zinc-900">{formatMoney(occurrence.amount)}</p></div>
               {canManage ? !occurrence.expense.endsAt ? <Button size="sm" variant="secondary" onClick={() => setEditingExpense(occurrence.expense)}><Pencil className="size-3.5" /> Modifier</Button> : <Badge variant="neutral">Historique</Badge> : null}
             </div>
           ))}
-          {monthSummary.occurrences.length === 0 && <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 p-8 text-center"><ReceiptText className="mx-auto size-6 text-zinc-400" /><p className="mt-2 text-sm font-bold text-zinc-700">Aucune charge prévue</p><p className="mt-1 text-xs text-zinc-500">Ajoutez une dépense ponctuelle ou une première échéance pour ce mois.</p></div>}
+          {monthSummary.occurrences.length === 0 && <div className="rounded-2xl border border-dashed border-line bg-zinc-50 p-8 text-center"><ReceiptText className="mx-auto size-6 text-zinc-400" /><p className="mt-2 text-sm font-bold text-zinc-700">Aucune charge prévue</p><p className="mt-1 text-xs text-zinc-500">Ajoutez une dépense ponctuelle ou une première échéance pour ce mois.</p></div>}
         </CardContent>
       </Card>
 
@@ -262,7 +262,7 @@ export default function FinancesPage() {
         <CardContent>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             {forecast.map((month) => (
-              <button key={month.month} type="button" onClick={() => setSelectedMonth(month.month)} className={`focus-ring rounded-2xl border p-3 text-left transition hover:-translate-y-0.5 hover:border-orange-300 hover:shadow-md ${month.month === selectedMonth ? "border-orange-300 bg-orange-50 shadow-sm" : "border-zinc-200 bg-white"}`}>
+              <button key={month.month} type="button" onClick={() => setSelectedMonth(month.month)} className={`focus-ring rounded-2xl border p-3 text-left transition hover:-translate-y-0.5 hover:border-orange-300 hover:shadow-md ${month.month === selectedMonth ? "border-orange-300 bg-orange-50 shadow-sm" : "border-line bg-surface"}`}>
                 <div className="flex items-center justify-between gap-2"><p className="text-[11px] font-bold capitalize text-zinc-600">{formatMonth(month.month, "short")}</p>{month.annual > 0 && <Badge variant="blue">annuelle</Badge>}</div>
                 <p className="mt-3 text-lg font-extrabold text-zinc-900">{formatMoney(month.total)}</p>
                 <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-zinc-100"><div className="h-full rounded-full bg-brand-500" style={{ width: `${Math.max(month.total > 0 ? 8 : 0, Math.round(month.total / forecastMaximum * 100))}%` }} /></div>
@@ -303,9 +303,9 @@ export default function FinancesPage() {
           <CardContent className="overflow-x-auto px-0 pb-1">
             <table className="w-full min-w-[1120px] text-left text-xs">
               <thead className="text-[10px] tracking-wider text-zinc-600 uppercase"><tr>{["Période / date", "Fréquence", "Famille", "Catégorie", "Fournisseur", "Description", "TTC / échéance", "TVA", "Paiement", "Actions"].map((head) => <th key={head} className="px-4 py-3 font-semibold first:pl-5 last:pr-5">{head}</th>)}</tr></thead>
-              <tbody className="divide-y divide-zinc-100">
+              <tbody className="divide-y divide-line">
                 {visibleExpenses.map((expense) => (
-                  <tr key={expense.id} className="hover:bg-white/[0.02]">
+                  <tr key={expense.id} className="hover:bg-surface/[0.02]">
                     <td className="px-4 py-4 pl-5 text-zinc-500"><p>{formatDate(expense.date)}</p>{expense.endsAt && <p className="mt-1 text-[10px]">jusqu’au {formatDate(expense.endsAt)}</p>}</td>
                     <td className="px-4 py-4"><div className="flex flex-wrap gap-1"><Badge variant={expense.recurrence === "one_off" ? "neutral" : "blue"}>{recurrenceLabels[expense.recurrence]}</Badge>{expense.endsAt && <Badge variant="neutral">Historique</Badge>}</div></td>
                     <td className="px-4 py-4"><Badge>{familyLabels[expense.family]}</Badge></td>

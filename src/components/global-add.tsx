@@ -94,7 +94,7 @@ function ClientForm({ close, onDirtyChange, onBusyChange }: { close: () => void;
         <Field label="Ville (facultatif)"><Input {...register("city")} /></Field>
         <Field label="Source"><Select {...register("source")}>{settings.leadSources.map((source) => <option key={source}>{source}</option>)}</Select></Field>
       </div>
-      <div className="mt-2 rounded-2xl border border-white/[0.07] bg-white/[0.025] p-4">
+      <div className="mt-2 rounded-2xl border border-white/[0.07] bg-surface/[0.025] p-4">
         <p className="mb-4 text-sm font-semibold">Premier véhicule <span className="font-normal text-zinc-500">· optionnel</span></p>
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Marque"><Input {...register("vehicleMake")} /></Field>
@@ -221,13 +221,13 @@ export function AppointmentForm({ close, initialSlot, allowedMemberIds, onCreate
     }
   };
 
-  if (activeClients.length === 0) return <div className="rounded-2xl border border-dashed border-zinc-200 p-8 text-center"><p className="text-sm font-bold">Créez d’abord un client</p><p className="mt-2 text-xs text-zinc-500">Un rendez-vous doit être rattaché à un client. Le véhicule reste facultatif.</p></div>;
+  if (activeClients.length === 0) return <div className="rounded-2xl border border-dashed border-line p-8 text-center"><p className="text-sm font-bold">Créez d’abord un client</p><p className="mt-2 text-xs text-zinc-500">Un rendez-vous doit être rattaché à un client. Le véhicule reste facultatif.</p></div>;
 
   return (
     <div className="grid gap-4">
       <div className="grid grid-cols-2 gap-2 rounded-2xl bg-zinc-100 p-1">
-        <button type="button" aria-pressed={!completed} onClick={() => { setCompleted(false); if (!initialSlot) { const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1); setDate(localPlanningDateTime(tomorrow).slice(0, 10)); } }} className={`focus-ring rounded-xl px-3 py-2.5 text-xs font-bold transition ${!completed ? "bg-white text-brand-700 shadow-sm" : "text-zinc-500"}`}><CalendarPlus2 className="mr-1.5 inline size-3.5" /> Rendez-vous à venir</button>
-        <button type="button" aria-pressed={completed} onClick={() => { setCompleted(true); if (!initialSlot) setDate(localPlanningDateTime(new Date()).slice(0, 10)); }} className={`focus-ring rounded-xl px-3 py-2.5 text-xs font-bold transition ${completed ? "bg-white text-emerald-700 shadow-sm" : "text-zinc-500"}`}><CheckCircle2 className="mr-1.5 inline size-3.5" /> Déjà effectuée</button>
+        <button type="button" aria-pressed={!completed} onClick={() => { setCompleted(false); if (!initialSlot) { const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1); setDate(localPlanningDateTime(tomorrow).slice(0, 10)); } }} className={`focus-ring rounded-xl px-3 py-2.5 text-xs font-bold transition ${!completed ? "bg-surface text-brand-700 shadow-sm" : "text-zinc-500"}`}><CalendarPlus2 className="mr-1.5 inline size-3.5" /> Rendez-vous à venir</button>
+        <button type="button" aria-pressed={completed} onClick={() => { setCompleted(true); if (!initialSlot) setDate(localPlanningDateTime(new Date()).slice(0, 10)); }} className={`focus-ring rounded-xl px-3 py-2.5 text-xs font-bold transition ${completed ? "bg-surface text-emerald-700 shadow-sm" : "text-zinc-500"}`}><CheckCircle2 className="mr-1.5 inline size-3.5" /> Déjà effectuée</button>
       </div>
       <div className={`rounded-2xl border p-4 ${completed ? "border-emerald-200 bg-emerald-50/70" : "border-brand-200 bg-brand-50/70"}`}><p className={`flex items-center gap-2 text-sm font-bold ${completed ? "text-emerald-800" : "text-brand-700"}`}>{completed ? <CheckCircle2 className="size-4" /> : <CalendarPlus2 className="size-4" />} {completed ? "Ajouter une prestation terminée" : "Nouveau rendez-vous"}</p><p className={`mt-1 text-xs ${completed ? "text-emerald-700" : "text-brand-600"}`}>{completed ? "Le dossier s’ouvrira directement sur l’encaissement, avec les temps prévus repris comme temps réalisés." : "Les informations pourront être modifiées ensuite depuis la fiche prestation."}</p></div>
       <div className="grid gap-4 sm:grid-cols-2">
@@ -241,7 +241,7 @@ export function AppointmentForm({ close, initialSlot, allowedMemberIds, onCreate
           <div className="grid gap-2">
             <Input list="adetailing-service-options" value={serviceLabel} onChange={(event) => chooseServiceLabel(event.target.value)} placeholder="Ex. Formule Premium ou nettoyage ponctuel" autoComplete="off" />
             <datalist id="adetailing-service-options">{activeServices.map((service) => <option key={service.id} value={service.name} />)}</datalist>
-            {activeServices.length > 0 && <div className="flex flex-wrap gap-1.5" aria-label="Prestations enregistrées">{activeServices.slice(0, 5).map((service) => <button key={service.id} type="button" onClick={() => chooseServiceLabel(service.name)} className={`focus-ring rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition ${serviceId === service.id ? "border-brand-300 bg-brand-50 text-brand-700" : "border-zinc-200 bg-white text-zinc-500 hover:border-brand-200 hover:text-brand-700"}`}>{service.name}</button>)}</div>}
+            {activeServices.length > 0 && <div className="flex flex-wrap gap-1.5" aria-label="Prestations enregistrées">{activeServices.slice(0, 5).map((service) => <button key={service.id} type="button" onClick={() => chooseServiceLabel(service.name)} className={`focus-ring rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition ${serviceId === service.id ? "border-brand-300 bg-brand-50 text-brand-700" : "border-line bg-surface text-zinc-500 hover:border-brand-200 hover:text-brand-700"}`}>{service.name}</button>)}</div>}
           </div>
         </Field>
         <Field label="Prix final prévu (€)" hint="Libre et modifiable pour cette prestation."><Input min="0" step="0.01" type="number" value={priceEuros} onChange={(event) => setPriceEuros(Number(event.target.value))} /></Field>
@@ -302,7 +302,7 @@ function ExpenseForm({ close, onDirtyChange, onBusyChange }: { close: () => void
         <Field label="Montant TTC (€)" error={errors.amountEuros?.message}><Input type="number" step="0.01" {...register("amountEuros", { valueAsNumber: true })} /></Field>
         <Field label="TVA (%)"><Input type="number" step="0.1" {...register("vatRate", { valueAsNumber: true })} /></Field>
       </div>
-      <label className="flex items-center gap-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-sm font-semibold text-zinc-700"><input type="checkbox" className="accent-brand-500" {...register("paid")} /> {recurrence === "one_off" ? "Dépense déjà payée" : "Prélèvement automatique à chaque échéance"}</label>
+      <label className="flex items-center gap-3 rounded-xl border border-line bg-zinc-50 p-3 text-sm font-semibold text-zinc-700"><input type="checkbox" className="accent-brand-500" {...register("paid")} /> {recurrence === "one_off" ? "Dépense déjà payée" : "Prélèvement automatique à chaque échéance"}</label>
       {recurrence !== "one_off" && <p className="-mt-2 text-[11px] leading-5 text-zinc-500">La charge figurera toujours dans le prévisionnel. Cochez cette option uniquement si elle doit aussi être considérée comme décaissée automatiquement le jour de l’échéance.</p>}
       <Button type="submit" className="mt-2" disabled={isSubmitting}>{isSubmitting ? "Enregistrement…" : "Enregistrer la dépense"}</Button>
     </form>
@@ -350,7 +350,7 @@ export function GlobalAdd() {
     <>
       <Button onClick={() => setOpen(true)} aria-label="Ajouter"><Plus className="size-4" /> <span className="hidden sm:inline">Ajouter</span></Button>
       <Modal open={open} onClose={requestClose} title="Ajouter" description="Une saisie courte, le reste pourra être complété plus tard.">
-        <div className={`mb-5 grid gap-2 rounded-xl bg-white/[0.035] p-1 ${canManage ? "grid-cols-3" : "grid-cols-1"}`}>
+        <div className={`mb-5 grid gap-2 rounded-xl bg-surface/[0.035] p-1 ${canManage ? "grid-cols-3" : "grid-cols-1"}`}>
           {addKinds.map(([value, label]) => (
             <button key={value} disabled={busy} data-active={kind === value} className={`focus-ring tab-interactive rounded-lg px-3 py-2 text-xs font-semibold ${kind === value ? 'bg-brand-50 text-brand-700 shadow-sm' : 'text-zinc-500'}`} onClick={() => selectKind(value)}>{label}</button>
           ))}

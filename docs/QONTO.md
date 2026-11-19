@@ -131,6 +131,29 @@ en mélangeant leurs historiques.
 
 ## 6. Rapprocher les opérations
 
+### Consulter la trésorerie actuelle sur le dashboard
+
+La carte **Trésorerie actuelle** affiche la somme des soldes comptabilisés des comptes
+Qonto actifs en euros de l’entreprise. Le disponible est indiqué séparément lorsque
+Qonto le communique pour tous ces comptes. Ce montant est lu directement auprès de
+Qonto : il ne dépend ni du filtre de période du dashboard, ni de l’avancement des
+rapprochements, ni d’un calcul « recettes moins charges ». Les comptes clôturés,
+les devises étrangères et les comptes bancaires externes ne sont pas inclus.
+
+Le solde est relu à l’ouverture du dashboard, toutes les deux minutes tant que
+l’onglet est visible, et au retour sur l’onglet après au moins 30 secondes depuis
+la dernière tentative. Le bouton **Actualiser** permet de le relire immédiatement.
+La date affichée est celle de la consultation réussie de Qonto. En cas d’échec,
+le dernier solde reste visible avec un avertissement ; une donnée absente n’est
+jamais remplacée par zéro. Une connexion en pause n’est pas interrogée.
+
+Cette carte est réservée aux associés et administrateurs. Elle ne fait aucun appel
+bancaire et n’affiche aucun solde fictif en démonstration. Aucun secret, IBAN ou
+détail de transaction n’est renvoyé avec le solde. Elle réutilise la connexion
+existante : aucune nouvelle migration ni variable d’environnement n’est nécessaire.
+
+Source des soldes : [API officielle des comptes Qonto](https://docs.qonto.com/api-reference/business-api/organization-accounts/organizations/retrieve-the-authenticated-organization-and-list-bank-accounts).
+
 ### Consulter les factures clients et leurs retards
 
 Dans le menu **Factures**, les associés et administrateurs peuvent

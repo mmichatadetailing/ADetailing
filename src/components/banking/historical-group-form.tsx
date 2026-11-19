@@ -35,7 +35,7 @@ export function HistoricalGroupForm({ transactions, candidates, onDone, onCancel
   };
   return <form className="space-y-5" onSubmit={submit}>
     <div className="rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm leading-6 text-sky-950">Pour les opérations passées que vous aviez déjà regroupées dans le logiciel. Ce rapprochement manuel ne crée ni charge ni encaissement supplémentaire et conserve la date de votre saisie.</div>
-    <div className="max-h-56 space-y-2 overflow-y-auto rounded-xl border border-zinc-200 p-3" aria-label="Transactions du regroupement">
+    <div className="max-h-56 space-y-2 overflow-y-auto rounded-xl border border-line p-3" aria-label="Transactions du regroupement">
       {transactions.map((transaction) => <div key={transaction.id} className="flex items-start justify-between gap-3 rounded-lg bg-zinc-50 p-3 text-sm"><div className="min-w-0"><p className="font-semibold break-words">{transaction.counterparty || transaction.label}</p><p className="mt-1 text-xs text-zinc-500">{bankDate(transaction.settled_at ?? transaction.emitted_at)} · {transaction.account_name}</p></div><strong className="shrink-0">{formatMoney(transaction.amount_cents)}</strong></div>)}
     </div>
     <div className="flex items-center justify-between gap-3 rounded-xl bg-emerald-50 p-4 text-emerald-950"><span>{transactions.length} opérations · total à justifier</span><strong className="text-xl">{formatMoney(total)}</strong></div>

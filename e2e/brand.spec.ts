@@ -6,7 +6,7 @@ test("la charte ADetailing conserve des cartes claires et des actions contrasté
   await expect(page.locator("body")).toHaveCSS("font-family", /montserrat/i);
   await expect(page.locator("body")).toHaveCSS("background-image", "none");
   const cards = page.locator(".brand-kpi");
-  await expect(cards).toHaveCount(7);
+  await expect(cards).toHaveCount(8);
   for (const card of await cards.all()) await expect(card).toHaveCSS("background-color", "rgb(255, 255, 255)");
   await expect(cards.nth(0)).toHaveAttribute("data-tone", "emerald");
   await expect(cards.nth(1)).toHaveAttribute("data-tone", "blue");
@@ -35,6 +35,24 @@ test("la charte ADetailing conserve des cartes claires et des actions contrasté
   await expect(dialog).toBeVisible();
   await expect(dialog).toHaveCSS("background-color", "rgb(255, 255, 255)");
   await page.screenshot({ path: testInfo.outputPath("formulaire.png") });
+});
+
+test("la trésorerie complète la grille sans inventer de solde ni appeler Qonto en démonstration", async ({ page }, testInfo) => {
+  const requests: string[] = [];
+  page.on("request", (request) => { if (request.url().includes("/api/integrations/qonto/balance")) requests.push(request.url()); });
+  await page.goto("/dashboard");
+  const treasury = page.getByRole("region", { name: "Trésorerie actuelle" });
+  await expect(treasury).toBeVisible();
+  await expect(treasury).toContainText("Disponible en mode connecté");
+  await expect(treasury).not.toContainText("€");
+  const period = page.locator("select").first();
+  const previousYear = await period.locator("option").last().getAttribute("value");
+  await period.selectOption(previousYear!);
+  await expect(treasury).toContainText("Indépendant de la période");
+  await expect(page.locator(".brand-kpi")).toHaveCount(8);
+  expect(requests).toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath("dashboard-tresorerie.png"), fullPage: true });
 });
 
 test("la connexion utilise les ressources locales et un logo lisible sur chaque fond", async ({ page, isMobile }, testInfo) => {

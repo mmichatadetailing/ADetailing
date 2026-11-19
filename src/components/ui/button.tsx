@@ -8,7 +8,7 @@ export const buttonVariants = cva(
     variants: {
       variant: {
         primary: "border border-transparent bg-brand-500 text-on-accent shadow-sm hover:bg-brand-600 hover:shadow-md",
-        secondary: "border border-black/10 bg-white text-zinc-200 shadow-sm hover:border-brand-400/30 hover:bg-brand-50 hover:text-brand-600 hover:shadow-md",
+        secondary: "border border-contrast/10 bg-surface text-zinc-200 shadow-sm hover:border-brand-400/30 hover:bg-brand-50 hover:text-brand-600 hover:shadow-md",
         ghost: "text-zinc-300 hover:bg-brand-50 hover:text-brand-600",
         danger: "border border-red-400/15 bg-red-500/8 text-red-300 hover:border-red-400/25 hover:bg-red-500/14 hover:shadow-[0_8px_20px_rgba(194,59,74,.12)]",
       },
