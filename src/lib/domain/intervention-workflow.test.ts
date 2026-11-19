@@ -58,4 +58,15 @@ describe("parcours d’une prestation", () => {
     expect(completed.isComplete).toBe(true);
     expect(completed.currentStep).toBeNull();
   });
+
+  it("affiche le même règlement Qonto une seule fois même si le dossier et la facture sont liés", () => {
+    const bank = { ...base, id: "bank", invoiceId: invoice.id, interventionId: intervention.id, paidAt: "2026-07-03", amount: 7_000, method: "Virement", bankLinked: true } satisfies Payment;
+    const mixed = getInterventionWorkflow(intervention, invoice, [bank, {...bank, id:"cash", invoiceId:undefined, bankLinked:false, amount:5_000}]);
+    expect(mixed).toMatchObject({paidAmount:12_000, outstanding:0, source:"mixed", bankLinked:true, isPaid:true});
+    expect(mixed.relatedPayments).toHaveLength(2);
+    expect(getInterventionWorkflow(intervention, invoice, [bank])).toMatchObject({outstanding:5_000, paymentState:{label:"Paiement partiel · Qonto"}});
+    expect(getInterventionWorkflow(intervention, undefined, [{...bank, interventionId:"autre", invoiceId:undefined}])).toMatchObject({bankLinked:false, source:null, isPaid:false});
+    const past = getInterventionWorkflow({...intervention, startAt:undefined}, invoice, [{...bank,amount:12000}]);
+    expect(past).toMatchObject({isComplete:true,currentStep:null});
+  });
 });

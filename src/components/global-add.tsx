@@ -284,6 +284,7 @@ function ExpenseForm({ close, onDirtyChange, onBusyChange }: { close: () => void
       } catch (error) { toast.error(error instanceof Error ? error.message : "Enregistrement impossible"); }
     })}>
       <div className="grid gap-4 sm:grid-cols-2">
+        <p data-tone="blue" className="finance-metric text-sm sm:col-span-2">Prévoyez une échéance ou enregistrez une dépense hors Qonto. Un débit déjà importé ne doit pas être ressaisi.</p>
         <Field label="Fréquence"><Select autoFocus {...register("recurrence")}><option value="one_off">Ponctuelle</option><option value="monthly">Tous les mois</option><option value="annual">Tous les ans</option></Select></Field>
         <Field label={recurrence === "one_off" ? "Date de la dépense" : "Première échéance"}><Input type="date" {...register("date")} /></Field>
       </div>
@@ -302,8 +303,8 @@ function ExpenseForm({ close, onDirtyChange, onBusyChange }: { close: () => void
         <Field label="Montant TTC (€)" error={errors.amountEuros?.message}><Input type="number" step="0.01" {...register("amountEuros", { valueAsNumber: true })} /></Field>
         <Field label="TVA (%)"><Input type="number" step="0.1" {...register("vatRate", { valueAsNumber: true })} /></Field>
       </div>
-      <label className="flex items-center gap-3 rounded-xl border border-line bg-zinc-50 p-3 text-sm font-semibold text-zinc-700"><input type="checkbox" className="accent-brand-500" {...register("paid")} /> {recurrence === "one_off" ? "Dépense déjà payée" : "Prélèvement automatique à chaque échéance"}</label>
-      {recurrence !== "one_off" && <p className="-mt-2 text-[11px] leading-5 text-zinc-500">La charge figurera toujours dans le prévisionnel. Cochez cette option uniquement si elle doit aussi être considérée comme décaissée automatiquement le jour de l’échéance.</p>}
+      <label className="flex items-center gap-3 rounded-xl border border-line bg-zinc-50 p-3 text-sm font-semibold text-zinc-700"><input type="checkbox" className="accent-brand-500" {...register("paid")} /> {recurrence === "one_off" ? "Dépense déjà payée" : "Estimer un prélèvement à chaque échéance"}</label>
+      {recurrence !== "one_off" && <p className="-mt-2 text-[11px] leading-5 text-zinc-500">Cette option alimente la trésorerie estimée. Seul un règlement confirmé entre dans le résultat enregistré.</p>}
       <Button type="submit" className="mt-2" disabled={isSubmitting}>{isSubmitting ? "Enregistrement…" : "Enregistrer la dépense"}</Button>
     </form>
   );
@@ -345,7 +346,7 @@ export function GlobalAdd() {
     window.addEventListener("adetailing:open-add", openGlobalAdd);
     return () => window.removeEventListener("adetailing:open-add", openGlobalAdd);
   }, [canManage, open, busy, dirty, kind]);
-  const addKinds = canManage ? ([['appointment', 'Prestation'], ['client', 'Client'], ['expense', 'Dépense']] as const) : ([['appointment', 'Prestation']] as const);
+  const addKinds = canManage ? ([['appointment', 'Prestation'], ['client', 'Client'], ['expense', 'Charge hors synchro']] as const) : ([['appointment', 'Prestation']] as const);
   return (
     <>
       <Button onClick={() => setOpen(true)} aria-label="Ajouter"><Plus className="size-4" /> <span className="hidden sm:inline">Ajouter</span></Button>

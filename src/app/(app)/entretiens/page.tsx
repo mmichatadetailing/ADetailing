@@ -19,6 +19,8 @@ import {
 import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
+import { FinanceState } from "@/components/banking/finance-state";
+import { useFinanceAnchor } from "@/components/banking/use-finance-anchor";
 import { PageHeader } from "@/components/page-header";
 import { useWorkspace } from "@/components/workspace-provider";
 import { Badge } from "@/components/ui/badge";
@@ -258,6 +260,7 @@ export default function EntretiensPage() {
     : currentContracts.filter((contract) => contract.assignedMemberIds.includes(workspace.userId));
   const visibleContractIds = new Set(visibleContracts.map((contract) => contract.id));
   const visibleBillingPeriods = data.maintenanceBillingPeriods.filter((period) => visibleContractIds.has(period.contractId));
+  const linkedPeriod = useFinanceAnchor("echeance-", visibleBillingPeriods);
   const activeContracts = visibleContracts.filter((contract) => isMaintenanceContractActive(contract));
   const mrr = activeContracts.reduce((sum, contract) => sum + maintenanceMonthlyRevenue(contract), 0);
   const annualValue = activeContracts.reduce((sum, contract) => sum + maintenanceAnnualValue(contract), 0);
@@ -331,6 +334,7 @@ export default function EntretiensPage() {
   };
 
   const setPaid = async (period: MaintenanceBillingPeriod, paid: boolean) => {
+    if (!canManage || data.payments.some((p) => p.maintenanceBillingPeriodId === period.id && p.bankLinked)) return;
     if (paid && !paymentDate) return toast.error("Choisissez la date du paiement.");
     setBusyId(period.id);
     try {
@@ -351,14 +355,14 @@ export default function EntretiensPage() {
 
   return (
     <div className="space-y-7">
-      <PageHeader eyebrow="Récurrence & logistique" title="Entretiens mensuels" description="Pilotez les visites mensuelles, les forfaits prépayés de 6 ou 12 mois et les relances de renouvellement sans double saisie." actions={canManage ? <Button onClick={() => setEditingContract("new")}><CalendarPlus2 className="size-4" /> Nouvel entretien</Button> : undefined} />
+      <PageHeader eyebrow="Récurrence & logistique" title="Entretiens mensuels" description="Planifiez les visites et suivez le paiement de chaque contrat. Une visite incluse dans un forfait ne génère pas un deuxième encaissement." actions={canManage ? <Button onClick={() => setEditingContract("new")}><CalendarPlus2 className="size-4" /> Nouvel entretien</Button> : undefined} />
 
       {contractsToExtend.length > 0 && <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-950"><TriangleAlert className="mt-0.5 size-5 shrink-0 text-amber-600" /><div><p className="text-sm font-bold">{contractsToExtend.length} contrat(s) bientôt à court de planning</p><p className="mt-1 text-xs text-amber-800">Prolongez-les pour conserver au moins deux mois de visibilité opérationnelle.</p></div></div>}
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         {[
           { icon: Repeat2, label: "Contrats actifs", value: String(activeContracts.length), detail: `${visibleContracts.length} contrat(s) au total`, tone: "text-violet-700" },
-          { icon: Coins, label: "Revenu mensuel récurrent", value: formatMoney(mrr), detail: "annuels répartis sur 12 mois", tone: "text-emerald-700" },
+          { icon: Coins, label: "Revenu mensuel récurrent", value: formatMoney(mrr), detail: "valeur mensuelle des contrats, pas un encaissement", tone: "text-emerald-700" },
           { icon: Banknote, label: "Valeur annualisée", value: formatMoney(annualValue), detail: "projection au rythme actuel", tone: "text-sky-700" },
           { icon: CalendarCheck2, label: "Visites ce mois", value: `${completedVisits}/${monthlyVisits.length}`, detail: "réalisées / prévues", tone: "text-orange-700" },
           { icon: BellRing, label: "Clients à relancer", value: String(renewalContracts.length), detail: "forfaits proches de leur fin", tone: renewalContracts.length ? "text-amber-700" : "text-emerald-700" },
@@ -414,19 +418,25 @@ export default function EntretiensPage() {
       </section>
 
       <Card>
-        <CardHeader><div><h2 className="flex items-center gap-2 font-bold"><Banknote className="size-4 text-emerald-600" /> Échéancier des paiements</h2><p className="mt-1 text-xs text-zinc-500">Les encaissements alimentent directement le chiffre d’affaires et ne nécessitent aucune facture.</p></div><div className="text-right"><p className="text-lg font-extrabold text-emerald-700">{formatMoney(collection.paid)}</p><p className="text-[10px] text-zinc-500">encaissé</p></div></CardHeader>
-        <CardContent className="overflow-x-auto px-0 pb-1">
-          <table className="w-full min-w-[860px] text-left text-xs"><thead className="text-[10px] tracking-wider text-zinc-500 uppercase"><tr>{["Échéance", "Client", "Contrat", "Période", "Montant", "État", "Action"].map((head) => <th key={head} className="px-4 py-3 font-semibold first:pl-5">{head}</th>)}</tr></thead><tbody className="divide-y divide-line">
+        <CardHeader><div><h2 className="flex items-center gap-2 font-bold"><Banknote className="size-4 text-emerald-600" /> Échéancier des paiements</h2><p className="mt-1 text-xs text-zinc-500">Les règlements sont comptés une seule fois, à leur date de paiement. Une échéance liée à Qonto ne nécessite aucune action.</p></div><div className="text-right"><p className="text-lg font-extrabold text-emerald-700">{formatMoney(collection.paid)}</p><p className="text-[10px] text-zinc-500">encaissé</p></div></CardHeader>
+        <CardContent>
+          <ul aria-label="Échéances des contrats" className="divide-y divide-line">
             {[...visibleBillingPeriods].sort((a, b) => b.dueOn.localeCompare(a.dueOn)).map((period) => {
               const contract = data.maintenanceContracts.find((item) => item.id === period.contractId);
               const client = data.clients.find((item) => item.id === contract?.clientId);
               const bankLinked = data.payments.some((p) => p.maintenanceBillingPeriodId === period.id && p.bankLinked);
-              const billingState = maintenanceBillingState(period);
-              const periodLabel = { paid: "Payé", cancelled: "Annulée", overdue: "En retard", due: "À encaisser aujourd’hui", upcoming: "À venir" }[billingState];
-              return <tr key={period.id} className="hover:bg-zinc-50"><td className="px-4 py-4 pl-5 font-semibold">{formatDate(period.dueOn)}</td><td className="px-4 py-4">{clientName(client)}</td><td className="px-4 py-4 text-zinc-600">{contract?.title}</td><td className="px-4 py-4 text-zinc-500">{contract ? billingLabel(contract) : "—"}</td><td className="px-4 py-4 font-bold">{formatMoney(period.amount)}</td><td className="px-4 py-4"><Badge variant={billingState === "paid" ? "green" : billingState === "cancelled" ? "neutral" : billingState === "overdue" ? "red" : "yellow"}>{periodLabel}{period.status === "paid" && period.paidAt ? ` · ${formatDate(period.paidAt)}` : ""}</Badge></td><td className="px-4 py-4">{bankLinked && <Badge variant="green">Règlement lié à Qonto</Badge>}{canManage && !bankLinked && period.status !== "cancelled" && <div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" disabled={busyId !== null} onClick={() => openPayment(period)}>{period.status === "paid" ? "Modifier le paiement" : "Marquer encaissé"}</Button>{period.status === "paid" && <Button size="sm" variant="ghost" disabled={busyId !== null} onClick={() => setCancelingPeriod(period)}>Annuler le paiement</Button>}</div>}</td></tr>;
+              const status = maintenanceBillingState(period);
+              const label = { paid: bankLinked ? "Encaissée · Qonto" : "Encaissement enregistré", cancelled: "Annulée", overdue: "En retard", due: "Échéance du jour", upcoming: "À venir" }[status];
+              return <li id={`echeance-${period.id}`} key={period.id} tabIndex={-1} data-linked={linkedPeriod === period.id} className="finance-target grid gap-3 py-4 lg:grid-cols-[minmax(0,1fr)_minmax(8rem,.55fr)_minmax(12rem,.8fr)] lg:items-center">
+                <div className="min-w-0"><p className="break-words font-semibold">{clientName(client)}</p><p className="mt-1 break-words text-sm text-zinc-600">{contract?.title}{contract && " · " + billingLabel(contract)}</p></div>
+                <div><p className="font-bold tabular-nums">{formatMoney(period.amount)}</p><p className="text-xs text-zinc-500">Échéance du {formatDate(period.dueOn)}</p></div>
+                <div><FinanceState label={label} tone={status === "paid" ? "emerald" : status === "overdue" ? "rose" : status === "due" ? "amber" : status === "upcoming" ? "blue" : "neutral"} />
+                  {period.status === "paid" && period.paidAt && <p className="mt-1 text-xs text-zinc-600">Reçu le {formatDate(period.paidAt)}</p>}
+                  {canManage && !bankLinked && status !== "cancelled" && <div className="mt-1 flex flex-wrap gap-1"><Button size="sm" variant="ghost" disabled={busyId !== null} onClick={() => openPayment(period)}>{period.status === "paid" ? "Modifier le paiement" : "Saisir un paiement hors synchronisation"}</Button>{period.status === "paid" && <Button size="sm" variant="ghost" disabled={busyId !== null} onClick={() => setCancelingPeriod(period)}>Annuler le paiement</Button>}</div>}</div>
+              </li>;
             })}
-            {visibleBillingPeriods.length === 0 && <tr><td colSpan={7} className="px-5 py-10 text-center text-sm text-zinc-500">Aucune échéance pour le moment.</td></tr>}
-          </tbody></table>
+          </ul>
+          {!visibleBillingPeriods.length && <p className="p-5 text-center text-sm text-zinc-500">Aucune échéance pour le moment.</p>}
         </CardContent>
       </Card>
 
@@ -447,7 +457,7 @@ export default function EntretiensPage() {
       </Modal>
 
       <Modal open={Boolean(paymentPeriod)} onClose={() => { if (!busyId) setPaymentPeriod(null); }} title={paymentPeriod?.status === "paid" ? "Modifier l’encaissement" : "Enregistrer l’encaissement"} description={paymentPeriod ? `${formatMoney(paymentPeriod.amount)} · échéance du ${formatDate(paymentPeriod.dueOn)}` : undefined}>
-        <div className="grid gap-4"><div className="grid gap-4 sm:grid-cols-2"><Field label="Date du paiement"><Input type="date" max={localDateKey()} value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} /></Field><Field label="Moyen de paiement"><Select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option>Virement</option><option>Carte bancaire</option><option>Prélèvement</option><option>Espèces</option><option>Chèque</option><option>Autre</option></Select></Field></div><div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs leading-5 text-emerald-900"><CheckCircle2 className="mr-2 inline size-4" />Le chiffre d’affaires sera mis à jour à la date choisie, sans doublon ni facture obligatoire.</div><div className="flex justify-end gap-2"><Button variant="ghost" disabled={busyId !== null} onClick={() => setPaymentPeriod(null)}>Annuler</Button><Button disabled={!paymentPeriod || busyId === paymentPeriod.id} onClick={() => paymentPeriod && void setPaid(paymentPeriod, true)}><Banknote className="size-4" /> Valider l’encaissement</Button></div></div>
+        <div className="grid gap-4"><div className="grid gap-4 sm:grid-cols-2"><Field label="Date du paiement"><Input type="date" max={localDateKey()} value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} /></Field><Field label="Moyen de paiement"><Select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option>Virement</option><option>Carte bancaire</option><option>Prélèvement</option><option>Espèces</option><option>Chèque</option><option>Autre</option></Select></Field></div><div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs leading-5 text-emerald-900"><CheckCircle2 className="mr-2 inline size-4" />Ne ressaisissez pas un règlement déjà importé par Qonto. Ce paiement sera compté à la date choisie, sans facture obligatoire.</div><div className="flex justify-end gap-2"><Button variant="ghost" disabled={busyId !== null} onClick={() => setPaymentPeriod(null)}>Annuler</Button><Button disabled={!paymentPeriod || busyId === paymentPeriod.id} onClick={() => paymentPeriod && void setPaid(paymentPeriod, true)}><Banknote className="size-4" /> Valider l’encaissement</Button></div></div>
       </Modal>
     </div>
   );

@@ -1,14 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { Banknote, Link2, LoaderCircle, RefreshCw, Clock3, Unplug } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import Link from "next/link";
+import { FinanceState } from "@/components/banking/finance-state";
+import { connectionState } from "@/lib/domain/finance-presentation";
+import { journalLinks } from "@/lib/domain/journal-links";
+import { useDemoStore } from "@/lib/demo/store";
+import { Banknote, Settings2, Link2, LoaderCircle, RefreshCw, Clock3, Unplug } from "lucide-react";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { useWorkspace } from "@/components/workspace-provider";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Field, Input, Select } from "@/components/ui/field";
+import { Field, Input } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
 import type { BankTransaction } from "@/lib/domain/banking";
 import { formatDate } from "@/lib/utils";
@@ -51,6 +56,14 @@ export default function BankPage() {
   return <BankWorkspacePage key={workspace?.organizationId ?? mode} />;
 }
 
+function JournalEntries({transactions, postingFrom}: {transactions: BankTransaction[]; postingFrom?: string}) {
+  const expenses = useDemoStore(s => s.expenses), payments = useDemoStore(s => s.payments);
+  const interventions = useDemoStore(s => s.interventions), maintenanceContracts = useDemoStore(s => s.maintenanceContracts);
+  const maintenanceBillingPeriods = useDemoStore(s => s.maintenanceBillingPeriods);
+  const link = useMemo(() => journalLinks({expenses,payments,interventions,maintenanceContracts,maintenanceBillingPeriods}), [expenses,payments,interventions,maintenanceContracts,maintenanceBillingPeriods]);
+  return transactions.map(tx => <BankJournalRow key={tx.id} tx={tx} postingFrom={postingFrom} destination={link(tx)} />);
+}
+
 function BankWorkspacePage() {
   const { mode, workspace, refresh } = useWorkspace();
   const allowed = mode === "supabase" && Boolean(workspace?.canManageBusiness);
@@ -59,6 +72,7 @@ function BankWorkspacePage() {
   const [filter, setFilter] = useState("all");
   const [page, setPage] = useState(0);
   const [query, setQuery] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -75,6 +89,20 @@ function BankWorkspacePage() {
     } catch (cause) { if (version === requestVersion.current) setError(cause instanceof Error ? cause.message : "Chargement impossible."); }
   }, [allowed, filter, page, query]);
   useEffect(() => { const timer = window.setTimeout(() => void load(), 250); return () => { window.clearTimeout(timer); requestVersion.current += 1; }; }, [load]);
+  useEffect(() => {
+    if (!allowed) return;
+    const onHash = () => { if (window.location.hash === "#connexion") setShowSettings(true); };
+    onHash();
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, [allowed]);
+  useEffect(() => {
+    if (!allowed) return;
+    const reloadVisible = () => { if (document.visibilityState === "visible") void load(); };
+    const timer = window.setInterval(reloadVisible, 120_000);
+    document.addEventListener("visibilitychange", reloadVisible);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", reloadVisible); };
+  }, [allowed, load]);
   const sync = async () => {
     if (busy) return;
     setBusy(true);
@@ -94,27 +122,40 @@ function BankWorkspacePage() {
   };
   const connection = data?.connection;
   return <div className="space-y-6">
-    <PageHeader eyebrow="Suivi financier automatique" title="Journal bancaire" description="Retrouvez les opérations Qonto et leur effet dans le logiciel. Aucun mouvement à valider."
-      actions={allowed && connection?.connected && connection.enabled ? <Button disabled={busy} onClick={() => void sync()}><RefreshCw className={`size-4 ${busy ? "animate-spin" : ""}`} /> Synchroniser maintenant</Button> : undefined} />
-    {!allowed ? <Card><CardContent className="p-6 text-sm">{mode === "demo" ? "Le journal bancaire est disponible en mode connecté." : "Accès réservé aux associés et administrateurs."}</CardContent></Card> : <>
+    <PageHeader eyebrow="Banque · Qonto" title="Journal bancaire" description="Suivez les entrées, les sorties et leur effet sur l’activité. Les écritures bancaires se consultent ici sans validation."
+      actions={allowed && <Link href="/finances" className="focus-ring inline-flex min-h-11 items-center rounded-xl border border-line bg-surface px-4 text-sm font-semibold hover:underline">Voir les finances</Link>} />
+    {!allowed ? <Card><CardContent className="flex items-start gap-4 p-5 sm:p-6">
+      <span data-tone="teal" className="tone-icon grid size-10 shrink-0 place-items-center rounded-xl"><Banknote className="size-5" /></span>
+      {mode === "demo" ? <div><h2 className="font-bold">Aucun compte bancaire en démonstration</h2><p className="mt-1 text-sm text-zinc-600">Le journal bancaire est disponible en mode connecté.</p><p className="mt-2 text-sm text-zinc-600">Une fois Qonto relié à l’entreprise, les mouvements importés indiquent la charge ou le paiement correspondant.</p>
+        <Link href="/finances" className="focus-ring mt-2 inline-flex min-h-11 items-center rounded-lg text-sm font-semibold hover:underline">Consulter les finances de démonstration</Link></div>
+      : <div><h2 className="font-bold">Journal réservé à la gestion</h2><p className="mt-1 text-sm text-zinc-600">Accès réservé aux associés et administrateurs.</p></div>}
+    </CardContent></Card> : <>
       {error && <p role="alert" className="rounded-xl border border-line p-4 text-sm">{error} <Button variant="ghost" size="sm" onClick={() => void load()}>Réessayer</Button></p>}
       {!data && !error && <p role="status" className="text-sm text-zinc-500">Chargement du journal…</p>}
-      {data && <Card><CardHeader><div className="flex items-center gap-3"><Banknote className="size-5 text-emerald-600" /><h2 className="font-bold">{connection?.organization_name || "Connexion Qonto"}</h2></div>
-        <Badge variant={connection?.enabled ? "green" : "neutral"}>{connection?.connected ? connection.enabled ? "Automatique" : "En pause" : "Non connecté"}</Badge></CardHeader>
-        <CardContent className="space-y-3 text-sm">
-          {connection?.connected && <p className="text-zinc-600">{connection.accounts.map((a) => a.name + " · ••••" + a.last4).join(" / ")}</p>}
-          <p className="flex items-start gap-2 text-xs leading-5 text-zinc-500"><Clock3 className="mt-0.5 size-4 shrink-0" />{connection?.last_synced_at ? "Dernière synchronisation : " + formatDate(connection.last_synced_at, {day:"numeric",month:"long",hour:"2-digit",minute:"2-digit"}) + "." : "Aucune synchronisation terminée."} {(connection?.window_to || connection?.posting_pending) ? "Traitement partiel : il reprendra automatiquement." : "Synchronisation quotidienne lorsque la connexion est active."}</p>
-          {!data.configured && <p role="alert">La clé de chiffrement serveur est nécessaire pour connecter Qonto.</p>}
-          {!data.cronConfigured && <p role="alert">Le secret de la tâche planifiée Vercel n’est pas configuré. La synchronisation quotidienne est inactive.</p>}
-          {connection?.last_error && <p role="alert" className="text-sm text-red-600">{connection.last_error}</p>}
-          <div className="flex flex-wrap gap-2"><Button variant="secondary" disabled={busy || !data.configured} onClick={() => setConnecting(true)}><Link2 className="size-4" />{connection?.connected ? "Actualiser les identifiants" : "Connecter Qonto"}</Button>
-          {connection?.connected && <><Button variant="secondary" disabled={busy} onClick={() => void changeConnection({action:"settings",enabled:!connection.enabled})}>{connection.enabled ? "Mettre en pause" : "Reprendre"}</Button><Button variant="ghost" disabled={busy} onClick={() => setDisconnecting(true)}><Unplug className="size-4" /> Déconnecter</Button></>}</div>
-        </CardContent></Card>}
-      {data && <Card><CardHeader><h2 className="font-bold">Mouvements bancaires</h2><Badge>{data.total} mouvement(s)</Badge></CardHeader><CardContent className="space-y-3">
-        <div className="flex flex-wrap gap-2"><Input className="min-w-44 flex-1" aria-label="Rechercher une transaction" placeholder="Fournisseur, client, référence…" value={query} onChange={(event) => { setQuery(event.target.value); setPage(0); }} />
-          <Select className="w-auto" aria-label="Filtrer par sens" value={filter} onChange={(event) => { setFilter(event.target.value); setPage(0); }}><option value="all">Tous les mouvements</option><option value="debit">Sorties</option><option value="credit">Entrées</option></Select></div>
-        {data.transactions.length === 0 && <p className="rounded-xl border border-dashed border-line p-6 text-center text-sm text-zinc-500">Aucun mouvement pour cette recherche.</p>}
-        {data.transactions.map((tx) => <BankJournalRow key={tx.id} tx={tx} postingFrom={connection?.posting_from} />)}
+      {data && <section id="connexion" aria-label="État de la connexion Qonto" className="scroll-mt-24"><Card>
+        <CardContent className="space-y-3 p-4 sm:p-5"><div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3"><span data-tone="teal" className="tone-icon grid size-10 shrink-0 place-items-center rounded-xl"><Banknote className="size-5" /></span>
+          <div><h2 className="break-words font-bold">{connection?.organization_name || "Connexion Qonto"}</h2><p className="text-xs text-zinc-500">{connection?.connected ? connection.accounts.map((a) => a.name + " · ••••" + a.last4).join(" / ") : "Aucun compte bancaire actif"}</p></div></div>
+          <FinanceState {...connectionState(connection, data.configured, data.cronConfigured)} />
+        </div>
+        <p className="flex items-start gap-2 text-sm text-zinc-600"><Clock3 className="mt-0.5 size-4 shrink-0" />{connection?.last_synced_at ? "Dernière synchronisation : " + formatDate(connection.last_synced_at, {day:"numeric",month:"long",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "Aucune synchronisation terminée."}</p>
+        {!data.configured && <p role="alert" className="text-sm text-amber-700">La clé de chiffrement serveur est nécessaire pour connecter Qonto.</p>}
+        {!data.cronConfigured && <p role="alert" className="text-sm text-amber-700">La tâche planifiée n’est pas configurée. La synchronisation quotidienne est inactive.</p>}
+        {connection?.last_error && <p role="alert" className="break-words text-sm text-red-600">{connection.last_error}</p>}
+        {!connection?.connected ? <Button disabled={busy || !data.configured} onClick={() => setConnecting(true)}><Link2 className="size-4" />Connecter Qonto</Button> :
+          <><button type="button" aria-expanded={showSettings} aria-controls="qonto-settings" className="focus-ring flex min-h-11 items-center gap-2 rounded-lg text-sm font-semibold text-brand-700 hover:underline" onClick={() => setShowSettings(!showSettings)}><Settings2 className="size-4" />Réglages de connexion</button>
+          <div id="qonto-settings" hidden={!showSettings}><div className="flex flex-wrap gap-2 border-t border-line pt-3">
+            {connection.enabled && <Button size="sm" variant="secondary" disabled={busy} onClick={() => void sync()}><RefreshCw className={`size-4 ${busy ? "animate-spin" : ""}`} />Synchroniser maintenant</Button>}
+            <Button size="sm" variant="secondary" disabled={busy || !data.configured} onClick={() => setConnecting(true)}><Link2 className="size-4" />Actualiser les identifiants</Button>
+            <Button size="sm" variant="secondary" disabled={busy} onClick={() => void changeConnection({action:"settings",enabled:!connection.enabled})}>{connection.enabled ? "Mettre en pause" : "Reprendre"}</Button>
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => setDisconnecting(true)}><Unplug className="size-4" />Déconnecter</Button>
+          </div></div></>}
+        </CardContent></Card></section>}
+      {data && <Card><CardHeader className="flex-wrap"><div><h2 className="font-bold">Mouvements bancaires</h2><p className="mt-1 text-sm text-zinc-500">Chaque ligne indique si le mouvement a alimenté une charge, un encaissement ou seulement le journal.</p></div><Badge>{data.total} mouvement(s)</Badge></CardHeader><CardContent className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3"><div role="group" aria-label="Filtrer par sens" data-tone="teal" className="finance-nav">{([["all","Tous"],["credit","Entrées"],["debit","Sorties"]] as const).map(([id,label]) => <button key={id} type="button" className="focus-ring" aria-pressed={id === filter} onClick={() => { setFilter(id); setPage(0); }}>{label}</button>)}</div>
+          <Input type="search" className="w-full sm:max-w-xs" aria-label="Rechercher une transaction" placeholder="Fournisseur, client, référence…" value={query} onChange={(event) => { setQuery(event.target.value); setPage(0); }} /></div>
+        {data.transactions.length === 0 && <div className="rounded-xl border border-dashed border-line p-6 text-center text-sm text-zinc-500">{query || filter !== "all" ? <><p>Aucun mouvement ne correspond aux filtres.</p><Button variant="ghost" size="sm" onClick={() => { setQuery(""); setFilter("all"); setPage(0); }}>Effacer les filtres</Button></> : connection?.connected ? "Aucun mouvement importé sur la période d’historique." : "Les mouvements apparaîtront ici après la connexion et la première synchronisation."}</div>}
+        {data.transactions.length > 0 && <JournalEntries transactions={data.transactions} postingFrom={connection?.posting_from} />}
         {data.total > 50 && <div className="flex items-center justify-between gap-2 text-xs"><Button size="sm" variant="secondary" disabled={!page} onClick={() => setPage(page - 1)}>Précédent</Button>Page {page + 1} / {Math.ceil(data.total / 50)}<Button size="sm" variant="secondary" disabled={(page + 1)*50 >= data.total} onClick={() => setPage(page + 1)}>Suivant</Button></div>}
       </CardContent></Card>}
     </>}

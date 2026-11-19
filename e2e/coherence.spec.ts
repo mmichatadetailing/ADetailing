@@ -14,7 +14,7 @@ test("un entretien prépayé garde ses six visites et son paiement après rechar
   await form.getByRole("button", { name: "Créer le forfait de 6 mois" }).click();
   await expect(form).not.toBeVisible();
 
-  await page.getByRole("button", { name: "Marquer encaissé" }).click();
+  await page.getByRole("button", { name: "Saisir un paiement hors synchronisation" }).click();
   const payment = page.getByRole("dialog", { name: "Enregistrer l’encaissement" });
   await expect(payment.getByLabel("Date du paiement")).toHaveValue("2026-11-16");
   await payment.getByRole("button", { name: "Valider l’encaissement" }).click();
@@ -38,9 +38,9 @@ test("un entretien prépayé garde ses six visites et son paiement après rechar
   const confirmation = page.getByRole("dialog", { name: "Annuler cet encaissement ?" });
   await expect(confirmation).toBeVisible();
   await confirmation.getByRole("button", { name: "Confirmer l’annulation" }).click();
-  await expect(page.getByRole("button", { name: "Marquer encaissé" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Saisir un paiement hors synchronisation" })).toBeVisible();
   await page.reload();
-  await expect(page.getByRole("button", { name: "Marquer encaissé" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Saisir un paiement hors synchronisation" })).toBeVisible();
 });
 
 test("la fenêtre Ajouter protège les saisies lors d’une fermeture ou d’un changement de formulaire", async ({ page }) => {

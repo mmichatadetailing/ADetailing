@@ -57,7 +57,7 @@ export function recordedActivity(payments: Pick<Payment,"paidAt"|"amount">[], ex
   period: string, refunds = { customer: 0, supplier: 0 }, now = new Date()) {
   const today = bankDate(now.toISOString());
   const inPeriod = (day: string) => day.startsWith(period) && day <= today;
-  let received = -refunds.customer, spent = -refunds.supplier;
+  let received = 0 - refunds.customer, spent = 0 - refunds.supplier;
   for (const p of payments) if (Date.parse(p.paidAt) <= now.getTime() && inPeriod(bankDate(p.paidAt))) received += p.amount;
   for (const e of expenses) {
     if (e.family !== "fixed" && e.family !== "variable") continue;

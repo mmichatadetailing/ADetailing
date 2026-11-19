@@ -1,3 +1,8 @@
+import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
+import Link from "next/link";
+import type { JournalLink } from "@/lib/domain/journal-links";
+import { FinanceState } from "./finance-state";
+import { journalState } from "@/lib/domain/finance-presentation";
 import type { BankTransaction } from "@/lib/domain/banking";
 import { formatDate, formatMoney } from "@/lib/utils";
 
@@ -15,14 +20,20 @@ function journalNote(tx: BankTransaction, postingFrom?: string) {
   return "Enregistré au journal bancaire";
 }
 
-export function BankJournalRow({ tx, postingFrom }: { tx: BankTransaction; postingFrom?: string }) {
-  return <article className="grid gap-2 rounded-xl border border-line p-4 sm:grid-cols-[7rem_minmax(0,1fr)_auto]">
-    <p className="text-xs text-zinc-500">{formatDate(tx.settled_at ?? tx.emitted_at)}<span className="mt-1 block">{tx.account_name}</span></p>
-    <div className="min-w-0">
-      <h3 className="break-words text-sm font-bold">{tx.counterparty || tx.label || "Opération bancaire"}</h3>
-      <p className="text-xs text-zinc-500">{[tx.label, tx.reference].filter(Boolean).join(" · ")}</p>
-      <p className="mt-2 text-xs text-zinc-600">{journalNote(tx,postingFrom)}</p>
+export function BankJournalRow({ tx, postingFrom, destination }: { tx: BankTransaction; postingFrom?: string; destination?: JournalLink }) {
+  const credit = tx.side === "credit";
+  const Icon = credit ? ArrowDownLeft : ArrowUpRight;
+  const title = tx.counterparty || tx.label || "Opération bancaire";
+  const detail = [tx.label !== title && tx.label, tx.reference].filter(Boolean).join(" · ");
+  const amount = tx.currency === "EUR" ? formatMoney(tx.amount_cents) : new Intl.NumberFormat("fr-FR", {style:"currency", currency:tx.currency}).format(tx.amount_cents / 100);
+  return <article className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-2 rounded-xl border border-line bg-surface p-4 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
+    <span data-tone={credit ? "emerald" : "blue"} className="tone-icon grid size-9 place-items-center rounded-full"><Icon aria-hidden="true" className="size-4" /></span>
+    <div className="min-w-0"><p className="text-xs text-zinc-500">{formatDate(tx.settled_at ?? tx.emitted_at)} · {tx.account_name}</p>
+      <h3 className="mt-1 break-words text-sm font-bold">{title}</h3>{detail && <p className="break-words text-xs text-zinc-500">{detail}</p>}
     </div>
-    <strong className={tx.side === "credit" ? "text-emerald-700" : "text-zinc-800"}>{tx.side === "credit" ? "+" : "−"}{formatMoney(tx.amount_cents)}</strong>
+    <strong data-tone={credit ? "emerald" : "neutral"} className="col-start-2 self-start text-base tabular-nums text-[var(--tone-color)] sm:col-start-3"><span className="sr-only">{credit ? "Entrée" : "Sortie"} : </span>{credit ? "+" : "−"}{amount}</strong>
+    <div className="col-span-full flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line pt-2"><FinanceState {...journalState(tx, postingFrom)} /><p className="break-words text-xs leading-5 text-zinc-600">{journalNote(tx, postingFrom)}</p>
+      {destination && <Link href={destination.href} className="focus-ring inline-flex min-h-11 items-center rounded-lg px-2 text-sm font-semibold underline decoration-dotted underline-offset-4 hover:decoration-solid sm:ml-auto">{destination.label}</Link>}
+    </div>
   </article>;
 }

@@ -564,6 +564,27 @@ table tbody tr {
   background: var(--tone-color);
 }
 .brand-kpi[data-tone="rose"] .kpi-value { color: var(--tone-color); }
+.finance-state {
+  display: inline-flex; align-items: center; width: fit-content; max-width: 100%;
+  border: 1px solid var(--tone-border); border-radius: 999px; padding: .22rem .65rem;
+  color: var(--tone-color); background: var(--tone-soft); font-size: .75rem; font-weight: 650; line-height: 1.35;
+}
+.finance-metric {
+  min-width: 0; padding: 1rem 1.15rem; border: 1px solid var(--tone-border);
+  border-radius: .9rem; background: var(--tone-soft);
+}
+.finance-metric dt { display: flex; align-items: center; gap: .5rem; color: var(--tone-color); font-size: .875rem; font-weight: 650; }
+.finance-metric dd { margin-top: .4rem; font-size: clamp(1.25rem, 2.3vw, 1.85rem); font-weight: 650; letter-spacing: -.04em; line-height: 1.25; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.finance-metric--lead { border-left: 4px solid var(--tone-color); }
+.finance-metric--lead dd { font-size: clamp(1.65rem, 3.4vw, 2.6rem); }
+.finance-metric p { margin-top: .35rem; color: var(--muted); font-size: .8rem; }
+.finance-nav { display: flex; flex-wrap: wrap; gap: .4rem; }
+.finance-nav button { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; min-height: 44px; border-radius: .7rem; border: 1px solid var(--border); padding: .45rem .9rem; background: var(--surface); color: var(--muted); font-size: .875rem; font-weight: 600; }
+.finance-nav button:hover, .finance-nav button[aria-pressed="true"] { background: var(--tone-soft); border-color: var(--tone-border); color: var(--tone-color); }
+.finance-nav button[aria-pressed="true"] { box-shadow: inset 0 -2px var(--tone-color); }
+.finance-target { scroll-margin-block-start: calc(var(--app-header-height) + 1rem); }
+.finance-target:target, .finance-target[data-linked="true"] { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: .65rem; background: var(--surface-raised); }
+@media (max-width: 40rem) { .finance-nav button { flex: 1 1 8rem; } }
 .brand-kpi .kpi-value { font-size: clamp(1.4rem, 2vw, 1.85rem); font-weight: 600; letter-spacing: -.045em; }
 
 table thead { background: var(--surface-raised); }
