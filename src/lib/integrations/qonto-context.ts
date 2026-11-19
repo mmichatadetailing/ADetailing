@@ -35,7 +35,7 @@ export async function qontoContext(db: SupabaseClient, org: string) {
     const invoice = invoices.get(String(payment.invoice_id));
     const contract = contracts.get(String(payment.maintenance_contract_id));
     const names = clientNames(job?.client_id ?? invoice?.client_id ?? contract?.client_id);
-    targets.push({ key: `payment:${payment.id}`, kind: "payment", id: String(payment.id), label: `Paiement existant · ${names[0] ?? "Client"} · ${contract?.title ?? job?.title ?? invoice?.number ?? "Encaissement"}`, identities: [...names, String(invoice?.number ?? ""), String(payment.reference ?? "")], amount: Number(payment.amount_cents), date: String(payment.paid_at), historicalEligible: bankDate(String(payment.paid_at)) <= bankDate(new Date().toISOString()) });
+    targets.push({ key: `payment:${payment.id}`, kind: "payment", id: String(payment.id), documentReference: String(payment.reference ?? ""), label: `Paiement existant · ${names[0] ?? "Client"} · ${contract?.title ?? job?.title ?? invoice?.number ?? "Encaissement"}`, identities: [...names, String(invoice?.number ?? ""), String(payment.reference ?? "")], amount: Number(payment.amount_cents), date: String(payment.paid_at), historicalEligible: bankDate(String(payment.paid_at)) <= bankDate(new Date().toISOString()) });
   }
   const paidFor = (key: string, id: unknown) => rows.payments.filter((payment) => payment[key] === id).reduce((sum, payment) => sum + Number(payment.amount_cents), 0);
   for (const job of rows.interventions.filter((job) => !job.archived_at && job.status === "completed" && !job.maintenance_contract_id && !job.invoice_id)) {
@@ -46,7 +46,7 @@ export async function qontoContext(db: SupabaseClient, org: string) {
     const linkedJobs = new Set(rows.interventions.filter((job) => job.invoice_id === invoice.id).map((job) => job.id));
     const alreadyPaid = rows.payments.filter((payment) => payment.invoice_id === invoice.id || linkedJobs.has(payment.intervention_id)).reduce((sum, payment) => sum + Number(payment.amount_cents), 0);
     const amount = Number(invoice.total_including_tax_cents) - alreadyPaid;
-    if (amount > 0) targets.push({ key: `invoice:${invoice.id}`, kind: "invoice", id: String(invoice.id), label: `Encaisser la facture · ${invoice.number} · ${clientNames(invoice.client_id)[0] ?? ""}`, identities: [...clientNames(invoice.client_id), String(invoice.number)], amount, date: String(invoice.due_at ?? invoice.issued_at) });
+    if (amount > 0) targets.push({ key: `invoice:${invoice.id}`, kind: "invoice", id: String(invoice.id), documentReference: String(invoice.number ?? ""), label: `Encaisser la facture · ${invoice.number} · ${clientNames(invoice.client_id)[0] ?? ""}`, identities: [...clientNames(invoice.client_id), String(invoice.number)], amount, date: String(invoice.due_at ?? invoice.issued_at) });
   }
   for (const period of rows.maintenance_billing_periods.filter((period) => period.status === "due")) {
     const contract = contracts.get(String(period.contract_id));
@@ -70,7 +70,7 @@ export async function qontoContext(db: SupabaseClient, org: string) {
     const date = expenseOccurrenceDateKey(expense, month)!;
     const original = rows.expenses.find((entry) => entry.id === expense.id);
     const paidDate = expense.recurrence === "one_off" && original?.paid_at ? bankDate(String(original.paid_at)) : date;
-    targets.push({ key: `expense:${expense.id}:${month}`, kind: "expense", id: expense.id, month, label: `Charge · ${expense.supplier || expense.description} · ${expense.description} · ${month}`, identities: [expense.supplier, expense.description], amount: expense.amountIncludingTax, date: paidDate, historicalEligible: expense.paid && paidDate <= bankDate(new Date().toISOString()) });
+    targets.push({ key: `expense:${expense.id}:${month}`, kind: "expense", id: expense.id, month, label: `Charge · ${expense.supplier || expense.description} · ${expense.description} · ${month}`, identities: [expense.supplier, expense.description], amount: expense.amountIncludingTax, date: paidDate, historicalEligible: expense.paid && paidDate <= bankDate(new Date().toISOString()), recurringSupplier: expense.recurrence === "one_off" ? undefined : expense.supplier });
   }
   const transactionById = new Map(transactions.map((transaction) => [transaction.id, transaction]));
   const drafts = rows.bank_transaction_drafts.flatMap((draft) => {
@@ -81,10 +81,8 @@ export async function qontoContext(db: SupabaseClient, org: string) {
   const blockers = [
     ...rows.interventions.filter((job) => !job.archived_at && !["completed", "cancelled"].includes(String(job.status)))
       .map((job) => ({ side: "credit" as const, identities: clientNames(job.client_id) })),
-    ...rows.maintenance_contracts.filter((contract) => !contract.archived_at)
+    ...rows.maintenance_contracts.filter((contract) => !contract.archived_at && rows.maintenance_billing_periods.some((p) => p.contract_id === contract.id && p.status === "due"))
       .map((contract) => ({ side: "credit" as const, identities: clientNames(contract.client_id) })),
-    ...rows.expenses.filter((expense) => !expense.archived_at && expense.recurrence !== "one_off" && (!expense.ends_on || String(expense.ends_on) >= bankDate(new Date().toISOString())))
-      .map((expense) => ({ side: "debit" as const, identities: [String(expense.supplier ?? ""), String(expense.description ?? "")] })),
   ];
   return { transactions, candidates: targets, drafts, blockers,
     clients: rows.clients.filter((client) => !client.archived_at).map((client) => ({ id: String(client.id), names: clientNames(client.id) })),

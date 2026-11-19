@@ -135,7 +135,7 @@ export function projectedExpensesForMonth<T extends ExpenseSchedule>(expenses: T
 }
 
 export function projectedExpenseAmountForMonth(expenses: ExpenseSchedule[], month: string): Money {
-  return projectedExpensesForMonth(expenses, month).reduce((sum, expense) => sum + expense.amountIncludingTax, 0);
+  return projectedExpensesForMonth(expenses, month).reduce((sum, expense) => sum + (expense.settlements?.find((s) => s.month === month)?.amount ?? expense.amountIncludingTax), 0);
 }
 
 export function expenseOccurrencesForMonth<T extends ExpenseSchedule>(expenses: T[], month: string, reference = new Date()): ExpenseOccurrence<T>[] {
@@ -150,7 +150,7 @@ export function expenseOccurrencesForMonth<T extends ExpenseSchedule>(expenses: 
         expense,
         month,
         dueDate,
-        amount: expense.amountIncludingTax,
+        amount: settlement?.amount ?? expense.amountIncludingTax,
         status: isPaid ? "paid" as const : dueDate <= referenceDate ? "due" as const : "upcoming" as const,
       };
     })
@@ -200,10 +200,9 @@ export function rankExpensesForMonths<T extends ExpenseSchedule & { id: string }
 export function expenseForecast(expenses: ExpenseSchedule[], startMonth: string, monthCount = 12): ExpenseForecastPoint[] {
   return Array.from({ length: Math.max(0, monthCount) }, (_, index) => {
     const month = nextMonth(startMonth, index);
-    const active = projectedExpensesForMonth(expenses, month);
-    const monthly = active.filter((expense) => expense.recurrence === "monthly").reduce((sum, expense) => sum + expense.amountIncludingTax, 0);
-    const annual = active.filter((expense) => expense.recurrence === "annual").reduce((sum, expense) => sum + expense.amountIncludingTax, 0);
-    const oneOff = active.filter((expense) => expense.recurrence === "one_off").reduce((sum, expense) => sum + expense.amountIncludingTax, 0);
+    const occurrences = expenseOccurrencesForMonth(expenses, month);
+    const totalFor = (r: Expense["recurrence"]) => occurrences.reduce((sum, o) => sum + (o.expense.recurrence === r ? o.amount : 0), 0);
+    const monthly = totalFor("monthly"), annual = totalFor("annual"), oneOff = totalFor("one_off");
     return { month, total: monthly + annual + oneOff, monthly, annual, oneOff };
   });
 }

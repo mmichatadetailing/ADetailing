@@ -58,7 +58,7 @@ const groups = [
     label: "Gestion",
     items: [
       { href: "/finances", label: "Finances", icon: CircleDollarSign },
-      { href: "/banque", label: "Banque & rapprochement", icon: Landmark },
+      { href: "/banque", label: "Journal bancaire", icon: Landmark },
       { href: "/pilotage", label: "Pilotage", icon: BarChart3 },
       { href: "/catalogue", label: "Catalogue", icon: BookOpen },
       { href: "/equipe", label: "Équipe", icon: UsersRound },

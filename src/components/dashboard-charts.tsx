@@ -128,7 +128,7 @@ export function DashboardCharts({
             <span className="grid size-10 shrink-0 place-items-center rounded-full tone-icon" data-tone="emerald"><WalletCards className="size-[18px]" /></span>
             <div>
               <h2 className="font-bold">Encaissements & charges</h2>
-              <p className="mt-1 text-xs text-zinc-500">Toutes les échéances mensuelles et annuelles sont comptées dans leur mois.</p>
+              <p className="mt-1 text-xs text-zinc-500">Les charges sont prévues à leur échéance ; les décaissements suivis incluent les prélèvements automatiques échus.</p>
             </div>
           </div>
           <Badge variant={annualCashFlow >= 0 ? "green" : "red"}>{annualCashFlow >= 0 ? "Positif" : "Négatif"}</Badge>
@@ -144,7 +144,7 @@ export function DashboardCharts({
                 </p>
               </div>
               <div className="sm:border-l sm:border-line sm:pl-4"><p className="text-[10px] font-bold tracking-[.12em] text-zinc-500 uppercase">Charges prévues</p><p className="tone-text mt-1 text-lg font-semibold" data-tone="amber">{formatMoney(periodExpenses)}</p></div>
-              <div className="sm:border-l sm:border-line sm:pl-4"><p className="text-[10px] font-bold tracking-[.12em] text-zinc-500 uppercase">Déjà décaissé</p><p className="mt-1 text-lg font-semibold text-zinc-800">{formatMoney(periodPaidExpenses)}</p></div>
+              <div className="sm:border-l sm:border-line sm:pl-4"><p className="text-[10px] font-bold tracking-[.12em] text-zinc-500 uppercase">Décaissements suivis</p><p className="mt-1 text-lg font-semibold text-zinc-800">{formatMoney(periodPaidExpenses)}</p></div>
             </div>
           </div>
           <div className="mb-3 flex flex-wrap items-center gap-4 text-[11px] font-semibold text-zinc-500">

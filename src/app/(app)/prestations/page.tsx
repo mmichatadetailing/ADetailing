@@ -5,7 +5,6 @@ import { Suspense, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { InterventionDetail } from "@/components/intervention-detail";
-import { BankDraftInbox } from "@/components/banking/bank-draft-inbox";
 import { useWorkspace } from "@/components/workspace-provider";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
@@ -106,7 +105,6 @@ function PrestationsPageContent() {
         actions={<Button onClick={() => window.dispatchEvent(new CustomEvent("adetailing:open-add", { detail: "appointment" }))}><CalendarPlus2 className="size-4" /> Ajouter une prestation</Button>}
       />
 
-      <BankDraftInbox side="credit" />
       <section className="grid gap-3 sm:grid-cols-3">
         {[
           { icon: Sparkles, label: "En cours", value: String(inProgress), detail: "à terminer", tone: "bg-sky-100 text-sky-700" },

@@ -5,7 +5,7 @@ import { useState, type FormEvent } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
-import { BankDraftInbox } from "@/components/banking/bank-draft-inbox";
+import { BankResultCard } from "@/components/banking/bank-result-card";
 import { useWorkspace } from "@/components/workspace-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -188,7 +188,7 @@ export default function FinancesPage() {
           </div>
         )}
       />
-      {canManage && <Link href="/banque" className="focus-ring flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-900"><span>Qonto : rapprocher les mouvements bancaires des paiements et des charges</span><span>Ouvrir la banque →</span></Link>}
+      {canManage && <Link href="/banque" className="focus-ring flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-900"><span>Qonto : consulter les mouvements et leurs écritures automatiques</span><span>Voir le journal →</span></Link>}
 
       <Modal open={Boolean(editingExpense)} onClose={() => setEditingExpense(null)} title={editingExpense?.recurrence === "one_off" ? "Modifier la charge" : "Modifier le montant de l’abonnement"} description={editingExpense ? `${recurrenceLabels[editingExpense.recurrence]} · ${editingExpense.description}` : undefined}>
         {editingExpense && <ExpenseEditor key={editingExpense.id} expense={editingExpense} onCancel={() => setEditingExpense(null)} onSave={(input) => saveExpense(editingExpense, input)} />}
@@ -203,14 +203,14 @@ export default function FinancesPage() {
         <div className="mt-5 flex justify-end gap-2"><Button variant="ghost" onClick={() => setDeletingExpense(null)}>Annuler</Button><Button variant="danger" onClick={deleteExpense}><Trash2 className="size-4" /> Supprimer définitivement</Button></div>
       </Modal>
 
-      <BankDraftInbox side="debit" />
+      {canManage && <BankResultCard period={selectedMonth} label={monthLabel} />}
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         {[
           { icon: CalendarClock, label: `Total charges · ${monthLabel}`, value: formatMoney(projectedExpenses), detail: `${formatMoney(monthSummary.recurring)} récurrent · ${formatMoney(oneOff)} ponctuel`, color: "text-orange-600" },
-          { icon: CheckCircle2, label: "Déjà décaissé", value: formatMoney(paidExpenses), detail: `${formatMoney(monthSummary.paid)} rattaché aux échéances du mois`, color: "text-emerald-700" },
+          { icon: CheckCircle2, label: "Décaissements suivis", value: formatMoney(paidExpenses), detail: `${formatMoney(monthSummary.paid)} sur les échéances du mois, prélèvements prévus échus inclus`, color: "text-emerald-700" },
           { icon: Clock3, label: "Reste à décaisser", value: formatMoney(remainingExpenses), detail: `${formatMoney(monthSummary.due)} arrivé à échéance · ${formatMoney(monthSummary.upcoming)} à venir`, color: monthSummary.due > 0 ? "text-red-600" : "text-amber-600" },
           { icon: Banknote, label: "Solde prévisionnel du mois", value: formatMoney(collected - projectedExpenses), detail: `${formatMoney(collected)} encaissé − toutes les charges prévues`, color: collected - projectedExpenses >= 0 ? "text-emerald-700" : "text-red-600" },
-          { icon: WalletCards, label: "Trésorerie disponible", value: formatMoney(cash), detail: `${formatMoney(toCollect)} de prestations à encaisser`, color: "text-violet-700" },
+          { icon: WalletCards, label: "Trésorerie estimée", value: formatMoney(cash), detail: `${formatMoney(toCollect)} de prestations à encaisser`, color: "text-violet-700" },
         ].map((item) => (
           <Card key={item.label}>
             <CardContent className="p-5">
@@ -232,7 +232,7 @@ export default function FinancesPage() {
       {monthSummary.due > 0 && (
         <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
           <AlertCircle className="mt-0.5 size-5 shrink-0 text-amber-600" />
-          <div><p className="text-sm font-bold">{formatMoney(monthSummary.due)} arrivé à échéance</p><p className="mt-1 text-xs text-amber-800">Ces charges sont bien incluses dans le total de {monthLabel}, mais leur paiement reste à confirmer.</p></div>
+          <div><p className="text-sm font-bold">{formatMoney(monthSummary.due)} arrivé à échéance</p><p className="mt-1 text-xs text-amber-800">Ces charges sont bien incluses dans le total de {monthLabel}, mais aucun règlement n’est encore enregistré. Un débit Qonto correspondant sera rattaché automatiquement.</p></div>
         </div>
       )}
 
@@ -304,7 +304,10 @@ export default function FinancesPage() {
             <table className="w-full min-w-[1120px] text-left text-xs">
               <thead className="text-[10px] tracking-wider text-zinc-600 uppercase"><tr>{["Période / date", "Fréquence", "Famille", "Catégorie", "Fournisseur", "Description", "TTC / échéance", "TVA", "Paiement", "Actions"].map((head) => <th key={head} className="px-4 py-3 font-semibold first:pl-5 last:pr-5">{head}</th>)}</tr></thead>
               <tbody className="divide-y divide-line">
-                {visibleExpenses.map((expense) => (
+                {visibleExpenses.map((expense) => {
+                  const linked = Boolean(expense.settlements?.length);
+                  const settled = expense.settlements?.find((s) => expense.recurrence === "one_off" || s.month === selectedMonth);
+                  return (
                   <tr key={expense.id} className="hover:bg-surface/[0.02]">
                     <td className="px-4 py-4 pl-5 text-zinc-500"><p>{formatDate(expense.date)}</p>{expense.endsAt && <p className="mt-1 text-[10px]">jusqu’au {formatDate(expense.endsAt)}</p>}</td>
                     <td className="px-4 py-4"><div className="flex flex-wrap gap-1"><Badge variant={expense.recurrence === "one_off" ? "neutral" : "blue"}>{recurrenceLabels[expense.recurrence]}</Badge>{expense.endsAt && <Badge variant="neutral">Historique</Badge>}</div></td>
@@ -312,12 +315,12 @@ export default function FinancesPage() {
                     <td className="px-4 py-4 font-semibold">{expense.category}</td>
                     <td className="px-4 py-4 text-zinc-500">{expense.supplier}</td>
                     <td className="px-4 py-4 text-zinc-400">{expense.description}</td>
-                    <td className="px-4 py-4 font-bold">{formatMoney(expense.amountIncludingTax)}</td>
+                    <td className="px-4 py-4 font-bold">{formatMoney(settled?.amount ?? expense.amountIncludingTax)}</td>
                     <td className="px-4 py-4 text-zinc-500">{formatMoney(expense.vatAmount)}</td>
-                    <td className="px-4 py-4"><Badge variant={expense.paid ? "green" : "yellow"}>{expense.recurrence === "one_off" ? (expense.paid ? "Payée" : "À payer") : (expense.paid ? "Automatique" : "À valider")}</Badge></td>
-                    <td className="px-4 py-4 pr-5">{canManage && !expense.endsAt ? <div className="flex items-center gap-1"><Button size="sm" variant="secondary" onClick={() => setEditingExpense(expense)}><Pencil className="size-3.5" /> Modifier</Button><Button size="sm" variant="ghost" className="text-red-600" aria-label={`Supprimer ${expense.description}`} onClick={() => setDeletingExpense(expense)}><Trash2 className="size-3.5" /></Button></div> : <span className="text-zinc-400">{expense.endsAt ? "Historique verrouillé" : "Lecture seule"}</span>}</td>
+                    <td className="px-4 py-4"><Badge variant={settled || expense.paid ? "green" : "neutral"}>{settled ? "Réglée · Qonto" : expense.recurrence === "one_off" ? (expense.paid ? "Payée" : "À payer") : (expense.paid ? "Prélèvement prévu" : "Selon échéance")}</Badge></td>
+                    <td className="px-4 py-4 pr-5">{canManage && !expense.endsAt && !(linked && expense.recurrence === "one_off") ? <div className="flex items-center gap-1"><Button size="sm" variant="secondary" onClick={() => setEditingExpense(expense)}><Pencil className="size-3.5" /> Modifier</Button>{!linked && <Button size="sm" variant="ghost" className="text-red-600" aria-label={`Supprimer ${expense.description}`} onClick={() => setDeletingExpense(expense)}><Trash2 className="size-3.5" /></Button>}</div> : <span className="text-zinc-400">{linked ? "Montant bancaire" : expense.endsAt ? "Historique verrouillé" : "Lecture seule"}</span>}</td>
                   </tr>
-                ))}
+                ); })}
                 {visibleExpenses.length === 0 && <tr><td colSpan={10} className="px-5 py-10 text-center text-sm text-zinc-500">Aucune charge ne correspond à ce filtre.</td></tr>}
               </tbody>
             </table>

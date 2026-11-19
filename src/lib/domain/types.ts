@@ -185,6 +185,7 @@ export interface Invoice extends BaseEntity {
 }
 
 export interface Payment extends BaseEntity {
+  bankLinked?: boolean;
   invoiceId?: UUID;
   interventionId?: UUID;
   maintenanceContractId?: UUID;

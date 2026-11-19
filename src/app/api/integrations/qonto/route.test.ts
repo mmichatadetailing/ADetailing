@@ -4,7 +4,7 @@ vi.mock("@/lib/supabase/server", () => ({ createSupabaseServerClient: async () =
 vi.mock("@/lib/supabase/admin", () => ({ createSupabaseAdminClient: mocks.admin }));
 vi.mock("@/lib/supabase/workspace", () => ({ requireAuthenticatedWorkspace: mocks.workspace, canManageBusiness: (role: string) => ["partner", "admin"].includes(role) }));
 vi.mock("@/lib/integrations/token-crypto", () => ({ tokenEncryptionKeyStatus: () => "valid", encryptToken: () => "encrypted" }));
-vi.mock("@/lib/integrations/qonto-context", () => ({ qontoContext: mocks.context }));
+vi.mock("@/lib/integrations/qonto-journal", () => ({ readQontoJournal: mocks.context }));
 vi.mock("@/lib/integrations/qonto-sync", () => ({ syncQonto: mocks.sync }));
 import { GET, POST } from "./route";
 
@@ -27,7 +27,7 @@ it("ne renvoie ni secret chiffré ni IBAN complet dans la réponse", async () =>
   mocks.workspace.mockResolvedValue({ role: "partner", organizationId: "org" });
   const query = { select: () => query, eq: vi.fn(() => query), maybeSingle: async () => ({ data: { credentials_encrypted: "NEVER-EXPOSE", accounts: [{ name: "Principal", iban: "FR001234567890" }], enabled: true }, error: null }) };
   mocks.admin.mockReturnValue({ from: () => query });
-  mocks.context.mockResolvedValue({ transactions: [], candidates: [] });
+  mocks.context.mockResolvedValue([]);
   const response = await GET(new Request("https://app.test/api/integrations/qonto"));
   expect(response.status).toBe(200);
   expect(query.eq).toHaveBeenCalledWith("organization_id", "org");
@@ -37,22 +37,21 @@ it("ne renvoie ni secret chiffré ni IBAN complet dans la réponse", async () =>
   expect(content).toContain('"last4":"7890"');
   expect(response.headers.get("Cache-Control")).toContain("no-store");
 });
-it("effectue le rapprochement avec la session de l’utilisateur, pas la clé administrateur", async () => {
+it.each(["reconcile","reconcile_group","settings"])("refuse la commande manuelle obsolète %s avant toute écriture", async (action) => {
   mocks.workspace.mockResolvedValue({ role: "partner", organizationId: "org" });
-  mocks.rpc.mockResolvedValue({ error: null });
-  const response = await POST(request({ action: "reconcile", transactionId: "50000000-0000-4000-8000-000000000001", kind: "ignore", reason: "Virement interne" }));
-  expect(response.status).toBe(200);
-  expect(mocks.rpc).toHaveBeenCalledWith("reconcile_bank_transaction", expect.objectContaining({ target_kind: "ignore" }));
+  expect((await POST(request({ action, enabled: true, autoIntake: false }))).status).toBe(400);
+  expect(mocks.rpc).not.toHaveBeenCalled();
   expect(mocks.admin).not.toHaveBeenCalled();
 });
-it("regroupe manuellement avec la session et refuse une sélection répétée avant l’écriture", async () => {
+it("sépare le résultat d’une période des lignes du journal", async () => {
   mocks.workspace.mockResolvedValue({ role: "partner", organizationId: "org" });
-  mocks.rpc.mockResolvedValue({ data: "group", error: null });
-  const input = { action: "reconcile_group", transactionIds: ["50000000-0000-4000-8000-000000000001", "50000000-0000-4000-8000-000000000002"], kind: "expense", targetId: "40000000-0000-4000-8000-000000000001", month: "2026-09" };
-  expect((await POST(request(input))).status).toBe(200);
-  expect(mocks.rpc).toHaveBeenCalledWith("reconcile_bank_group", expect.objectContaining({ transaction_ids: input.transactionIds, target_month: "2026-09-01" }));
-  expect(mocks.admin).not.toHaveBeenCalled();
-  mocks.rpc.mockClear();
-  expect((await POST(request({ ...input, transactionIds: [input.transactionIds[0], input.transactionIds[0]] }))).status).toBe(400);
-  expect(mocks.rpc).not.toHaveBeenCalled();
+  const query = { select: () => query, eq: () => query, maybeSingle: async () => ({ data: { enabled: true }, error: null }) };
+  mocks.admin.mockReturnValue({ from: () => query });
+  mocks.context.mockResolvedValue([]);
+  for (const period of ["2026", "2026-09"]) {
+    const res = await GET(new Request("https://app.test/api/integrations/qonto?period=" + period));
+    expect(await res.json()).toMatchObject({ summary: { result: 0 } });
+    expect(mocks.context).toHaveBeenCalledWith(expect.anything(), "org", period);
+  }
+  expect((await GET(new Request("https://app.test/api/integrations/qonto?period=2026-13"))).status).toBe(400);
 });

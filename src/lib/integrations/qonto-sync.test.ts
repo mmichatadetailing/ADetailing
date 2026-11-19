@@ -18,16 +18,16 @@ function database(connection: Record<string, unknown> | null) {
   } }) } as unknown as SupabaseClient;
   return { db, updates, rpc };
 }
-const connection = { credentials_encrypted: "encrypted", remote_organization_id: "qonto", accounts: [{ id: "bank", iban: "FR123", name: "Compte", currency: "EUR" }], cursor_at: "2026-09-01T00:00:00Z", import_since: "2026-09-01", window_to: "2026-09-08T00:00:00Z", account_index: 0, next_page: 1, auto_reconcile: false };
+const connection = { credentials_encrypted: "encrypted", remote_organization_id: "qonto", accounts: [{ id: "bank", iban: "FR123", name: "Compte", currency: "EUR" }], cursor_at: "2026-09-01T00:00:00Z", import_since: "2026-09-01", window_to: "2026-09-08T00:00:00Z", account_index: 0, next_page: 1, auto_reconcile: false, posting_from: "2026-09-01" };
 beforeEach(() => { vi.clearAllMocks(); });
 it("intègre les nouvelles écritures après l’import complet, même sans rapprochement historique activé", async () => {
   const now = new Date().toISOString();
-  const { db, rpc } = database({ ...connection, enabled: true, auto_intake: true, auto_create: true, auto_intake_from: "2026-09-01", auto_create_from: "2026-11-01", cursor_at: now, window_to: now });
+  const { db, rpc } = database({ ...connection, enabled: true, auto_intake: false, auto_create: false, cursor_at: now, window_to: now });
   mocks.transactions.mockResolvedValue({ transactions: [], meta: { next_page: null, total_pages: 1 } });
   mocks.automate.mockResolvedValue({ services: 1, expenses: 2, matched: 1, review: 0, ignored: 0, pending: false });
   expect(await syncQonto(db, "org")).toMatchObject({ automation: { services: 1, expenses: 2 }, pending: false });
-  expect(mocks.automate).toHaveBeenCalledWith(db, "org", "2026-11-01T00:00:00.000Z", expect.any(Number));
-  expect(rpc).toHaveBeenCalledWith("prepare_qonto_drafts", { target_org: "org" });
+  expect(mocks.automate).toHaveBeenCalledWith(db, "org", "2026-09-01", expect.any(Number));
+  expect(rpc).not.toHaveBeenCalledWith("prepare_qonto_drafts", { target_org: "org" });
 });
 it("ne lance pas de création directe tant que l’historique bancaire est incomplet", async () => {
   const { db } = database({ ...connection, enabled: true, auto_intake: true, auto_create: true });
@@ -44,7 +44,7 @@ it("enregistre les pages une à une et libère le verrou après une interruption
   mocks.transactions.mockResolvedValueOnce({ transactions: [], meta: { next_page: 2, total_pages: 2 } }).mockRejectedValueOnce(new Error("Limite Qonto atteinte"));
   await expect(syncQonto(db, "org")).rejects.toThrow("Limite Qonto");
   expect(rpc).toHaveBeenCalledWith("ingest_qonto_transactions", { target_org: "org", entries: [] });
-  expect(rpc).toHaveBeenCalledWith("prepare_qonto_drafts", { target_org: "org" });
+  expect(rpc).not.toHaveBeenCalledWith("prepare_qonto_drafts", { target_org: "org" });
   expect(updates).toContainEqual(expect.objectContaining({ next_page: 2, cursor_at: connection.cursor_at }));
   expect(updates.at(-1)).toEqual({ lease_token: null, lease_until: null });
 });
@@ -63,7 +63,7 @@ it("termine les comptes, reprend 48 h et identifie les virements internes", asyn
     expect(await syncQonto(db, "org")).toMatchObject({ pending: false, busy: false, imported: 1 });
     expect(mocks.transactions).toHaveBeenCalledTimes(2);
     expect(rpc).toHaveBeenCalledWith("ingest_qonto_transactions", expect.objectContaining({ entries: [expect.objectContaining({ operation_type: "internal_transfer" })] }));
-    expect(rpc).toHaveBeenCalledWith("prepare_qonto_drafts", { target_org: "org" });
+    expect(rpc).not.toHaveBeenCalledWith("prepare_qonto_drafts", { target_org: "org" });
     expect(updates).toContainEqual(expect.objectContaining({ cursor_at: "2026-11-03T12:00:00.000Z", window_to: null, account_index: 0 }));
   } finally { vi.useRealTimers(); }
 });

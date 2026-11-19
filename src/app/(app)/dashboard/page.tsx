@@ -21,6 +21,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Avatar } from "@/components/avatar";
 import { DashboardCharts } from "@/components/dashboard-charts";
+import { BankResultCard } from "@/components/banking/bank-result-card";
 import { QontoTreasuryCard } from "@/components/banking/qonto-treasury-card";
 import { PageHeader } from "@/components/page-header";
 import { useWorkspace } from "@/components/workspace-provider";
@@ -148,8 +149,8 @@ export default function DashboardPage() {
   const kpis = [
     { label: "CA encaissé", value: formatMoney(collected), detail: statisticsPeriod.label, comparison: evolutionLabel(collected, previousCollected, previousLabel), icon: Banknote, tone: "emerald", href: "/finances" },
     { label: statisticsPeriod.kind === "year" ? "Objectif annuel" : "Objectif du mois", value: objective > 0 ? `${Math.round(collected / objective * 100)} %` : "À définir", detail: objective > 0 ? `${formatMoney(Math.max(objective - collected, 0))} restant sur ${formatMoney(objective)}` : "Renseignez vos objectifs dans Paramètres", comparison: evolutionLabel(collected, previousCollected, previousLabel), icon: Target, tone: "blue", href: "/parametres#objectifs-chiffre-affaires" },
-    { label: "Cash-flow décaissé", value: formatMoney(cashFlow), detail: `${formatMoney(cashReceipts)} reçu − ${formatMoney(paidExpenses)} réellement décaissé`, comparison: evolutionLabel(cashFlow, previousCashFlow, previousLabel), icon: WalletCards, tone: cashFlow >= 0 ? "emerald" : "rose", href: "/finances" },
-    { label: "Charges prévues", value: formatMoney(projectedExpenses), detail: `${formatMoney(paidExpenses)} décaissé sur la période · ${formatMoney(remainingExpenses)} restant sur ces charges`, comparison: evolutionLabel(projectedExpenses, previousProjectedExpenses, previousLabel), icon: TrendingDown, tone: "amber", href: "/finances" },
+    { label: "Flux de trésorerie suivi", value: formatMoney(cashFlow), detail: `${formatMoney(cashReceipts)} reçu − ${formatMoney(paidExpenses)} déduit, prélèvements échus inclus`, comparison: evolutionLabel(cashFlow, previousCashFlow, previousLabel), icon: WalletCards, tone: cashFlow >= 0 ? "emerald" : "rose", href: "/finances" },
+    { label: "Charges prévues", value: formatMoney(projectedExpenses), detail: `${formatMoney(paidExpenses)} déduit sur la période · ${formatMoney(remainingExpenses)} restant sur ces charges`, comparison: evolutionLabel(projectedExpenses, previousProjectedExpenses, previousLabel), icon: TrendingDown, tone: "amber", href: "/finances" },
     { label: "Prestations réalisées", value: String(completed.length), detail: statisticsPeriod.label, comparison: evolutionLabel(completed.length, previousCompleted.length, previousLabel), icon: Sparkles, tone: "amber", href: "/prestations" },
     { label: "Panier moyen", value: formatMoney(averageBasket), detail: `${completed.length} prestation(s) terminée(s)`, comparison: evolutionLabel(averageBasket, previousAverageBasket, previousLabel), icon: Gauge, tone: "violet", href: "/pilotage" },
     { label: "Marge brute", value: formatMoney(margin), detail: averageHourly === null ? "Durées non renseignées" : `${formatMoney(averageHourly)}/heure-personne`, comparison: evolutionLabel(margin, previousMargin, previousLabel), icon: TrendingUp, tone: margin >= 0 ? "teal" : "rose", href: "/pilotage" },
@@ -185,6 +186,8 @@ export default function DashboardPage() {
         ))}
         {showTreasury && <QontoTreasuryCard />}
       </section>
+
+      {showTreasury && <BankResultCard period={statisticsPeriod.month ?? String(statisticsPeriod.year)} label={statisticsPeriod.label} />}
 
       <DashboardCharts year={dashboardYear} revenue={dashboardCharts.revenue} cashFlow={dashboardCharts.cashFlow} focusMonth={statisticsPeriod.month} periodLabel={statisticsPeriod.label} />
 
