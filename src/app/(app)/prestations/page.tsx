@@ -4,13 +4,12 @@ import { AlertTriangle, Banknote, CalendarPlus2, CircleDollarSign, Clock3, Penci
 import { Suspense, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import { FinanceState } from "@/components/banking/finance-state";
 import { InterventionDetail } from "@/components/intervention-detail";
-import { BankDraftInbox } from "@/components/banking/bank-draft-inbox";
 import { useWorkspace } from "@/components/workspace-provider";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/field";
 import { Modal } from "@/components/ui/modal";
@@ -20,14 +19,15 @@ import { interventionStatusLabels } from "@/lib/domain/labels";
 import { useDemoStore } from "@/lib/demo/store";
 import { formatDate, formatMoney, normalizeText } from "@/lib/utils";
 
-type WorkflowFilter = "all" | "upcoming" | "in_progress" | "to_collect" | "done" | "cancelled";
+type WorkflowFilter = "all" | "upcoming" | "in_progress" | "to_collect" | "qonto" | "done" | "cancelled";
 
 const filterLabels: Record<WorkflowFilter, string> = {
   all: "Toutes les prestations",
   upcoming: "À venir",
   in_progress: "En cours",
   to_collect: "À encaisser",
-  done: "Terminées & payées",
+  done: "Terminées et encaissées",
+  qonto: "Avec paiement Qonto",
   cancelled: "Annulées",
 };
 
@@ -61,8 +61,9 @@ function PrestationsPageContent() {
     if (!matchesQuery) return false;
     if (filter === "upcoming") return ["to_schedule", "scheduled", "confirmed"].includes(intervention.status);
     if (filter === "in_progress") return intervention.status === "in_progress";
-    if (filter === "to_collect") return intervention.status === "completed" && !workflow.isComplete;
-    if (filter === "done") return intervention.status === "completed" && workflow.isComplete;
+    if (filter === "to_collect") return intervention.status === "completed" && workflow.outstanding > 0;
+    if (filter === "done") return intervention.status === "completed" && workflow.isPaid;
+    if (filter === "qonto") return workflow.bankLinked;
     if (filter === "cancelled") return intervention.status === "cancelled";
     return true;
   }).sort((a, b) => {
@@ -71,7 +72,7 @@ function PrestationsPageContent() {
     return first.localeCompare(second);
   }), [data.clients, data.vehicles, filter, query, rows]);
 
-  const toCollectRows = rows.filter(({ intervention, workflow }) => intervention.status === "completed" && !workflow.isComplete);
+  const toCollectRows = rows.filter(({ intervention, workflow }) => intervention.status === "completed" && workflow.outstanding > 0);
   const toCollect = toCollectRows.reduce((sum, { workflow }) => sum + workflow.outstanding, 0);
   const collected = collectedInterventionRevenue(
     data.interventions.filter((intervention) => intervention.status !== "cancelled"),
@@ -85,7 +86,7 @@ function PrestationsPageContent() {
   const deletingPayments = deletingIntervention ? data.payments.filter((payment) => payment.interventionId === deletingIntervention.id) : [];
 
   const removeIntervention = () => {
-    if (!deletingIntervention) return;
+    if (!canManage || !deletingIntervention || getInterventionWorkflow(deletingIntervention, deletingInvoice, data.payments).bankLinked) return;
     data.removeIntervention(deletingIntervention.id);
     if (selectedId === deletingIntervention.id) {
       setSelectedOverride(null);
@@ -102,11 +103,10 @@ function PrestationsPageContent() {
       <PageHeader
         eyebrow="Du rendez-vous à l’encaissement"
         title="Prestations"
-        description="Chaque dossier va du rendez-vous à l’encaissement. Une facture peut être ajoutée comme justificatif, sans bloquer le parcours."
+        description="Retrouvez le rendez-vous et son règlement dans le même dossier. Un paiement lié à Qonto est déjà enregistré ; les visites d’entretien sont réglées au niveau du contrat."
         actions={<Button onClick={() => window.dispatchEvent(new CustomEvent("adetailing:open-add", { detail: "appointment" }))}><CalendarPlus2 className="size-4" /> Ajouter une prestation</Button>}
       />
 
-      <BankDraftInbox side="credit" />
       <section className="grid gap-3 sm:grid-cols-3">
         {[
           { icon: Sparkles, label: "En cours", value: String(inProgress), detail: "à terminer", tone: "bg-sky-100 text-sky-700" },
@@ -116,8 +116,8 @@ function PrestationsPageContent() {
       </section>
 
       <div className="flex flex-col gap-3 sm:flex-row">
-        <div className="relative max-w-md flex-1"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-500" /><Input className="pl-10" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Client, véhicule, immatriculation, prestation…" /></div>
-        <Select className="sm:w-56" value={filter} onChange={(event) => setFilter(event.target.value as WorkflowFilter)}>{Object.entries(filterLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</Select>
+        <div className="relative max-w-md flex-1"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-500" /><Input type="search" aria-label="Rechercher une prestation" className="pl-10" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Client, véhicule, immatriculation, prestation…" /></div>
+        <Select aria-label="Filtrer les prestations" className="sm:w-56" value={filter} onChange={(event) => setFilter(event.target.value as WorkflowFilter)}>{Object.entries(filterLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</Select>
       </div>
 
       <div className="grid gap-3">
@@ -125,21 +125,18 @@ function PrestationsPageContent() {
         {filtered.map(({ intervention, workflow }) => {
           const client = data.clients.find((item) => item.id === intervention.clientId);
           const vehicle = data.vehicles.find((item) => item.id === intervention.vehicleId);
-          const maintenanceContract = intervention.maintenanceContractId ? data.maintenanceContracts.find((item) => item.id === intervention.maintenanceContractId) : undefined;
           const vehicleSummary = vehicle ? `${vehicle.make} ${vehicle.model}${vehicle.registration ? ` · ${vehicle.registration}` : ""}` : intervention.vehicleFormat || "Véhicule non renseigné";
-          const currentStep = workflow.steps.find((step) => step.state === "current");
           return (
             <div key={intervention.id} className="surface-interactive grid grid-cols-[minmax(0,1fr)_auto] overflow-hidden rounded-2xl border border-contrast/[0.08] bg-ink-900 text-content shadow-[0_6px_22px_rgba(47,40,72,.06)]">
-              <button onClick={() => { setEditOverride(false); setSelectedOverride(intervention.id); }} className="focus-ring grid min-w-0 gap-4 p-4 text-left transition-colors hover:bg-brand-50/40 sm:grid-cols-[minmax(230px,1.3fr)_170px_150px_minmax(180px,.8fr)_auto] sm:items-center sm:p-5">
-                <div className="min-w-0"><div className="flex items-center gap-2"><p className="truncate text-sm font-bold">{intervention.title}</p>{intervention.maintenanceContractId && <Badge variant="blue">Entretien mensuel</Badge>}{workflow.isComplete && intervention.status === "completed" && <CheckMark />}</div><p className="mt-1 truncate text-xs text-zinc-500">{client?.company || `${client?.firstName} ${client?.lastName}`} · {vehicleSummary}</p><div className="mt-3 flex items-center gap-1.5">{workflow.steps.map((step) => <span key={step.id} title={`${step.label} : ${step.detail}`} className={`h-1.5 flex-1 rounded-full ${step.state === "done" ? "bg-emerald-500" : step.state === "current" ? "bg-brand-500" : "bg-slate-200"}`} />)}</div></div>
-                <div><p className="text-[10px] font-bold tracking-wider text-zinc-500 uppercase">Rendez-vous</p><p className="mt-1 text-xs font-semibold">{intervention.startAt ? formatDate(intervention.startAt, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "À planifier"}</p><p className="mt-1 text-[10px] text-zinc-500"><Clock3 className="mr-1 inline size-3" /> {intervention.plannedDurationMinutes / 60} h</p></div>
-                <div>{intervention.maintenanceContractId ? <><p className="text-[10px] font-bold tracking-wider text-zinc-500 uppercase">Facturation</p><p className="mt-1 text-sm font-bold text-emerald-700">Incluse dans le forfait</p><p className="mt-1 text-[10px] text-zinc-500">0 € à encaisser sur cette visite{maintenanceContract?.billingFrequency === "prepaid" ? " · paiement unique" : ""}</p></> : <><p className="text-[10px] font-bold tracking-wider text-zinc-500 uppercase">Montant prévu</p><p className="mt-1 text-sm font-bold">{formatMoney(intervention.items.reduce((sum, item) => sum + item.revenueAllocated, 0))}</p></>}</div>
-                <div><p className="text-[10px] font-bold tracking-wider text-zinc-500 uppercase">Prochaine étape</p><p className={`mt-1 text-xs font-bold ${workflow.isComplete ? "text-emerald-700" : "text-brand-700"}`}>{workflow.isComplete ? "Parcours terminé" : intervention.status === "cancelled" ? "Prestation annulée" : currentStep?.detail}</p></div>
-                <StatusBadge status={intervention.status}>{interventionStatusLabels[intervention.status]}</StatusBadge>
+              <button onClick={() => { setEditOverride(false); setSelectedOverride(intervention.id); }} className="focus-ring grid min-w-0 gap-3 p-4 text-left hover:bg-brand-50/40 md:grid-cols-2 xl:grid-cols-[minmax(0,1.3fr)_minmax(8rem,.75fr)_minmax(10rem,1fr)] xl:items-center">
+                <div className="min-w-0"><p className="break-words text-base font-bold">{intervention.title}</p><p className="mt-1 break-words text-sm text-zinc-600">{client?.company || [client?.firstName,client?.lastName].filter(Boolean).join(" ") || "Client non renseigné"} · {vehicleSummary}</p><div className="mt-2"><StatusBadge status={intervention.status}>{interventionStatusLabels[intervention.status]}</StatusBadge></div></div>
+                <div><p className="text-xs font-semibold text-zinc-500">Rendez-vous</p><p className="mt-1 text-sm font-semibold">{intervention.startAt ? formatDate(intervention.startAt, {day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}) : "Sans créneau"}</p><p className="mt-1 text-xs text-zinc-500"><Clock3 className="mr-1 inline size-3" />{intervention.plannedDurationMinutes / 60} h prévues</p></div>
+                <div className="min-w-0"><FinanceState {...workflow.paymentState} /><p className="mt-1 text-sm font-bold tabular-nums">{intervention.maintenanceContractId ? "0 € à encaisser sur la visite" : formatMoney(workflow.payableTotal)}</p>
+                  {workflow.paidAmount > 0 && workflow.outstanding > 0 && <p className="text-xs text-zinc-600">{formatMoney(workflow.outstanding)} restant</p>}</div>
               </button>
-              {canManage && <div className="m-3 flex items-center gap-1 self-center">
-                <button type="button" onClick={() => { setEditOverride(true); setSelectedOverride(intervention.id); }} aria-label={`Modifier ${intervention.title}`} title="Modifier" className="focus-ring grid size-9 place-items-center rounded-xl border border-contrast/[0.08] bg-zinc-50 text-zinc-500 shadow-sm transition hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700"><Pencil className="size-4" /></button>
-                <button type="button" onClick={() => setDeletingInterventionId(intervention.id)} aria-label={`Supprimer ${intervention.title}`} title="Supprimer la prestation" className="focus-ring grid size-9 place-items-center rounded-xl border border-red-100 bg-red-50 text-red-600 shadow-sm transition hover:border-red-300 hover:bg-red-100"><Trash2 className="size-4" /></button>
+              {canManage && <div className="m-2 flex flex-col items-center gap-1 self-start lg:m-3 lg:flex-row lg:self-center">
+                <button type="button" onClick={() => { setEditOverride(true); setSelectedOverride(intervention.id); }} aria-label={`Modifier ${intervention.title}`} title="Modifier" className="focus-ring grid size-11 place-items-center rounded-xl border border-contrast/[0.08] bg-zinc-50 text-zinc-500 shadow-sm transition hover:border-brand-200 hover:bg-brand-50 hover:text-brand-700"><Pencil className="size-4" /></button>
+                {!workflow.bankLinked && <button type="button" onClick={() => setDeletingInterventionId(intervention.id)} aria-label={`Supprimer ${intervention.title}`} title="Supprimer la prestation" className="focus-ring grid size-11 place-items-center rounded-xl border border-red-100 bg-red-50 text-red-600 shadow-sm transition hover:border-red-300 hover:bg-red-100"><Trash2 className="size-4" /></button>}
               </div>}
             </div>
           );
@@ -164,8 +161,4 @@ function PrestationsPageContent() {
 
 export default function PrestationsPage() {
   return <Suspense fallback={<div className="grid min-h-64 place-items-center text-sm text-zinc-500">Chargement des prestations…</div>}><PrestationsPageContent /></Suspense>;
-}
-
-function CheckMark() {
-  return <span className="grid size-5 shrink-0 place-items-center rounded-full bg-emerald-100 text-[10px] font-black text-emerald-700">✓</span>;
 }

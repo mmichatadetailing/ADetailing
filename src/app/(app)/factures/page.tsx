@@ -10,7 +10,7 @@ export default function FacturesPage() {
   const canViewInvoices = mode === "demo" || Boolean(workspace?.canManageBusiness);
 
   return <div className="space-y-7">
-    <PageHeader eyebrow="Suivi des règlements" title="Factures" description="Retrouvez vos factures clients Qonto et repérez celles qui sont en retard de paiement." />
+    <PageHeader eyebrow="Qonto · lecture seule" title="Factures" description="Consultez les factures Qonto et les retards de paiement. Une facture ne crée pas d’encaissement : seuls les paiements enregistrés alimentent le suivi financier." />
     {canViewInvoices ? <QontoInvoiceView key={workspace?.organizationId ?? mode} demo={mode === "demo"} />
       : <Card><CardContent className="p-5 text-sm text-zinc-500">La consultation des factures Qonto est réservée aux associés et administrateurs.</CardContent></Card>}
   </div>;

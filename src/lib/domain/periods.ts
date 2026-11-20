@@ -96,8 +96,9 @@ export function dateKey(date: Date) {
 }
 
 // Les mouvements bancaires arrivent en UTC : leur mois comptable est celui de Paris.
+const financialDayFormat = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Paris" });
 export function financialDateKey(value: string) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
   const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Paris" }).format(date) : "";
+  return Number.isFinite(date.getTime()) ? financialDayFormat.format(date) : "";
 }

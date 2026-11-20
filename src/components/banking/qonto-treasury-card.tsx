@@ -31,7 +31,7 @@ export function QontoTreasuryDisplay({ feed, loading, error, demo, onRefresh }: 
         <span className="text-[10px] text-zinc-500">Indépendant de la période</span>
         {!demo && <button type="button" disabled={loading} onClick={onRefresh} aria-label="Actualiser la trésorerie Qonto" className="focus-ring inline-flex min-h-8 items-center gap-1.5 rounded-lg px-2 text-[10px] font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:cursor-wait disabled:opacity-50"><RefreshCw aria-hidden="true" className={`size-3 ${loading ? "animate-spin" : ""}`} /> Actualiser</button>}
       </div>
-      {!demo && (feed?.state === "not_connected" || feed?.state === "paused") && <Link className="focus-ring mt-1 inline-block rounded-lg py-1 text-xs font-semibold text-emerald-800 hover:underline" href="/banque">{feed.state === "paused" ? "Réactiver Qonto" : "Connecter Qonto"} →</Link>}
+      {!demo && (feed?.state === "not_connected" || feed?.state === "paused") && <Link className="focus-ring mt-1 inline-block rounded-lg py-1 text-xs font-semibold text-emerald-800 hover:underline" href="/banque#connexion">{feed.state === "paused" ? "Réactiver Qonto" : "Connecter Qonto"}</Link>}
     </CardContent>
   </Card>;
 }

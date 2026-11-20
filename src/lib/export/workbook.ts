@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import type { AppData, Payment } from "@/lib/domain/types";
 import type { TeamInvitation } from "@/lib/supabase/data";
+import { bankCashSummary, recordedActivity } from "@/lib/domain/qonto-finance";
 import type { BankTransaction } from "@/lib/domain/banking";
 import type { BankDraft } from "@/lib/domain/bank-drafts";
 import { clientRevenueMetrics, grossMargin, paymentStatusForInvoice } from "@/lib/domain/calculations";
@@ -127,9 +128,9 @@ export function buildExportWorkbook(data: AppData, options: { exportedAt?: Date;
     return { clientName: clients.get(contract?.clientId ?? intervention?.clientId ?? invoice?.clientId ?? "") ?? "Client non retrouvé", contractName: contract?.title, interventionName: intervention?.title, type: contract ? "Entretien" : invoice ? "Facture" : "Prestation", ...payment };
   };
   add("Paiements", data.payments.map(paymentDetails), ["paidAt", "clientName", "type", "contractName", "interventionName", "amount", "method"]);
-  add("Transactions Qonto", (options.bankTransactions ?? []).map((transaction) => ({ "Date bancaire": excelDate(transaction.settled_at ?? transaction.emitted_at), "Compte": transaction.account_name, "Libellé": transaction.label, "Contrepartie": transaction.counterparty, "Montant (€)": transaction.amount_cents / 100 * (transaction.side === "credit" ? 1 : -1), "État bancaire": transaction.status, "Rapprochement": transaction.reconciliation, "ID regroupement": transaction.reconciliation_group_id, "Opérations regroupées": transaction.group_size, "Note du regroupement": transaction.group_note, "ID transaction": transaction.id, "ID Qonto": transaction.remote_id, "ID paiement": transaction.payment_id, "ID charge": transaction.expense_id, "Mois charge": transaction.expense_month })), ["Date bancaire", "Compte", "Libellé", "Contrepartie", "Montant (€)", "État bancaire", "Rapprochement"]);
+  add("Transactions Qonto", (options.bankTransactions ?? []).map((transaction) => ({ "Date bancaire": excelDate(transaction.settled_at ?? transaction.emitted_at), "Compte": transaction.account_name, "Libellé": transaction.label, "Contrepartie": transaction.counterparty, "Montant (€)": transaction.amount_cents / 100 * (transaction.side === "credit" ? 1 : -1), "État bancaire": transaction.status, "Rapprochement": transaction.reconciliation, "Traitement automatique": transaction.automation_note, "ID regroupement": transaction.reconciliation_group_id, "Opérations regroupées": transaction.group_size, "Note du regroupement": transaction.group_note, "ID transaction": transaction.id, "ID Qonto": transaction.remote_id, "ID paiement": transaction.payment_id, "ID charge": transaction.expense_id, "Mois charge": transaction.expense_month })), ["Date bancaire", "Compte", "Libellé", "Contrepartie", "Montant (€)", "État bancaire", "Rapprochement"]);
   add("Règlements charges", data.expenses.flatMap((expense) => (expense.settlements ?? []).map((settlement) => ({ "Charge": expense.description, "ID charge": expense.id, ...settlement }))), ["Charge", "month", "amount", "paidAt", "bankTransactionId"]);
-  add("Brouillons Qonto", (options.bankDrafts ?? []).map((draft) => ({ "Type": draft.side === "credit" ? "Prestation" : "Charge", "État": ({ pending: "À valider — hors statistiques", dismissed: "Supprimée", processed: "Traitée" })[draft.status], "Intitulé": draft.payload.title, clientName: clients.get(draft.payload.clientId ?? ""), "Contrepartie": draft.transaction.counterparty, "Montant bancaire (€)": draft.transaction.amount_cents / 100 * (draft.side === "debit" ? -1 : 1), "Date bancaire": excelDate(draft.transaction.settled_at ?? draft.transaction.emitted_at), "Prix prestation proposé (€)": draft.side === "credit" ? draft.payload.revenue / 100 : undefined, "Date prestation proposée": excelDate(draft.payload.performedOn), "Fournisseur": draft.payload.supplier, "Catégorie": draft.payload.category, "Notes": draft.payload.notes, "ID proposition": draft.id, "ID transaction": draft.transaction.id })), ["Type", "État", "Intitulé", "clientName", "Contrepartie", "Montant bancaire (€)", "Date bancaire"]);
+  add("Brouillons Qonto", (options.bankDrafts ?? []).map((draft) => ({ "Type": draft.side === "credit" ? "Prestation" : "Charge", "État": ({ pending: "Archive — sans écriture propre", dismissed: "Supprimée", processed: "Traitée" })[draft.status], "Intitulé": draft.payload.title, clientName: clients.get(draft.payload.clientId ?? ""), "Contrepartie": draft.transaction.counterparty, "Montant bancaire (€)": draft.transaction.amount_cents / 100 * (draft.side === "debit" ? -1 : 1), "Date bancaire": excelDate(draft.transaction.settled_at ?? draft.transaction.emitted_at), "Prix prestation proposé (€)": draft.side === "credit" ? draft.payload.revenue / 100 : undefined, "Date prestation proposée": excelDate(draft.payload.performedOn), "Fournisseur": draft.payload.supplier, "Catégorie": draft.payload.category, "Notes": draft.payload.notes, "ID proposition": draft.id, "ID transaction": draft.transaction.id })), ["Type", "État", "Intitulé", "clientName", "Contrepartie", "Montant bancaire (€)", "Date bancaire"]);
   add("Clients", data.clients.map((client) => { const metrics = clientRevenueMetrics(client.id, data.invoices, data.interventions, data.payments, data.maintenanceContracts, data.maintenanceBillingPeriods); return { ...client, "Encaissé (€)": metrics.collected / 100, "Prestations réalisées (€)": metrics.revenue / 100 }; }), ["company", "firstName", "lastName", "email", "phone", "city"]);
   add("Véhicules", data.vehicles.map((vehicle) => ({ clientName: clients.get(vehicle.clientId), ...vehicle })), ["clientName", "make", "model", "registration", "format"]);
   add("Prestations", data.interventions.map((original) => { const item = original; const workflow = getInterventionWorkflow(original, invoices.get(item.invoiceId ?? ""), data.payments); return { clientName: clients.get(item.clientId), ...without(item, ["items", "workers"]), status: interventionStatusLabels[item.status], "Facturation": item.maintenanceContractId ? "Incluse dans le contrat" : "Prestation ponctuelle", "Reste à encaisser (€)": workflow.outstanding / 100, "Marge brute (€)": grossMargin(original) / 100 }; }), ["title", "clientName", "startAt", "endAt", "status"]);
@@ -153,25 +154,37 @@ export function buildExportWorkbook(data: AppData, options: { exportedAt?: Date;
   add("Messages accessibles", data.messages.map((message) => ({ memberName: team.get(message.authorId), ...message, readBy: message.readBy.map((id) => team.get(id) ?? id) })), ["sentAt", "memberName", "channel", "body", "entityType", "entityId"]);
   add("Invitations", (options.invitations ?? []).map((invitation) => ({ ...invitation })), ["firstName", "lastName", "email", "role", "expiresAt", "acceptedAt"]);
   add("Paramètres", Object.entries(data.settings).map(([key, value]) => ({ "Paramètre": key, "Valeur": Array.isArray(value) ? value.join(", ") : key.endsWith("BasisPoints") ? Number(value) / 10_000 : /Cash|Target|Buffer/.test(key) && !/Review|Rating|Rate/.test(key) ? Number(value) / 100 : value })), ["Paramètre", "Valeur"]);
-  const years = new Set([reference.getFullYear(), ...data.payments.map((item) => +financialDateKey(item.paidAt).slice(0, 4)), ...data.objectives.map((item) => +item.month.slice(0, 4)), ...data.expenses.map((item) => +item.date.slice(0, 4)), ...data.interventions.flatMap((item) => item.startAt ? [+item.startAt.slice(0, 4)] : [])]);
+  const families = new Map(data.expenses.map((e) => [e.id, e.family]));
+  const bankByMonth = new Map<string, BankTransaction[]>();
+  for (const tx of options.bankTransactions ?? []) {
+    if (!tx.settled_at || tx.status !== "completed") continue;
+    const month = financialDateKey(tx.settled_at).slice(0, 7);
+    if (!bankByMonth.has(month)) bankByMonth.set(month, []);
+    bankByMonth.get(month)!.push({ ...tx, expense_family: tx.expense_family ?? families.get(tx.expense_id ?? "") });
+  }
+  const years = new Set([reference.getFullYear(), ...Array.from(bankByMonth.keys(), (m) => +m.slice(0,4)), ...data.payments.map((item) => +financialDateKey(item.paidAt).slice(0, 4)), ...data.objectives.map((item) => +item.month.slice(0, 4)), ...data.expenses.map((item) => +item.date.slice(0, 4)), ...data.interventions.flatMap((item) => item.startAt ? [+item.startAt.slice(0, 4)] : [])]);
   const monthly = [...years].filter((year) => Number.isFinite(year) && year >= 1900 && year <= 9999).sort().flatMap((year) => {
     const charts = buildDashboardChartData({ year, objectives: data.objectives, interventions: data.interventions, payments: data.payments, expenses: data.expenses, reference });
     return charts.revenue.map((point, index) => {
       const cash = charts.cashFlow[index]!; // Les deux séries ont les mêmes douze mois.
+      const bank = bankCashSummary(bankByMonth.get(point.key) ?? [], point.key, reference.getTime());
+      const activity = recordedActivity(data.payments, data.expenses, point.key, bank.bookedRefunds, reference);
       return {
         "Mois": excelDate(point.key),
         "Objectif encaissé (€)": point.objective === null ? null : point.objective / 100,
         "CA encaissé (€)": point.collected / 100,
         "Reçus totaux (€)": cash.receipts / 100,
         "Charges prévues (€)": cash.expenses / 100,
-        "Charges décaissées (€)": cash.paidExpenses / 100,
-        "Cash-flow réel (€)": cash.actualCashFlow / 100,
+        "Décaissements suivis (€)": cash.paidExpenses / 100,
+        "Flux de trésorerie suivi (€)": cash.actualCashFlow / 100,
+        "Charges d’activité réglées (€)": activity.spent / 100,
+        "Résultat d’activité enregistré (€)": activity.result / 100,
       };
     });
   });
-  const monthlySheet = rowsSheet(book, "Bilan mensuel", monthly, ["Mois", "Objectif encaissé (€)", "CA encaissé (€)", "Reçus totaux (€)", "Charges prévues (€)", "Charges décaissées (€)", "Cash-flow réel (€)"]);
+  const monthlySheet = rowsSheet(book, "Bilan mensuel", monthly, ["Mois", "Objectif encaissé (€)", "CA encaissé (€)", "Reçus totaux (€)", "Charges prévues (€)", "Décaissements suivis (€)", "Flux de trésorerie suivi (€)", "Charges d’activité réglées (€)", "Résultat d’activité enregistré (€)"]);
   monthlySheet.getColumn(1).numFmt = "mmm yyyy";
-  for (let column = 2; column <= 7; column++) monthlySheet.getColumn(column).numFmt = moneyFormat;
+  for (let column = 2; column <= 9; column++) monthlySheet.getColumn(column).numFmt = moneyFormat;
   summary.addRow(["Bilan mensuel", monthly.length, { text: "Ouvrir le bilan", hyperlink: "#'Bilan mensuel'!A1" }]);
   book.worksheets.forEach((sheet) => { sheet.properties.defaultRowHeight = 28; });
   summary.eachRow((row, index) => { row.height = index >= 9 && index <= 13 ? 46 : 30; row.eachCell((cell) => { cell.alignment = { vertical: "middle", wrapText: true }; cell.font = { name: "Calibri", size: 11, color: { argb: "FF172033" } }; }); });

@@ -37,6 +37,7 @@ beforeAll(async () => {
   await db.exec(await readFile("supabase/migrations/202611050026_qonto_historical_groups.sql", "utf8"));
   await db.exec(await readFile("supabase/migrations/202611050027_qonto_automatic_drafts.sql", "utf8"));
   await db.exec(await readFile("supabase/migrations/202611160028_qonto_direct_integration.sql", "utf8"));
+  await db.exec(await readFile("supabase/migrations/202611190029_qonto_autonomous_finance.sql", "utf8"));
 }, 30_000);
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
@@ -76,6 +77,77 @@ async function manageDraft(action: string, details: Record<string, unknown> = {}
   return db.query<{ manage_bank_draft: { interventionId?: string } }>("select manage_bank_draft($1,$2,$3)", [draft.id, action, JSON.stringify({ expectedUpdatedAt: draft.updated_at, ...details })]);
 }
 function validation(payload: Record<string, unknown>) { return { targetKind: "new", expectedAmount: 11000, expectedSettledAt: "2026-09-16T00:00:00Z", payload }; }
+
+describe("journal financier autonome (migration 029)", () => {
+  async function active() {
+    await db.exec("set app.member_role='service_role'; update qonto_connections set posting_from='2026-09-01', auto_intake=false, auto_create=false, auto_reconcile=false");
+  }
+  const post = async (id: string, decision: Record<string, unknown>, amount = 11000) =>
+    (await db.query<{ result: { kind?: string; skipped?: boolean } }>("select post_qonto_transaction($1,$2,'2026-09-16',$3) result", [id,amount,JSON.stringify(decision)])).rows[0]!.result;
+  it("intègre deux achats identiques sans confondre un second débit avec le rejeu du premier", async () => {
+    await active(); await bank(tx, "debit"); await bank(secondTx, "debit");
+    await db.exec("update bank_transactions set counterparty='Qonto',label='Abonnement Qonto'");
+    const decision = { action: "expense", category: "Frais bancaires" };
+    expect(await post(tx,decision)).toEqual({kind:"expense"});
+    expect(await post(tx,decision)).toEqual({skipped:true});
+    expect(await post(secondTx,decision)).toEqual({kind:"expense"});
+    expect(await count("expense_settlements")).toBe(2);
+    expect((await db.query("select id from expenses where category='Frais bancaires' and not vat_recoverable")).rows).toHaveLength(2);
+    expect(await count("bank_transaction_drafts")).toBe(0);
+  });
+  it("règle le montant variable d’un seul mois, sans modifier le tarif ni les autres mois", async () => {
+    await active(); await bank(tx, "debit", 12500);
+    await db.exec("update bank_transactions set counterparty='Assureur',operation_type='direct_debit'; update expenses set supplier='Assureur'");
+    const decision = {action:"match",kind:"expense",id:expense,month:"2026-09-01",variableDebit:true};
+    expect(await post(tx,decision,12500)).toEqual({kind:"matched"});
+    expect((await db.query("select period_month::text as month,amount_cents::int as amount from expense_settlements")).rows).toEqual([{month:"2026-09-01",amount:12500}]);
+    expect((await db.query("select amount_including_tax_cents::int as amount from expenses")).rows).toEqual([{amount:11000}]);
+    await bank(secondTx,"debit",9500);
+    await db.query("update bank_transactions set counterparty='Autre',operation_type='direct_debit' where id=$1",[secondTx]);
+    await expect(post(secondTx,decision,9500)).rejects.toThrow("incompatible");
+    expect(await count("expense_settlements")).toBe(1);
+  });
+  it("reprend un brouillon intact, puis corrige une annulation sans intervention ni double encaissement", async () => {
+    await active();
+    await db.exec("update qonto_connections set auto_intake=true");
+    await prepareDraft();
+    await db.exec("update qonto_connections set posting_from='2026-10-01'");
+    await db.exec("update bank_transactions set counterparty='Camille Bernard'");
+    const sale = {action:"service",clientName:"Camille Bernard"};
+    expect(await post(tx,sale)).toEqual({kind:"service"});
+    await db.exec("update qonto_connections set posting_from='2026-09-01'");
+    await bank(secondTx);
+    await db.query("update bank_transactions set counterparty='Camille Bernard' where id=$1",[secondTx]);
+    expect(await post(secondTx,sale)).toEqual({kind:"service"});
+    expect(await count("payments")).toBe(2);
+    await db.query("update bank_transactions set status='reversed',remote_updated_at=now() where id=$1",[tx]);
+    await db.query("select repair_qonto_postings($1)",[org]);
+    await db.query("select repair_qonto_postings($1)",[org]);
+    expect(await count("payments")).toBe(1);
+    expect((await db.query("select id from interventions where status='cancelled'")).rows).toHaveLength(1);
+    expect(await post(tx,sale)).toEqual({skipped:true});
+    await db.query("update bank_transactions set status='completed',remote_updated_at=now() where id=$1",[tx]);
+    expect(await post(tx,sale)).toEqual({kind:"service"});
+    expect(await count("payments")).toBe(2);
+  });
+  it("ne recrée ni l’historique, ni un paiement préexistant après une correction bancaire", async () => {
+    await active(); await bank();
+    await db.exec("update qonto_connections set posting_from='2026-10-01'");
+    expect(await post(tx,{action:"expense"})).toEqual({skipped:true});
+    await db.query("insert into payments(id,organization_id,intervention_id,amount_cents,paid_at) values($1,$2,$3,11000,'2026-09-16')",[period,org,job]);
+    expect(await post(tx,{action:"match",kind:"payment",id:period})).toEqual({kind:"matched"});
+    await db.exec("update bank_transactions set amount_cents=12000,remote_updated_at=now()");
+    await db.query("select repair_qonto_postings($1)",[org]);
+    expect((await db.query("select amount_cents::int as amount from payments")).rows).toEqual([{amount:11000}]);
+  });
+  it("réserve les mutations automatiques au serveur et respecte une pause", async () => {
+    await active(); await bank(); await db.exec("update qonto_connections set enabled=false");
+    expect(await post(tx,{action:"defer",reason:"Identité absente"})).toEqual({skipped:true});
+    await db.exec("set role authenticated");
+    await expect(post(tx,{action:"expense"})).rejects.toThrow("permission denied");
+    await expect(db.query("select repair_qonto_postings($1)",[org])).rejects.toThrow("permission denied");
+  });
+});
 
 async function automate(decision: Record<string, unknown>, bankId = tx) {
   await db.exec("set app.member_role='service_role'");
@@ -279,7 +351,7 @@ describe("rapprochement Qonto exécuté dans PostgreSQL", () => {
     const draft = await prepareDraft();
     await db.exec("set app.member_role='employee'; set role authenticated");
     expect((await db.query("select * from bank_transaction_drafts")).rows).toHaveLength(0);
-    await expect(db.query("select manage_bank_draft($1,'dismiss',$2)", [draft.id, JSON.stringify({ expectedUpdatedAt: draft.updated_at })])).rejects.toThrow("accès réservé");
+    await expect(db.query("select manage_bank_draft($1,'dismiss',$2)", [draft.id, JSON.stringify({ expectedUpdatedAt: draft.updated_at })])).rejects.toThrow("permission denied");
     await expect(db.query("select prepare_qonto_drafts($1)", [org])).rejects.toThrow("permission denied");
     await db.exec("reset role; set app.member_role='partner'");
     await reconcile(tx, "intervention", job);
@@ -335,13 +407,16 @@ describe("rapprochement Qonto exécuté dans PostgreSQL", () => {
     expect(await count("bank_reconciliation_groups")).toBe(0);
     expect(await count("expense_settlements")).toBe(0);
   });
-  it("réserve la création manuelle aux associés et ne permet pas de contourner le moteur", async () => {
+  it("réserve les écritures au serveur, y compris pour un associé", async () => {
     await bank(tx, "debit", 4000); await bank(secondTx, "debit", 7000);
     await db.exec("set app.member_role='employee'");
     await expect(group()).rejects.toThrow("réservé");
     await db.exec("set app.member_role='partner'; set role authenticated");
     await expect(db.query("select reconcile_single_bank_transaction($1,'undo')", [tx])).rejects.toThrow("permission denied");
-    await group();
+    await expect(group()).rejects.toThrow("permission denied");
+    await db.exec("reset role");
+    await group(); // historique existant avant migration
+    await db.exec("set role authenticated");
     expect((await db.query("select * from bank_reconciliation_groups")).rows).toHaveLength(1);
     await db.exec("set app.member_role='employee'");
     expect((await db.query("select * from bank_reconciliation_groups")).rows).toHaveLength(0);

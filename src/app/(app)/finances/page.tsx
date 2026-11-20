@@ -1,11 +1,14 @@
 "use client";
 
-import { AlertCircle, Banknote, CalendarClock, CheckCircle2, CircleDollarSign, Clock3, Landmark, PackageSearch, Pencil, Plus, ReceiptText, Repeat2, Save, ShieldCheck, Trash2, TriangleAlert, WalletCards } from "lucide-react";
-import { useState, type FormEvent } from "react";
-import Link from "next/link";
+import { AlertCircle, Banknote, CalendarClock, CircleDollarSign, Landmark, PackageSearch, Pencil, Plus, ReceiptText, Repeat2, Save, ShieldCheck, Trash2, TriangleAlert, WalletCards } from "lucide-react";
+import { Suspense, useState, type FormEvent } from "react";
+import { FinanceState } from "@/components/banking/finance-state";
+import { useFinanceAnchor } from "@/components/banking/use-finance-anchor";
+import { expenseAccess, isEstimatedDebit, occurrenceState, registerState } from "@/lib/domain/finance-presentation";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
-import { BankDraftInbox } from "@/components/banking/bank-draft-inbox";
+import { BankResultCard } from "@/components/banking/bank-result-card";
 import { useWorkspace } from "@/components/workspace-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,7 +21,6 @@ import {
   expenseForecast,
   expenseMonthSummary,
   nextExpenseOccurrenceDateKey,
-  paidExpenseAmountForMonth,
   recurringExpenseMetrics,
 } from "@/lib/domain/calculations";
 import { getInterventionWorkflow } from "@/lib/domain/intervention-workflow";
@@ -40,12 +42,6 @@ const familyLabels: Record<Expense["family"], string> = {
   investment: "Investissement",
   personal: "Personnel",
 };
-
-const occurrenceLabels = {
-  paid: "Décaissée",
-  due: "À régler",
-  upcoming: "À venir",
-} as const;
 
 function formatMonth(month: string, style: "long" | "short" = "long") {
   const label = new Intl.DateTimeFormat("fr-FR", { month: style, year: "numeric" }).format(new Date(`${month}-01T12:00:00`));
@@ -121,19 +117,32 @@ function ExpenseEditor({ expense, onCancel, onSave }: { expense: Expense; onCanc
         <Field label="Montant TTC (€)"><Input min="0.01" step="0.01" type="number" value={amountEuros} onChange={(event) => setAmountEuros(Number(event.target.value))} /></Field>
         <Field label="TVA (%)"><Input min="0" max="100" step="0.1" type="number" value={vatRate} onChange={(event) => setVatRate(Number(event.target.value))} /></Field>
       </div>
-      <label className="flex items-center gap-3 rounded-xl border border-line bg-zinc-50 p-3 text-sm font-semibold text-zinc-700"><input type="checkbox" className="accent-brand-500" checked={paid} onChange={(event) => setPaid(event.target.checked)} /> {recurrence === "one_off" ? "Dépense déjà payée" : "Prélèvement automatique à chaque échéance"}</label>
-      {recurrence !== "one_off" && <p className="-mt-2 text-[11px] leading-5 text-zinc-500">Même décochée, la charge reste incluse dans le total prévu. Cochez uniquement si elle doit être déduite automatiquement de la trésorerie le jour prévu.</p>}
+      <label className="flex items-center gap-3 rounded-xl border border-line bg-zinc-50 p-3 text-sm font-semibold text-zinc-700"><input type="checkbox" className="accent-brand-500" checked={paid} onChange={(event) => setPaid(event.target.checked)} /> {recurrence === "one_off" ? "Dépense déjà payée" : "Estimer un prélèvement à chaque échéance"}</label>
+      {recurrence !== "one_off" && <p className="-mt-2 text-[11px] leading-5 text-zinc-500">La charge reste dans le prévisionnel. Cette estimation ne devient pas un règlement confirmé à la date prévue.</p>}
       <div className="flex justify-end gap-2 pt-2"><Button variant="ghost" onClick={onCancel}>Annuler</Button><Button type="submit"><Save className="size-4" /> {isRecurringRevision ? "Appliquer à partir de cette date" : "Enregistrer les modifications"}</Button></div>
     </form>
   );
 }
 
 export default function FinancesPage() {
+  return <Suspense fallback={<p role="status" className="p-5 text-sm">Chargement des finances…</p>}><FinancePeriod /></Suspense>;
+}
+
+function FinancePeriod() {
+  const params = useSearchParams();
+  const requested = params.get("mois");
+  const register = params.get("registre") === "charges";
+  const month = requested && /^20\d{2}-(0[1-9]|1[0-2])$/.test(requested) ? requested : monthKey(new Date());
+  return <FinancesContent key={month + ":" + register} initialMonth={month} initialRegister={register} />;
+}
+
+function FinancesContent({ initialMonth, initialRegister }: { initialMonth: string; initialRegister: boolean }) {
   const data = useDemoStore();
   const { mode, workspace } = useWorkspace();
   const canManage = mode === "demo" || Boolean(workspace?.canManageBusiness);
+  const [view, setView] = useState<"month" | "forecast" | "register">(initialRegister ? "register" : "month");
   const [tab, setTab] = useState<"expenses" | "assets">("expenses");
-  const [selectedMonth, setSelectedMonth] = useState(() => monthKey(new Date()));
+  const [selectedMonth, setSelectedMonth] = useState(initialMonth);
   const [recurrenceFilter, setRecurrenceFilter] = useState<"all" | Expense["recurrence"]>("all");
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [deletingExpense, setDeletingExpense] = useState<Expense | null>(null);
@@ -142,7 +151,8 @@ export default function FinancesPage() {
   const monthSummary = expenseMonthSummary(data.expenses, selectedMonth);
   const selectedExpenses = monthSummary.occurrences.map((occurrence) => occurrence.expense);
   const projectedExpenses = monthSummary.total;
-  const paidExpenses = paidExpenseAmountForMonth(data.expenses, selectedMonth);
+  const estimatedDebits = monthSummary.occurrences.reduce((sum, entry) => sum + (isEstimatedDebit(entry) ? entry.amount : 0), 0);
+  const confirmedDues = monthSummary.paid - estimatedDebits;
   const collected = collectedRevenue(data.payments.filter((payment) => financialDateKey(payment.paidAt).slice(0, 7) === selectedMonth));
   const cash = cashBalance(data.settings.initialCash, data.payments, data.expenses);
   const toCollect = data.interventions
@@ -161,15 +171,17 @@ export default function FinancesPage() {
   const visibleExpenses = [...data.expenses]
     .filter((expense) => recurrenceFilter === "all" || expense.recurrence === recurrenceFilter)
     .sort((a, b) => b.date.localeCompare(a.date));
+  const linkedExpense = useFinanceAnchor("charge-", visibleExpenses, view === "register" && tab === "expenses");
 
   const openExpenseForm = () => window.dispatchEvent(new CustomEvent("adetailing:open-add", { detail: "expense" }));
   const saveExpense = (expense: Expense, input: NewExpenseInput) => {
+    if (!canManage || !expenseAccess(expense).edit) return;
     data.updateExpense(expense.id, input);
     setEditingExpense(null);
     toast.success(expense.recurrence === "one_off" ? "Charge modifiée" : "Nouveau tarif enregistré", { description: expense.recurrence === "one_off" ? "Les statistiques et projections ont été recalculées." : "Les mois précédents conservent leur ancien montant." });
   };
   const deleteExpense = () => {
-    if (!deletingExpense) return;
+    if (!canManage || !deletingExpense || !expenseAccess(deletingExpense).remove) return;
     data.removeExpense(deletingExpense.id);
     setDeletingExpense(null);
     toast.success("Charge supprimée");
@@ -180,15 +192,11 @@ export default function FinancesPage() {
       <PageHeader
         eyebrow="Trésorerie & charges"
         title="Finances"
-        description="Distinguez les décaissements réels des charges prévues, qu’elles soient ponctuelles, mensuelles ou annuelles."
-        actions={(
-          <div className="flex flex-wrap items-center gap-2">
-            <Input className="w-[170px]" aria-label="Mois analysé" type="month" value={selectedMonth} onChange={(event) => { if (/^\d{4}-\d{2}$/.test(event.target.value)) setSelectedMonth(event.target.value); }} />
-            {canManage && <Button onClick={openExpenseForm}><Plus className="size-4" /> Ajouter une dépense</Button>}
-          </div>
-        )}
+        description="Suivez le résultat enregistré, puis consultez les échéances du mois ou préparez les dépenses à venir. Les débits Qonto intégrés ne sont pas à ressaisir."
+        actions={<label className="grid gap-1 text-sm font-semibold"><span>Mois analysé</span>
+          <Input className="w-[170px]" type="month" min="2000-01" max="2099-12" value={selectedMonth} onChange={(event) => { if (/^20\d{2}-(0[1-9]|1[0-2])$/.test(event.target.value)) setSelectedMonth(event.target.value); }} /></label>}
       />
-      {canManage && <Link href="/banque" className="focus-ring flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-900"><span>Qonto : rapprocher les mouvements bancaires des paiements et des charges</span><span>Ouvrir la banque →</span></Link>}
+
 
       <Modal open={Boolean(editingExpense)} onClose={() => setEditingExpense(null)} title={editingExpense?.recurrence === "one_off" ? "Modifier la charge" : "Modifier le montant de l’abonnement"} description={editingExpense ? `${recurrenceLabels[editingExpense.recurrence]} · ${editingExpense.description}` : undefined}>
         {editingExpense && <ExpenseEditor key={editingExpense.id} expense={editingExpense} onCancel={() => setEditingExpense(null)} onSave={(input) => saveExpense(editingExpense, input)} />}
@@ -203,36 +211,25 @@ export default function FinancesPage() {
         <div className="mt-5 flex justify-end gap-2"><Button variant="ghost" onClick={() => setDeletingExpense(null)}>Annuler</Button><Button variant="danger" onClick={deleteExpense}><Trash2 className="size-4" /> Supprimer définitivement</Button></div>
       </Modal>
 
-      <BankDraftInbox side="debit" />
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      {canManage && <BankResultCard period={selectedMonth} label={monthLabel} />}
+      <nav aria-label="Vues des finances" className="finance-nav" data-tone="teal">
+        {([{id:"month", label:"Échéances du mois", icon:CalendarClock}, {id:"forecast", label:"Prévisions", icon:Banknote}, {id:"register", label:"Charges et matériel", icon:ReceiptText}] as const).map(({id,label,icon:Icon}) =>
+          <button key={id} className="focus-ring" type="button" aria-pressed={view === id} onClick={() => setView(id)}><Icon className="size-4" />{label}</button>)}
+      </nav>
+      {view === "month" && <>
+      <section aria-label="Répartition des échéances du mois" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          { icon: CalendarClock, label: `Total charges · ${monthLabel}`, value: formatMoney(projectedExpenses), detail: `${formatMoney(monthSummary.recurring)} récurrent · ${formatMoney(oneOff)} ponctuel`, color: "text-orange-600" },
-          { icon: CheckCircle2, label: "Déjà décaissé", value: formatMoney(paidExpenses), detail: `${formatMoney(monthSummary.paid)} rattaché aux échéances du mois`, color: "text-emerald-700" },
-          { icon: Clock3, label: "Reste à décaisser", value: formatMoney(remainingExpenses), detail: `${formatMoney(monthSummary.due)} arrivé à échéance · ${formatMoney(monthSummary.upcoming)} à venir`, color: monthSummary.due > 0 ? "text-red-600" : "text-amber-600" },
-          { icon: Banknote, label: "Solde prévisionnel du mois", value: formatMoney(collected - projectedExpenses), detail: `${formatMoney(collected)} encaissé − toutes les charges prévues`, color: collected - projectedExpenses >= 0 ? "text-emerald-700" : "text-red-600" },
-          { icon: WalletCards, label: "Trésorerie disponible", value: formatMoney(cash), detail: `${formatMoney(toCollect)} de prestations à encaisser`, color: "text-violet-700" },
-        ].map((item) => (
-          <Card key={item.label}>
-            <CardContent className="p-5">
-              <div className="flex items-start justify-between gap-3"><p className="text-xs font-semibold text-zinc-500 capitalize">{item.label}</p><item.icon className={`size-4 ${item.color}`} /></div>
-              <p className={`mt-4 text-2xl font-bold ${item.color}`}>{item.value}</p>
-              <p className="mt-1 text-[10px] text-zinc-600">{item.detail}</p>
-            </CardContent>
-          </Card>
-        ))}
+          {label:"Total des échéances", value:projectedExpenses, detail:"Charges ponctuelles et récurrentes", tone:"blue"},
+          {label:"Échéances réglées", value:confirmedDues, detail:"Un règlement est enregistré pour ces échéances", tone:"emerald"},
+          {label:"Prélèvements estimés", value:estimatedDebits, detail:"Date passée, sans débit confirmé", tone:"amber"},
+          {label:"Autres échéances", value:remainingExpenses, detail:formatMoney(monthSummary.due) + " échu · " + formatMoney(monthSummary.upcoming) + " à venir", tone:"violet"},
+        ].map((item) => <dl key={item.label} data-tone={item.tone} className="finance-metric"><dt>{item.label}</dt><dd>{formatMoney(item.value)}</dd><div className="mt-1 text-xs text-zinc-600">{item.detail}</div></dl>)}
       </section>
-
-      {cash < data.settings.cashSafetyBuffer && (
-        <div className="flex items-start gap-3 rounded-2xl border border-red-400/20 bg-red-400/[0.055] p-4">
-          <ShieldCheck className="mt-0.5 size-5 text-red-300" />
-          <div><p className="text-sm font-bold text-red-300">Trésorerie sous la marge de sécurité</p><p className="mt-1 text-xs text-zinc-500">La marge configurée est de {formatMoney(data.settings.cashSafetyBuffer)}.</p></div>
-        </div>
-      )}
 
       {monthSummary.due > 0 && (
         <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
           <AlertCircle className="mt-0.5 size-5 shrink-0 text-amber-600" />
-          <div><p className="text-sm font-bold">{formatMoney(monthSummary.due)} arrivé à échéance</p><p className="mt-1 text-xs text-amber-800">Ces charges sont bien incluses dans le total de {monthLabel}, mais leur paiement reste à confirmer.</p></div>
+          <div><p className="text-sm font-bold">{formatMoney(monthSummary.due)} arrivé à échéance</p><p className="mt-1 text-xs text-amber-800">Ces charges sont bien incluses dans le total de {monthLabel}, mais aucun règlement n’est encore enregistré. Un débit Qonto correspondant sera rattaché automatiquement.</p></div>
         </div>
       )}
 
@@ -243,17 +240,24 @@ export default function FinancesPage() {
         </CardHeader>
         <CardContent className="grid gap-2">
           {monthSummary.occurrences.map((occurrence) => (
-            <div key={occurrence.expense.id} className="grid gap-3 rounded-2xl border border-line bg-zinc-50/80 p-4 transition hover:border-orange-200 hover:bg-orange-50/60 sm:grid-cols-[110px_minmax(0,1fr)_auto_auto] sm:items-center">
+            <div key={occurrence.expense.id} className="grid gap-3 rounded-2xl border border-line bg-zinc-50/80 p-4 transition hover:border-orange-200 hover:bg-orange-50/60 lg:grid-cols-[7rem_minmax(0,1fr)_auto_auto] lg:items-center">
               <div><p className="text-xs font-bold text-zinc-900">{formatDate(occurrence.dueDate, { day: "2-digit", month: "long" })}</p><p className="mt-1 text-[10px] text-zinc-500">{recurrenceLabels[occurrence.expense.recurrence]}</p></div>
               <div className="min-w-0"><p className="truncate text-sm font-bold text-zinc-900">{occurrence.expense.description}</p><p className="mt-1 truncate text-xs text-zinc-500">{occurrence.expense.category}{occurrence.expense.supplier ? ` · ${occurrence.expense.supplier}` : ""}</p></div>
-              <div className="flex items-center gap-2 sm:justify-end"><Badge variant={occurrence.status === "paid" ? "green" : occurrence.status === "due" ? "yellow" : "blue"}>{occurrenceLabels[occurrence.status]}</Badge><p className="min-w-20 text-right text-sm font-extrabold text-zinc-900">{formatMoney(occurrence.amount)}</p></div>
-              {canManage ? !occurrence.expense.endsAt ? <Button size="sm" variant="secondary" onClick={() => setEditingExpense(occurrence.expense)}><Pencil className="size-3.5" /> Modifier</Button> : <Badge variant="neutral">Historique</Badge> : null}
+              <div className="flex items-center gap-2 sm:justify-end"><FinanceState {...occurrenceState(occurrence)} /><p className="min-w-20 text-right text-sm font-extrabold text-zinc-900">{formatMoney(occurrence.amount)}</p></div>
+              {canManage && expenseAccess(occurrence.expense).edit ? <Button size="sm" variant="secondary" onClick={() => setEditingExpense(occurrence.expense)}><Pencil className="size-3.5" /> {occurrence.expense.recurrence === "one_off" ? "Modifier" : "Modifier le tarif"}</Button> : null}
             </div>
           ))}
-          {monthSummary.occurrences.length === 0 && <div className="rounded-2xl border border-dashed border-line bg-zinc-50 p-8 text-center"><ReceiptText className="mx-auto size-6 text-zinc-400" /><p className="mt-2 text-sm font-bold text-zinc-700">Aucune charge prévue</p><p className="mt-1 text-xs text-zinc-500">Ajoutez une dépense ponctuelle ou une première échéance pour ce mois.</p></div>}
+          {monthSummary.occurrences.length === 0 && <div className="rounded-2xl border border-dashed border-line bg-zinc-50 p-8 text-center"><ReceiptText className="mx-auto size-6 text-zinc-400" /><p className="mt-2 text-sm font-bold text-zinc-700">Aucune charge prévue</p><p className="mt-1 text-xs text-zinc-500">Aucune échéance enregistrée pour ce mois. Les charges synchronisées apparaîtront après leur import.</p></div>}
         </CardContent>
       </Card>
 
+      </>}
+      {view === "forecast" && <>
+      <section aria-label="Repères de prévision" className="grid gap-3 sm:grid-cols-2">
+        <dl data-tone="amber" className="finance-metric"><dt><WalletCards className="size-4" />Solde prévisionnel · {monthLabel}</dt><dd>{formatMoney(collected - projectedExpenses)}</dd><p>Encaissements enregistrés moins toutes les charges prévues du mois.</p></dl>
+        <dl data-tone="violet" className="finance-metric"><dt><Landmark className="size-4" />Trésorerie estimée aujourd’hui</dt><dd>{formatMoney(cash)}</dd><p>Inclut les prélèvements estimés. Hors solde : {formatMoney(toCollect)} restant à encaisser.</p></dl>
+      </section>
+      {cash < data.settings.cashSafetyBuffer && <p data-tone="amber" className="finance-metric flex items-center gap-2 text-sm"><ShieldCheck className="size-5 shrink-0" />L’estimation actuelle est sous le seuil de sécurité de {formatMoney(data.settings.cashSafetyBuffer)}.</p>}
       <Card>
         <CardHeader>
           <div><h2 className="flex items-center gap-2 font-bold"><Banknote className="size-4 text-violet-600" /> Prévision des 12 prochains mois</h2><p className="mt-1 text-xs text-zinc-500">Projection glissante à partir de {monthLabel}, recalculée dès qu’une charge est ajoutée ou modifiée.</p></div>
@@ -262,7 +266,7 @@ export default function FinancesPage() {
         <CardContent>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             {forecast.map((month) => (
-              <button key={month.month} type="button" onClick={() => setSelectedMonth(month.month)} className={`focus-ring rounded-2xl border p-3 text-left transition hover:-translate-y-0.5 hover:border-orange-300 hover:shadow-md ${month.month === selectedMonth ? "border-orange-300 bg-orange-50 shadow-sm" : "border-line bg-surface"}`}>
+              <button key={month.month} type="button" aria-label={`Voir les échéances de ${formatMonth(month.month)}`} onClick={() => { setSelectedMonth(month.month); setView("month"); }} className={`focus-ring rounded-2xl border p-3 text-left transition hover:-translate-y-0.5 hover:border-orange-300 hover:shadow-md ${month.month === selectedMonth ? "border-orange-300 bg-orange-50 shadow-sm" : "border-line bg-surface"}`}>
                 <div className="flex items-center justify-between gap-2"><p className="text-[11px] font-bold capitalize text-zinc-600">{formatMonth(month.month, "short")}</p>{month.annual > 0 && <Badge variant="blue">annuelle</Badge>}</div>
                 <p className="mt-3 text-lg font-extrabold text-zinc-900">{formatMoney(month.total)}</p>
                 <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-zinc-100"><div className="h-full rounded-full bg-brand-500" style={{ width: `${Math.max(month.total > 0 ? 8 : 0, Math.round(month.total / forecastMaximum * 100))}%` }} /></div>
@@ -285,46 +289,45 @@ export default function FinancesPage() {
             <div className="rounded-xl border border-sky-100 bg-sky-50/70 p-4"><p className="text-[10px] font-bold text-sky-700 uppercase">Ponctuel · {monthLabel}</p><p className="mt-2 text-xl font-bold text-zinc-900">{formatMoney(oneOff)}</p><p className="mt-1 text-[10px] text-zinc-500">Compté uniquement sur le mois choisi</p></div>
             <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-4"><p className="text-[10px] font-bold text-emerald-700 uppercase">TVA récupérable · {monthLabel}</p><p className="mt-2 text-xl font-bold text-zinc-900">{formatMoney(recoverableVat)}</p><p className="mt-1 text-[10px] text-zinc-500">Calculée sur toutes les échéances du mois</p></div>
           </div>
-          <p className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs leading-5 text-sky-800">Le total prévu inclut toujours les échéances. L’option « prélèvement automatique » détermine seulement si elles sont aussi déduites automatiquement de la trésorerie à leur date.</p>
+          <p className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs leading-5 text-sky-800">Le total prévu inclut toujours les échéances. L’option d’estimation déduit le prélèvement de la trésorerie estimée à sa date, sans l’enregistrer comme un paiement réel.</p>
         </CardContent>
       </Card>
 
-      <div className="flex flex-wrap gap-2">
-        <Button variant={tab === "expenses" ? "secondary" : "ghost"} onClick={() => setTab("expenses")}><CircleDollarSign className="size-4" /> Charges</Button>
-        <Button variant={tab === "assets" ? "secondary" : "ghost"} onClick={() => setTab("assets")}><PackageSearch className="size-4" /> Investissements & matériel</Button>
+      </>}
+      {view === "register" && <>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="finance-nav" data-tone="blue" role="group" aria-label="Type de registre">
+        <Button aria-pressed={tab === "expenses"} variant={tab === "expenses" ? "secondary" : "ghost"} onClick={() => setTab("expenses")}><CircleDollarSign className="size-4" /> Charges</Button>
+        <Button aria-pressed={tab === "assets"} variant={tab === "assets" ? "secondary" : "ghost"} onClick={() => setTab("assets")}><PackageSearch className="size-4" /> Investissements & matériel</Button>
+        </div>
+        {canManage && tab === "expenses" && <Button variant="secondary" onClick={openExpenseForm}><Plus className="size-4" />Prévoir une charge ou saisir hors banque</Button>}
       </div>
 
       {tab === "expenses" ? (
         <Card>
-          <CardHeader>
-            <div><h2 className="font-bold">Charges & dépenses</h2><p className="mt-1 text-xs text-zinc-500">Chaque changement de tarif crée une nouvelle période afin de conserver des calculs historiques exacts.</p></div>
+          <CardHeader className="flex-wrap gap-3">
+            <div><h2 className="font-bold">Charges & dépenses</h2><p className="mt-1 text-xs text-zinc-500">Toutes les périodes. Les montants liés à Qonto sont protégés ; un nouveau tarif récurrent conserve les anciens mois.</p></div>
             <div className="flex items-center gap-2"><Select aria-label="Filtrer par fréquence" className="w-[170px]" value={recurrenceFilter} onChange={(event) => setRecurrenceFilter(event.target.value as typeof recurrenceFilter)}><option value="all">Toutes les fréquences</option><option value="one_off">Ponctuelles</option><option value="monthly">Mensuelles</option><option value="annual">Annuelles</option></Select><Badge>{visibleExpenses.length} charge(s)</Badge></div>
           </CardHeader>
-          <CardContent className="overflow-x-auto px-0 pb-1">
-            <table className="w-full min-w-[1120px] text-left text-xs">
-              <thead className="text-[10px] tracking-wider text-zinc-600 uppercase"><tr>{["Période / date", "Fréquence", "Famille", "Catégorie", "Fournisseur", "Description", "TTC / échéance", "TVA", "Paiement", "Actions"].map((head) => <th key={head} className="px-4 py-3 font-semibold first:pl-5 last:pr-5">{head}</th>)}</tr></thead>
-              <tbody className="divide-y divide-line">
-                {visibleExpenses.map((expense) => (
-                  <tr key={expense.id} className="hover:bg-surface/[0.02]">
-                    <td className="px-4 py-4 pl-5 text-zinc-500"><p>{formatDate(expense.date)}</p>{expense.endsAt && <p className="mt-1 text-[10px]">jusqu’au {formatDate(expense.endsAt)}</p>}</td>
-                    <td className="px-4 py-4"><div className="flex flex-wrap gap-1"><Badge variant={expense.recurrence === "one_off" ? "neutral" : "blue"}>{recurrenceLabels[expense.recurrence]}</Badge>{expense.endsAt && <Badge variant="neutral">Historique</Badge>}</div></td>
-                    <td className="px-4 py-4"><Badge>{familyLabels[expense.family]}</Badge></td>
-                    <td className="px-4 py-4 font-semibold">{expense.category}</td>
-                    <td className="px-4 py-4 text-zinc-500">{expense.supplier}</td>
-                    <td className="px-4 py-4 text-zinc-400">{expense.description}</td>
-                    <td className="px-4 py-4 font-bold">{formatMoney(expense.amountIncludingTax)}</td>
-                    <td className="px-4 py-4 text-zinc-500">{formatMoney(expense.vatAmount)}</td>
-                    <td className="px-4 py-4"><Badge variant={expense.paid ? "green" : "yellow"}>{expense.recurrence === "one_off" ? (expense.paid ? "Payée" : "À payer") : (expense.paid ? "Automatique" : "À valider")}</Badge></td>
-                    <td className="px-4 py-4 pr-5">{canManage && !expense.endsAt ? <div className="flex items-center gap-1"><Button size="sm" variant="secondary" onClick={() => setEditingExpense(expense)}><Pencil className="size-3.5" /> Modifier</Button><Button size="sm" variant="ghost" className="text-red-600" aria-label={`Supprimer ${expense.description}`} onClick={() => setDeletingExpense(expense)}><Trash2 className="size-3.5" /></Button></div> : <span className="text-zinc-400">{expense.endsAt ? "Historique verrouillé" : "Lecture seule"}</span>}</td>
-                  </tr>
-                ))}
-                {visibleExpenses.length === 0 && <tr><td colSpan={10} className="px-5 py-10 text-center text-sm text-zinc-500">Aucune charge ne correspond à ce filtre.</td></tr>}
-              </tbody>
-            </table>
+          <CardContent>
+            <ul className="divide-y divide-line" aria-label="Registre des charges">{visibleExpenses.map((expense) => {
+              const access = expenseAccess(expense);
+              const settled = expense.settlements?.find((p) => expense.recurrence === "one_off" || p.month === selectedMonth);
+              return <li id={`charge-${expense.id}`} key={expense.id} tabIndex={-1} data-linked={linkedExpense === expense.id} className="finance-target grid min-w-0 gap-3 py-4 lg:grid-cols-[minmax(0,1fr)_minmax(12rem,auto)_auto] lg:items-center">
+                <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="break-words text-sm font-bold">{expense.description}</h3>{expense.endsAt && <FinanceState label="Historique" tone="neutral" />}</div>
+                  <p className="mt-1 break-words text-sm text-zinc-600">{[expense.supplier, expense.category, familyLabels[expense.family]].filter(Boolean).join(" · ")}</p>
+                  <p className="mt-1 text-xs text-zinc-500">{recurrenceLabels[expense.recurrence]} · {formatDate(expense.date)}{expense.endsAt && " – " + formatDate(expense.endsAt)}</p></div>
+                <div><p className="font-bold tabular-nums">{formatMoney(settled?.amount ?? expense.amountIncludingTax)} <span className="text-xs font-normal text-zinc-500">TTC · TVA {formatMoney(expense.vatAmount)}</span></p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2"><FinanceState {...registerState(expense, selectedMonth)} />{settled && <span className="text-xs text-zinc-500">{formatDate(settled.paidAt)}</span>}</div></div>
+                {canManage && access.edit && <div className="flex flex-wrap gap-1"><Button size="sm" variant="secondary" onClick={() => setEditingExpense(expense)}><Pencil className="size-3.5" />{expense.recurrence === "one_off" ? "Modifier" : "Modifier le tarif"}</Button>{access.remove && <Button size="sm" variant="ghost" aria-label={`Supprimer ${expense.description}`} onClick={() => setDeletingExpense(expense)}><Trash2 className="size-4 text-red-600" /></Button>}</div>}
+              </li>;
+            })}</ul>
+            {!visibleExpenses.length && <p className="p-5 text-center text-sm text-zinc-500">Aucune charge ne correspond à ce filtre.</p>}
           </CardContent>
         </Card>
       ) : (
         <section className="grid gap-4 lg:grid-cols-2">
+          {!data.assets.length && <p className="rounded-xl border border-dashed border-line p-6 text-sm text-zinc-500">Aucun investissement enregistré.</p>}
           {data.assets.map((asset) => {
             const monthlyTimeValue = Math.round(asset.expectedTimeGainMinutes / 60 * data.settings.hourlyMarginTarget * 4);
             const monthlyBenefit = asset.expectedMonthlyRevenue + monthlyTimeValue;
@@ -332,7 +335,7 @@ export default function FinancesPage() {
             return (
               <Card key={asset.id}>
                 <CardContent className="p-5">
-                  <div className="flex items-start justify-between gap-3"><div><p className="text-sm font-bold">{asset.name}</p><p className="mt-1 text-xs text-zinc-600">{asset.category} · {asset.supplier || "Fournisseur à définir"}</p></div><Badge variant={asset.status === "in_service" ? "green" : "yellow"}>{asset.status}</Badge></div>
+                  <div className="flex items-start justify-between gap-3"><div><p className="text-sm font-bold">{asset.name}</p><p className="mt-1 text-xs text-zinc-600">{asset.category} · {asset.supplier || "Fournisseur à définir"}</p></div><Badge variant={asset.status === "in_service" ? "green" : "yellow"}>{{to_buy:"À acheter",ordered:"Commandé",in_service:"En service",to_replace:"À remplacer",sold:"Vendu"}[asset.status]}</Badge></div>
                   <div className="mt-5 grid grid-cols-3 gap-3"><div><p className="text-[10px] text-zinc-600">Prix TTC</p><p className="mt-1 text-sm font-bold">{formatMoney(asset.priceIncludingTax)}</p></div><div><p className="text-[10px] text-zinc-600">Gain temps</p><p className="mt-1 text-sm font-bold">{asset.expectedTimeGainMinutes} min</p></div><div><p className="text-[10px] text-zinc-600">ROI estimé</p><p className="mt-1 text-sm font-bold text-emerald-700">{payback ? `${payback.toFixed(1)} mois` : "À compléter"}</p></div></div>
                   <div className="mt-5 rounded-xl border border-sky-100 bg-sky-50 p-3"><p className="flex items-center gap-2 text-xs font-semibold text-sky-800"><Landmark className="size-3.5 text-sky-600" /> Hypothèses du ROI</p><p className="mt-2 text-[11px] leading-5 text-zinc-600">Revenu mensuel additionnel {formatMoney(asset.expectedMonthlyRevenue)} + valeur de 4 gains de temps mensuels {formatMoney(monthlyTimeValue)}, au taux cible de {formatMoney(data.settings.hourlyMarginTarget)}/h.</p></div>
                 </CardContent>
@@ -341,6 +344,7 @@ export default function FinancesPage() {
           })}
         </section>
       )}
+      </>}
     </div>
   );
 }

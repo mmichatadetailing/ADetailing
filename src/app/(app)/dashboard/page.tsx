@@ -21,6 +21,8 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Avatar } from "@/components/avatar";
 import { DashboardCharts } from "@/components/dashboard-charts";
+import { FinanceState } from "@/components/banking/finance-state";
+import { BankResultCard } from "@/components/banking/bank-result-card";
 import { QontoTreasuryCard } from "@/components/banking/qonto-treasury-card";
 import { PageHeader } from "@/components/page-header";
 import { useWorkspace } from "@/components/workspace-provider";
@@ -62,6 +64,7 @@ export default function DashboardPage() {
   const todayLabel = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(now);
   const periodGroups = useMemo(() => getCompanyStatsPeriodOptions(), []);
   const statisticsPeriod = useMemo(() => getCompanyStatsPeriod(periodKey), [periodKey]);
+  const financesUrl = statisticsPeriod.month ? `/finances?mois=${statisticsPeriod.month}` : "/finances";
   const previousStatisticsPeriod = useMemo(
     () => getCompanyStatsPeriod(getPreviousCompanyStatsPeriodKey(statisticsPeriod)),
     [statisticsPeriod],
@@ -119,7 +122,7 @@ export default function DashboardPage() {
     .sort((a, b) => b.paidAt.localeCompare(a.paidAt))
     .slice(0, 8);
   const todayActions = [
-    ...toCollect.map(({ intervention, workflow }) => { const client = data.clients.find((entry) => entry.id === intervention.clientId); return { icon: Banknote, title: `Encaisser ${client?.company || `${client?.firstName ?? ""} ${client?.lastName ?? ""}`.trim() || intervention.title}`, detail: `${intervention.title} · ${formatMoney(workflow.outstanding)} restant`, color: "text-emerald-600", href: `/prestations?intervention=${intervention.id}` }; }),
+    ...toCollect.map(({ intervention, workflow }) => { const client = data.clients.find((entry) => entry.id === intervention.clientId); return { icon: Banknote, title: `Suivre le règlement · ${client?.company || `${client?.firstName ?? ""} ${client?.lastName ?? ""}`.trim() || intervention.title}`, detail: `${intervention.title} · ${formatMoney(workflow.outstanding)} restant`, color: "text-emerald-600", href: `/prestations?intervention=${intervention.id}` }; }),
     ...upcoming.filter((item) => item.status === "scheduled").map((item) => { const client = data.clients.find((entry) => entry.id === item.clientId); return { icon: Sparkles, title: `Confirmer ${client?.company || `${client?.firstName ?? ""} ${client?.lastName ?? ""}`.trim() || item.title}`, detail: `${formatDate(item.startAt, { weekday: "long", hour: "2-digit", minute: "2-digit" })} · ${item.workers.length} collaborateur(s)`, color: "text-violet-300", href: `/prestations?intervention=${item.id}` }; }),
   ].slice(0, 4);
   const activeInterventionIds = new Set(data.interventions.map((intervention) => intervention.id));
@@ -146,10 +149,10 @@ export default function DashboardPage() {
     return renewal.state === "due" || renewal.state === "expired";
   });
   const kpis = [
-    { label: "CA encaissé", value: formatMoney(collected), detail: statisticsPeriod.label, comparison: evolutionLabel(collected, previousCollected, previousLabel), icon: Banknote, tone: "emerald", href: "/finances" },
+    { label: "CA encaissé", value: formatMoney(collected), detail: `Prestations et entretiens · ${statisticsPeriod.label}`, comparison: evolutionLabel(collected, previousCollected, previousLabel), icon: Banknote, tone: "emerald", href: financesUrl },
     { label: statisticsPeriod.kind === "year" ? "Objectif annuel" : "Objectif du mois", value: objective > 0 ? `${Math.round(collected / objective * 100)} %` : "À définir", detail: objective > 0 ? `${formatMoney(Math.max(objective - collected, 0))} restant sur ${formatMoney(objective)}` : "Renseignez vos objectifs dans Paramètres", comparison: evolutionLabel(collected, previousCollected, previousLabel), icon: Target, tone: "blue", href: "/parametres#objectifs-chiffre-affaires" },
-    { label: "Cash-flow décaissé", value: formatMoney(cashFlow), detail: `${formatMoney(cashReceipts)} reçu − ${formatMoney(paidExpenses)} réellement décaissé`, comparison: evolutionLabel(cashFlow, previousCashFlow, previousLabel), icon: WalletCards, tone: cashFlow >= 0 ? "emerald" : "rose", href: "/finances" },
-    { label: "Charges prévues", value: formatMoney(projectedExpenses), detail: `${formatMoney(paidExpenses)} décaissé sur la période · ${formatMoney(remainingExpenses)} restant sur ces charges`, comparison: evolutionLabel(projectedExpenses, previousProjectedExpenses, previousLabel), icon: TrendingDown, tone: "amber", href: "/finances" },
+    { label: "Flux de trésorerie estimé", value: formatMoney(cashFlow), detail: `${formatMoney(cashReceipts)} reçu − ${formatMoney(paidExpenses)} déduit, prélèvements échus inclus`, comparison: evolutionLabel(cashFlow, previousCashFlow, previousLabel), icon: WalletCards, tone: cashFlow >= 0 ? "emerald" : "rose", href: financesUrl },
+    { label: "Charges prévues", value: formatMoney(projectedExpenses), detail: `${formatMoney(paidExpenses)} déduit, estimations comprises · ${formatMoney(remainingExpenses)} restant sur ces charges`, comparison: evolutionLabel(projectedExpenses, previousProjectedExpenses, previousLabel), icon: TrendingDown, tone: "amber", href: financesUrl },
     { label: "Prestations réalisées", value: String(completed.length), detail: statisticsPeriod.label, comparison: evolutionLabel(completed.length, previousCompleted.length, previousLabel), icon: Sparkles, tone: "amber", href: "/prestations" },
     { label: "Panier moyen", value: formatMoney(averageBasket), detail: `${completed.length} prestation(s) terminée(s)`, comparison: evolutionLabel(averageBasket, previousAverageBasket, previousLabel), icon: Gauge, tone: "violet", href: "/pilotage" },
     { label: "Marge brute", value: formatMoney(margin), detail: averageHourly === null ? "Durées non renseignées" : `${formatMoney(averageHourly)}/heure-personne`, comparison: evolutionLabel(margin, previousMargin, previousLabel), icon: TrendingUp, tone: margin >= 0 ? "teal" : "rose", href: "/pilotage" },
@@ -170,7 +173,8 @@ export default function DashboardPage() {
         </label>
       } />
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-12">
+      {showTreasury && <BankResultCard period={statisticsPeriod.month ?? String(statisticsPeriod.year)} label={statisticsPeriod.label} />}
+      <section aria-label="Indicateurs de la période" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-12">
         {kpis.map((kpi, index) => (
           <Link href={kpi.href} key={kpi.label} className={`focus-ring group rounded-2xl ${showTreasury ? "xl:col-span-3" : index === kpis.length - 1 ? "sm:col-span-2 xl:col-span-4" : kpis.length % 4 === 3 && index >= kpis.length - 3 ? "xl:col-span-4" : "xl:col-span-3"}`}>
             <Card data-tone={kpi.tone} className={`brand-kpi h-full transition duration-200 group-hover:-translate-y-0.5 group-hover:border-brand-400/30 group-hover:shadow-md`}>
@@ -197,14 +201,14 @@ export default function DashboardPage() {
               <p className="mt-1 text-xs text-zinc-500">Cumul des échéances ponctuelles, mensuelles et annuelles prévues sur la période.</p>
             </div>
           </div>
-          <Link href="/finances" className="focus-ring inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-brand-600 transition hover:bg-brand-50 hover:text-brand-700">Gérer les charges <ArrowRight className="size-3.5" /></Link>
+          <Link href={financesUrl} className="focus-ring inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-brand-600 transition hover:bg-brand-50 hover:text-brand-700">Voir les échéances <ArrowRight className="size-3.5" /></Link>
         </CardHeader>
         <CardContent className="grid gap-2">
           {expenseRanking.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-contrast/15 bg-surface/75 px-5 py-9 text-center">
               <ReceiptText className="mx-auto size-6 text-zinc-400" />
               <p className="mt-2 text-sm font-bold text-zinc-800">Aucune dépense sur cette période</p>
-              <p className="mt-1 text-xs text-zinc-500">Les charges ajoutées dans Finances apparaîtront ici automatiquement.</p>
+              <p className="mt-1 text-xs text-zinc-500">Les charges enregistrées ou planifiées dans Finances apparaîtront ici.</p>
             </div>
           ) : expenseRanking.map((entry, index) => (
             <Link href="/finances" key={entry.expense.id} className="focus-ring group grid gap-3 rounded-2xl border border-line bg-surface/90 p-3.5 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-md sm:grid-cols-[40px_minmax(0,1fr)_minmax(150px,.55fr)_120px] sm:items-center">
@@ -215,7 +219,7 @@ export default function DashboardPage() {
               </span>
               <span className="min-w-0">
                 <Progress value={largestExpense > 0 ? entry.total / largestExpense * 100 : 0} />
-                <span className="mt-1.5 block text-[10px] text-zinc-500">{formatMoney(entry.paid)} décaissé · {formatMoney(entry.remaining)} à venir</span>
+                <span className="mt-1.5 block text-[10px] text-zinc-500">{formatMoney(entry.paid)} déduit, estimations incluses · {formatMoney(entry.remaining)} restant</span>
               </span>
               <span className="text-left sm:text-right"><span className="block text-base font-extrabold text-zinc-900">{formatMoney(entry.total)}</span><span className="mt-0.5 block text-[10px] font-semibold text-zinc-400">sur la période</span></span>
             </Link>
@@ -254,9 +258,22 @@ export default function DashboardPage() {
       </section>
 
       <Card>
-        <CardHeader><div><h2 className="font-bold">Encaissements récents · {statisticsPeriod.label}</h2><p className="mt-1 text-xs text-zinc-500">Les paiements réellement reçus. La présence d’une facture n’est pas nécessaire.</p></div><Link href="/prestations" className="text-xs font-semibold text-brand-600 hover:text-brand-700">Ouvrir les prestations</Link></CardHeader>
-        <CardContent className="overflow-x-auto px-0 pb-1">
-          <table className="w-full min-w-[620px] text-left text-xs"><thead className="text-[10px] tracking-wider text-zinc-600 uppercase"><tr><th className="px-5 py-3 font-semibold">Date</th><th className="px-3 py-3 font-semibold">Prestation</th><th className="px-3 py-3 font-semibold">Client</th><th className="px-3 py-3 font-semibold">Mode</th><th className="px-5 py-3 text-right font-semibold">Montant encaissé</th></tr></thead><tbody className="divide-y divide-line">{recentInterventionPayments.length === 0 ? <tr><td colSpan={5} className="px-5 py-8 text-center text-zinc-500">Aucun encaissement de prestation sur cette période.</td></tr> : recentInterventionPayments.map((payment) => { const intervention = payment.interventionId ? data.interventions.find((item) => item.id === payment.interventionId) : payment.invoiceId ? data.interventions.find((item) => item.invoiceId === payment.invoiceId) : undefined; const billingPeriod = payment.maintenanceBillingPeriodId ? data.maintenanceBillingPeriods.find((item) => item.id === payment.maintenanceBillingPeriodId) : undefined; const maintenanceContractId = payment.maintenanceContractId ?? billingPeriod?.contractId; const maintenanceContract = maintenanceContractId ? data.maintenanceContracts.find((item) => item.id === maintenanceContractId) : undefined; const client = data.clients.find((entry) => entry.id === (intervention?.clientId ?? maintenanceContract?.clientId)); return <tr key={payment.id} className="hover:bg-brand-50/50"><td className="px-5 py-3 text-zinc-500">{formatDate(payment.paidAt)}</td><td className="px-3 py-3 font-semibold text-zinc-900">{maintenanceContract?.title ?? intervention?.title ?? "Prestation liée"}{maintenanceContract && <span className="ml-2 text-[10px] font-semibold text-violet-600">Entretien</span>}</td><td className="px-3 py-3 text-zinc-600">{client?.company || `${client?.firstName ?? ""} ${client?.lastName ?? ""}`.trim() || "—"}</td><td className="px-3 py-3 text-zinc-500">{payment.method}</td><td className="px-5 py-3 text-right font-bold text-emerald-700">{formatMoney(payment.amount)}</td></tr>; })}</tbody></table>
+        <CardHeader className="flex-wrap"><div><h2 className="font-bold">Encaissements récents · {statisticsPeriod.label}</h2><p className="mt-1 text-xs text-zinc-500">Paiements des prestations et des entretiens, classés par date de réception.</p></div><Link href="/prestations" className="text-xs font-semibold text-brand-600 hover:text-brand-700">Ouvrir les prestations</Link></CardHeader>
+        <CardContent><ul aria-label="Derniers paiements de prestations et d’entretiens" className="divide-y divide-line">
+          {recentInterventionPayments.map((payment) => {
+            const job = data.interventions.find((i) => i.id === payment.interventionId || (payment.invoiceId && i.invoiceId === payment.invoiceId));
+            const due = payment.maintenanceBillingPeriodId ? data.maintenanceBillingPeriods.find((p) => p.id === payment.maintenanceBillingPeriodId) : undefined;
+            const contract = data.maintenanceContracts.find((c) => c.id === (payment.maintenanceContractId ?? due?.contractId));
+            const client = data.clients.find((c) => c.id === (job?.clientId ?? contract?.clientId));
+            const title = contract?.title ?? job?.title ?? "Prestation liée";
+            const href = contract && !contract.archivedAt && visibleMaintenanceContracts.some((c) => c.id === contract.id) ? "/entretiens" + (due ? "#echeance-" + encodeURIComponent(due.id) : "") : job ? "/prestations?intervention=" + encodeURIComponent(job.id) : null;
+            return <li key={payment.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+              <div className="min-w-0"><p className="break-words text-sm font-semibold">{href ? <Link href={href} className="focus-ring rounded underline decoration-dotted underline-offset-4 hover:decoration-solid">{title}</Link> : title}</p>
+                <p className="mt-1 break-words text-xs text-zinc-600">{[client?.company || [client?.firstName,client?.lastName].filter(Boolean).join(" "),formatDate(payment.paidAt),payment.method].filter(Boolean).join(" · ")}</p></div>
+              <div className="flex flex-wrap items-center gap-2"><FinanceState tone={payment.bankLinked ? "teal" : "neutral"} label={payment.bankLinked ? "Qonto" : "Hors synchronisation"} /><strong className="tabular-nums">{formatMoney(payment.amount)}</strong></div>
+            </li>;
+          })}
+        </ul>{!recentInterventionPayments.length && <p className="py-4 text-center text-sm text-zinc-500">Aucun encaissement de prestation sur cette période.</p>}
         </CardContent>
       </Card>
 

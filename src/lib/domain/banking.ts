@@ -12,6 +12,8 @@ export interface BankCandidate {
   amount: number;
   date: string;
   historicalEligible?: boolean;
+  recurringSupplier?: string;
+  documentReference?: string;
 }
 export interface BankTransaction {
   id: string;
@@ -38,6 +40,9 @@ export interface BankTransaction {
   group_note?: string;
   automation_note?: string | null;
   automated_at?: string | null;
+  expense_family?: string | null;
+  posting_kind?: "service" | "expense" | "matched" | "ignored" | "bank_only" | "repost" | null;
+  remote_updated_at?: string;
 }
 
 export function historicalGroupCandidates(transactions: BankTransaction[], candidates: BankCandidate[]) {

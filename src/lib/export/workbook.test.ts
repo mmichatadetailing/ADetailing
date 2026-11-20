@@ -15,7 +15,7 @@ describe("export Excel de l’entreprise", () => {
     };
     const before = buildExportWorkbook(demoSeed, { exportedAt: reference });
     const after = buildExportWorkbook(demoSeed, { exportedAt: reference, bankDrafts: [draft] });
-    expect(after.getWorksheet("Brouillons Qonto")!.getCell("B5").value).toBe("À valider — hors statistiques");
+    expect(after.getWorksheet("Brouillons Qonto")!.getCell("B5").value).toBe("Archive — sans écriture propre");
     expect(after.getWorksheet("Brouillons Qonto")!.getCell("F5").value).toBe(999);
     expect(after.getWorksheet("Synthèse")!.getCell("B5").value).toBe(before.getWorksheet("Synthèse")!.getCell("B5").value);
     expect(after.getWorksheet("Paiements")!.rowCount).toBe(before.getWorksheet("Paiements")!.rowCount);
@@ -50,6 +50,7 @@ describe("export Excel de l’entreprise", () => {
     const client = data.clients[0]!;
     data.maintenanceContracts = [{ ...data.interventions[0]!, id: "contract", clientId: client.id, title: "Forfait test", status: "active", billingFrequency: "prepaid", billingAmount: 60_000, termMonths: 6, renewalReminderDays: 30, vehicleCount: 1, firstVisitOn: "2026-11-05", visitDay: 5, preferredStartTime: "09:00", assignedMemberIds: [], notes: "" }];
     data.payments = [{ ...data.payments[0]!, id: "paid", invoiceId: undefined, interventionId: undefined, maintenanceContractId: "contract", maintenanceBillingPeriodId: "period", amount: 60_000, paidAt: reference.toISOString() }];
+    data.expenses = [{ ...data.expenses[0]!, date: "2026-11-01", recurrence: "one_off", family: "variable", paid: true, paidAt: "2026-11-01", settlements: [], amountIncludingTax: 12000 }];
     const book = buildExportWorkbook(data, { exportedAt: reference });
     const payments = book.getWorksheet("Paiements")!;
     expect(payments.getCell("B5").value).toBe(client.company || `${client.firstName} ${client.lastName}`.trim());
@@ -59,6 +60,8 @@ describe("export Excel de l’entreprise", () => {
     const monthly = book.getWorksheet("Bilan mensuel")!;
     const row = [...Array(monthly.rowCount)].map((_, i) => monthly.getRow(i + 1)).find((entry) => (entry.getCell(1).value as Date)?.toISOString?.().startsWith("2026-11"));
     expect(row?.getCell(3).value).toBe(600);
+    expect(row?.getCell(8).value).toBe(120);
+    expect(row?.getCell(9).value).toBe(480);
   });
 
   it("préserve les téléphones et les saisies ressemblant à des formules comme du texte", async () => {

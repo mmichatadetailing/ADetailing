@@ -3,8 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { decryptToken } from "./token-crypto";
 import { QontoClient, type QontoAccount } from "./qonto-client";
-import { qontoContext } from "./qonto-context";
-import { automaticBankMatches, bankDate } from "@/lib/domain/banking";
+import { bankDate } from "@/lib/domain/banking";
 import { automateQonto } from "./qonto-automation";
 
 export async function syncQonto(db: SupabaseClient, organizationId: string, budgetMs = 35_000) {
@@ -17,12 +16,12 @@ export async function syncQonto(db: SupabaseClient, organizationId: string, budg
   if (acquireError) throw new Error("Synchronisation bancaire indisponible. Appliquez la migration Qonto.");
   if (!connection) return { imported: 0, reconciled: 0, busy: true, pending: false };
   let imported = 0;
-  let reconciled = 0;
-  let drafts = 0;
   try {
     const { login, secret } = JSON.parse(decryptToken(String(connection.credentials_encrypted))) as { login: string; secret: string };
     const client = new QontoClient(login, secret);
     const accounts = connection.accounts as QontoAccount[];
+    const normalizeIban = (value: string) => value.replace(/\s/g, "").toUpperCase();
+    const ownIbans = new Set(accounts.map((a) => normalizeIban(a.iban)).filter(Boolean));
     let cursor = String(connection.cursor_at);
     let until = connection.window_to ? String(connection.window_to) : new Date(Math.min(Date.now(), new Date(cursor).getTime() + 7 * 86_400_000)).toISOString();
     let accountIndex = Number(connection.account_index);
@@ -41,7 +40,7 @@ export async function syncQonto(db: SupabaseClient, organizationId: string, budg
         label: (tx.label ?? "").slice(0, 500), counterparty: (tx.clean_counterparty_name ?? "").slice(0, 300), reference: (tx.reference ?? "").slice(0, 500),
         amount_cents: tx.amount_cents, currency: tx.currency, side: tx.side, status: tx.status,
         settled_at: tx.settled_at, emitted_at: tx.emitted_at, remote_updated_at: tx.updated_at,
-        operation_type: tx.transfer?.counterparty_account_number && accounts.some((owned) => owned.iban.replace(/\s/g, "") === tx.transfer!.counterparty_account_number!.replace(/\s/g, "")) ? "internal_transfer" : tx.operation_type,
+        operation_type: tx.transfer?.counterparty_account_number && ownIbans.has(normalizeIban(tx.transfer.counterparty_account_number)) ? "internal_transfer" : tx.operation_type,
       }));
       const { error: ingestError } = await db.rpc("ingest_qonto_transactions", { target_org: organizationId, entries });
       if (ingestError) throw new Error("L’import Qonto n’a pas pu être enregistré. Aucun paiement supplémentaire n’a été créé.");
@@ -60,32 +59,17 @@ export async function syncQonto(db: SupabaseClient, organizationId: string, budg
       const { error: checkpointError } = await db.from("qonto_connections").update({ cursor_at: cursor, window_to: until || null, account_index: accountIndex, next_page: page, last_error: null, updated_at: new Date().toISOString() }).eq("organization_id", organizationId).eq("lease_token", token);
       if (checkpointError) throw new Error("La progression de synchronisation n’a pas pu être enregistrée. Le prochain essai reprendra sans doublon.");
     }
-    const { data: currentSettings, error: settingsError } = await db.from("qonto_connections").select("enabled,auto_reconcile,auto_intake,auto_intake_from,auto_create,auto_create_from").eq("organization_id", organizationId).maybeSingle();
-    if (settingsError) throw new Error("Impossible de lire les réglages d’automatisation Qonto. Vérifiez la migration.");
-    const directIntegration = currentSettings?.enabled && currentSettings.auto_intake && currentSettings.auto_create;
-    const directFrom = directIntegration ? Math.max(new Date(currentSettings.auto_create_from).getTime(), new Date(currentSettings.auto_intake_from).getTime()) : Infinity;
-    if (currentSettings?.enabled && currentSettings.auto_reconcile && Date.now() - started < budgetMs) {
-      const { transactions, candidates } = await qontoContext(db, organizationId);
-      for (const match of automaticBankMatches(transactions, candidates)) {
-        // The direct integration pass owns new movements, including its audit and exception rules.
-        if (new Date(match.transaction.settled_at!).getTime() >= directFrom) continue;
-        if (Date.now() - started >= budgetMs) break;
-        const { error } = await db.rpc("reconcile_bank_transaction", { target_transaction: match.transaction.id, target_kind: match.candidate.kind, target_id: match.candidate.id, target_month: match.candidate.month ? `${match.candidate.month}-01` : null });
-        if (!error) reconciled += 1; // Une concurrence laisse l’opération à vérifier, jamais à dupliquer.
-      }
-    }
-    const { data: prepared, error: preparationError } = await db.rpc("prepare_qonto_drafts", { target_org: organizationId });
-    if (preparationError) throw new Error("Les transactions sont importées, mais les propositions n’ont pas pu être préparées. Vérifiez la migration Qonto.");
-    drafts = Number(prepared ?? 0);
-    // No creation with an incomplete imported history: another page may contain a competing movement.
-    const automation = !pending && directIntegration
-      ? await automateQonto(db, organizationId, new Date(directFrom).toISOString(), started + budgetMs)
+    const { data: currentSettings, error: settingsError } = await db.from("qonto_connections").select("enabled,posting_from").eq("organization_id", organizationId).maybeSingle();
+    if (settingsError) throw new Error("Impossible de lire la configuration financière. Vérifiez la migration Qonto.");
+    // Wait for all accounts/pages before choosing between competing movements.
+    const automation = !pending && currentSettings?.enabled
+      ? await automateQonto(db, organizationId, String(currentSettings.posting_from), started + budgetMs)
       : null;
-    await db.from("qonto_connections").update({ last_synced_at: new Date().toISOString(), last_error: null, updated_at: new Date().toISOString() }).eq("organization_id", organizationId).eq("lease_token", token);
-    return { imported, reconciled, drafts, automation, busy: false, pending: pending || Boolean(automation?.pending) };
+    const stillPending = pending || Boolean(automation?.pending);
+    const { error: finishError } = await db.from("qonto_connections").update({ last_synced_at: new Date().toISOString(), posting_pending: stillPending, last_error: null, updated_at: new Date().toISOString() }).eq("organization_id", organizationId).eq("lease_token", token);
+    if (finishError) throw new Error("La fin de la synchronisation n’a pas pu être enregistrée.");
+    return { imported, reconciled: automation?.matched ?? 0, automation, busy: false, pending: stillPending };
   } catch (error) {
-    // Une panne Qonto après une page réussie ne doit pas cacher les nouveaux mouvements déjà importés.
-    try { await db.rpc("prepare_qonto_drafts", { target_org: organizationId }); } catch { /* La prochaine synchronisation reprendra la préparation. */ }
     const message = error instanceof Error && !error.message.includes("decrypt") && !error.message.includes("authenticate")
       ? error.message : "La clé de chiffrement ou les identifiants Qonto ne sont pas valides. Reconnectez Qonto.";
     await db.from("qonto_connections").update({ last_error: message.slice(0, 300), updated_at: new Date().toISOString() }).eq("organization_id", organizationId).eq("lease_token", token);

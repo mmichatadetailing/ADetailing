@@ -19,23 +19,24 @@ describe("intégration directe Qonto", () => {
     expect(qontoAutomationDecision(transaction, { ...context, transactions: [transaction], candidates: [{ ...candidate, kind }] })).toMatchObject({ action: "match", kind });
   });
   it("ne décide pas entre deux cibles ou deux mouvements concurrents", () => {
-    expect(qontoAutomationDecision(tx, { ...context, candidates: [candidate, { ...candidate, id: "other", key: "other" }] })).toMatchObject({ action: "review" });
-    expect(qontoAutomationDecision(tx, { ...context, transactions: [tx, { ...tx, id: "other" }], candidates: [candidate] })).toMatchObject({ action: "review" });
+    expect(qontoAutomationDecision(tx, { ...context, candidates: [candidate, { ...candidate, id: "other", key: "other" }] })).toMatchObject({ action: "defer" });
+    expect(qontoAutomationDecision(tx, { ...context, transactions: [tx, { ...tx, id: "other" }], candidates: [candidate] })).toMatchObject({ action: "defer" });
   });
   it("ne duplique pas un acompte, un contrat ou un abonnement dont le montant a changé", () => {
-    expect(qontoAutomationDecision(tx, { ...context, candidates: [{ ...candidate, amount: 22000 }] })).toMatchObject({ action: "review" });
-    expect(qontoAutomationDecision(tx, { ...context, blockers: [{ side: "credit", identities: [tx.counterparty] }] })).toMatchObject({ action: "review" });
-    expect(qontoAutomationDecision({ ...tx, side: "debit" }, { ...context, blockers: [{ side: "debit", identities: [tx.counterparty] }] })).toMatchObject({ action: "review" });
+    expect(qontoAutomationDecision(tx, { ...context, candidates: [{ ...candidate, amount: 22000 }] })).toMatchObject({ action: "defer" });
+    expect(qontoAutomationDecision(tx, { ...context, blockers: [{ side: "credit", identities: [tx.counterparty] }] })).toMatchObject({ action: "defer" });
+    expect(qontoAutomationDecision({ ...tx, side: "debit" }, { ...context, blockers: [{ side: "debit", identities: [tx.counterparty] }] })).toMatchObject({ action: "defer" });
   });
-  it.each(["Apport en capital", "Remboursement achat", "Prêt", "Salaire", "Stripe", "SumUp"])("n’invente pas une vente ou charge pour %s", (label) => {
-    expect(qontoAutomationDecision({ ...tx, label }, context)).toMatchObject({ action: "review" });
+  it.each(["Apport en capital", "Remboursement achat", "Prêt"])("n’invente pas une vente ou charge pour %s", (label) => {
+    expect(qontoAutomationDecision({ ...tx, label }, context)).toMatchObject({ action: "ignore" });
   });
   it("isole les virements internes et les crédits carte/intérêts", () => {
     expect(qontoAutomationDecision({ ...tx, operation_type: "internal_transfer" }, context)).toMatchObject({ action: "ignore" });
-    for (const operation_type of ["card", "account_remuneration"]) expect(qontoAutomationDecision({ ...tx, operation_type }, context)).toMatchObject({ action: "review" });
+    expect(qontoAutomationDecision({ ...tx, operation_type: "card" }, context)).toMatchObject({ action: "ignore" });
+    for (const label of ["Salaire", "Stripe", "SumUp"]) expect(qontoAutomationDecision({ ...tx, label }, context)).toMatchObject({ action: "defer" });
   });
   it("ne crée pas une identité fictive ou n’arbitre pas des homonymes", () => {
-    expect(qontoAutomationDecision({ ...tx, counterparty: "" }, context)).toMatchObject({ action: "review" });
-    expect(qontoAutomationDecision(tx, { ...context, clients: [{ id: "a", names: [tx.counterparty] }, { id: "b", names: [tx.counterparty] }] })).toMatchObject({ action: "review" });
+    expect(qontoAutomationDecision({ ...tx, counterparty: "" }, context)).toMatchObject({ action: "defer" });
+    expect(qontoAutomationDecision(tx, { ...context, clients: [{ id: "a", names: [tx.counterparty] }, { id: "b", names: [tx.counterparty] }] })).toMatchObject({ action: "defer" });
   });
 });

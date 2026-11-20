@@ -125,6 +125,9 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User, 
   const organizationId = text(membership, "organization_id");
   const locationId = text(membership, "location_id");
 
+  // Dashboard results must not stop at PostgREST's first page of payments/expenses.
+  const paymentsQuery = supabase.from("payments").select("*,bank_link:bank_transactions!bank_transactions_payment_id_fkey(id),bank_group:bank_reconciliation_groups!bank_reconciliation_groups_payment_id_fkey(id)").eq("organization_id", organizationId).order("paid_at", { ascending: false });
+  const expensesQuery = supabase.from("expenses").select("*,expense_settlements(*)").eq("organization_id", organizationId).is("archived_at", null).order("expense_date", { ascending: false });
   const results = await Promise.all([
     supabase.from("organization_members").select("id,organization_id,profile_id,provisional_first_name,provisional_last_name,provisional_email,role,location_id,active,weekly_capacity_minutes,color,created_at,updated_at,profiles(id,first_name,last_name,email,phone,created_at,updated_at)").eq("organization_id", organizationId),
     supabase.from("lead_sources").select("id,name,display_order").eq("organization_id", organizationId).eq("active", true).order("display_order"),
@@ -137,14 +140,14 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User, 
     supabase.from("services").select("*,service_categories(name),service_prices(amount_cents,maximum_amount_cents,pricing_label,minimum_vehicle_count,maximum_vehicle_count,vehicle_formats(name)),service_aliases(alias)").eq("organization_id", organizationId).is("archived_at", null).order("display_order"),
     supabase.from("quotes").select("*,quote_items(*)").eq("organization_id", organizationId).is("archived_at", null).order("issued_at", { ascending: false }),
     supabase.from("invoices").select("*,invoice_items(*)").eq("organization_id", organizationId).is("archived_at", null).order("issued_at", { ascending: false }),
-    supabase.from("payments").select("*").eq("organization_id", organizationId).order("paid_at", { ascending: false }),
+    paymentsQuery,
     supabase.from("interventions").select("*,intervention_items(*),intervention_workers(*),intervention_checklist_items(*)").eq("organization_id", organizationId).is("archived_at", null).order("start_at"),
     supabase.from("planning_events").select("*").eq("organization_id", organizationId).is("archived_at", null).order("starts_at"),
     // Les contrats archivés restent chargés pour rattacher leurs encaissements
     // historiques au bon client, sans les réafficher dans la gestion courante.
     supabase.from("maintenance_contracts").select("*").eq("organization_id", organizationId).order("first_visit_on"),
     supabase.from("maintenance_billing_periods").select("*").eq("organization_id", organizationId).order("due_on"),
-    supabase.from("expenses").select("*,expense_settlements(*)").eq("organization_id", organizationId).is("archived_at", null).order("expense_date", { ascending: false }),
+    expensesQuery,
     supabase.from("assets").select("*").eq("organization_id", organizationId).is("archived_at", null).order("created_at", { ascending: false }),
     supabase.from("monthly_objectives").select("*").eq("organization_id", organizationId).order("month"),
     supabase.from("reviews").select("*").eq("organization_id", organizationId).order("created_at", { ascending: false }),
@@ -153,7 +156,7 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User, 
     supabase.from("app_settings").select("key,value").eq("organization_id", organizationId),
     supabase.from("organization_invitations").select("id,pending_member_id,invited_first_name,invited_last_name,email,role,weekly_capacity_minutes,expires_at,accepted_at,revoked_at,created_at").eq("organization_id", organizationId).order("created_at", { ascending: false }),
   ].map(async (query) => {
-    if (!options.allRows) return query;
+    if (!options.allRows && query !== paymentsQuery && query !== expensesQuery) return query;
     // Taille inférieure au plafond Supabase standard et tri stable pour ne pas
     // tronquer l’export aux 1 000 premiers clients, paiements ou prestations.
     const paginatedQuery = query.order("id");
@@ -235,7 +238,7 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User, 
     ...base(row), number: text(row, "number"), clientId: text(row, "client_id"), quoteId: optionalText(row, "quote_id"), status: text(row, "status", "imported") as Invoice["status"], paymentStatus: text(row, "payment_status", "unpaid") as Invoice["paymentStatus"],
     issuedAt: text(row, "issued_at", text(row, "created_at")), dueAt: optionalText(row, "due_at"), totalExcludingTax: number(row, "total_excluding_tax_cents"), totalTax: number(row, "total_tax_cents"), totalIncludingTax: number(row, "total_including_tax_cents"), lines: documentLines(row.invoice_items), expectedPaymentMethod: optionalText(row, "expected_payment_method"),
   }));
-  const payments: Payment[] = paymentRows.map((row) => ({ ...base(row), invoiceId: optionalText(row, "invoice_id"), interventionId: optionalText(row, "intervention_id"), maintenanceContractId: optionalText(row, "maintenance_contract_id"), maintenanceBillingPeriodId: optionalText(row, "maintenance_billing_period_id"), amount: number(row, "amount_cents"), paidAt: iso(text(row, "paid_at")), method: text(row, "method"), reference: optionalText(row, "reference"), notes: optionalText(row, "notes") }));
+  const payments: Payment[] = paymentRows.map((row) => ({ ...base(row), bankLinked: Boolean(one(row.bank_link).id || one(row.bank_group).id), invoiceId: optionalText(row, "invoice_id"), interventionId: optionalText(row, "intervention_id"), maintenanceContractId: optionalText(row, "maintenance_contract_id"), maintenanceBillingPeriodId: optionalText(row, "maintenance_billing_period_id"), amount: number(row, "amount_cents"), paidAt: iso(text(row, "paid_at")), method: text(row, "method"), reference: optionalText(row, "reference"), notes: optionalText(row, "notes") }));
   const interventions: Intervention[] = interventionRows.map((row) => ({
     ...base(row), clientId: text(row, "client_id"), vehicleId: optionalText(row, "vehicle_id"), vehicleFormat: optionalText(row, "vehicle_format"), quoteId: optionalText(row, "quote_id"), invoiceId: optionalText(row, "invoice_id"), maintenanceContractId: optionalText(row, "maintenance_contract_id"), maintenancePeriod: optionalText(row, "maintenance_period"), status: text(row, "status", "to_schedule") as Intervention["status"], title: text(row, "title"), startAt: optionalText(row, "start_at"), endAt: optionalText(row, "end_at"), plannedDurationMinutes: number(row, "planned_duration_minutes"), actualDurationMinutes: nullableNumber(row, "actual_duration_minutes"), preparationMinutes: number(row, "preparation_minutes"), cleanupMinutes: number(row, "cleanup_minutes"),
     workers: rows(row.intervention_workers).map((worker) => ({ memberId: text(worker, "profile_id", text(worker, "pending_member_id")), plannedMinutes: number(worker, "planned_minutes"), actualMinutes: nullableNumber(worker, "actual_minutes") })),
