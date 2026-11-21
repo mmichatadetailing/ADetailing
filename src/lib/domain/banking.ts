@@ -41,6 +41,8 @@ export interface BankTransaction {
   automation_note?: string | null;
   automated_at?: string | null;
   expense_family?: string | null;
+  monthly_split_rule_id?: string | null;
+  split_cash_delta_cents?: number;
   posting_kind?: "service" | "expense" | "matched" | "ignored" | "bank_only" | "repost" | null;
   remote_updated_at?: string;
 }

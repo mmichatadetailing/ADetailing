@@ -25,6 +25,7 @@ describe("finances : ce qui est confirmé, estimé ou simplement prévu", () => 
     expect(link({...tx,payment_id:"forfait"})?.href).toBe("/entretiens#echeance-periode");
     expect(link({...tx,payment_id:"ancien"})).toBeUndefined();
     expect(link({...tx,expense_id:"invisible"})).toBeUndefined();
+    expect(link({...tx,monthly_split_rule_id:"rule",expense_month:"2026-09-01"})).toEqual({href:"/finances?mois=2026-09",label:"Voir les échéances du mois"});
     expect(link({...tx,payment_id:"vente",reconciliation:"review"})).toBeUndefined();
   });
   it("ne transforme pas les prélèvements estimés en paiements ni les règlements de septembre en règlements d’août", () => {

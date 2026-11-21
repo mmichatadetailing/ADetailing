@@ -58,4 +58,15 @@ describe("résultat et suivi automatiques dans le logiciel", () => {
     expect(paidExpenseAmountForMonth(charges,"2026-10",now)).toBe(3000);
     expect(expenseForecast(charges,"2026-08",3).map((o) => o.total)).toEqual([2500,3000,2500]);
   });
+  it.each([214,-12286,2914,0])("sépare les deux charges et l’unique sortie bancaire, écart %i centimes", (cashDelta) => {
+    const asOf = new Date("2026-09-30T12:00:00Z");
+    const charges = [36071,12215].map((amount,i) => ({family:"fixed" as const,date:"2026-08-01",recurrence:"monthly" as const,paid:true,amountIncludingTax:amount,
+      settlements:[{id:String(i),bankTransactionId:"tx",month:"2026-09",paidAt:"2026-09-03",amount,splitLeg:i+1,cashDelta:i===0 ? cashDelta : 0}]}));
+    const source: BankTransaction = {...tx,side:"debit",reference:"Prêt du fourgon",monthly_split_rule_id:"rule",split_cash_delta_cents:cashDelta,reconciliation:"matched",amount_cents:48286+cashDelta};
+    expect(bankCashSummary([source],"2026-09",asOf.getTime()).expenses).toBe(48286+cashDelta);
+    expect(paidExpenseAmountForMonth(charges,"2026-09",asOf)).toBe(48286+cashDelta);
+    expect(recordedActivity([],charges,"2026-09",undefined,asOf).spent).toBe(48286);
+    expect(expenseMonthSummary(charges,"2026-09",asOf)).toMatchObject({total:48286,paid:48286,due:0,upcoming:0});
+    expect(projectedExpenseAmountForMonth(charges,"2026-10")).toBe(48286);
+  });
 });

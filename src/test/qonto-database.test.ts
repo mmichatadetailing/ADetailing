@@ -38,6 +38,7 @@ beforeAll(async () => {
   await db.exec(await readFile("supabase/migrations/202611050027_qonto_automatic_drafts.sql", "utf8"));
   await db.exec(await readFile("supabase/migrations/202611160028_qonto_direct_integration.sql", "utf8"));
   await db.exec(await readFile("supabase/migrations/202611190029_qonto_autonomous_finance.sql", "utf8"));
+  await db.exec(await readFile("supabase/migrations/202611200030_qonto_monthly_split.sql", "utf8"));
 }, 30_000);
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
@@ -77,6 +78,68 @@ async function manageDraft(action: string, details: Record<string, unknown> = {}
   return db.query<{ manage_bank_draft: { interventionId?: string } }>("select manage_bank_draft($1,$2,$3)", [draft.id, action, JSON.stringify({ expectedUpdatedAt: draft.updated_at, ...details })]);
 }
 function validation(payload: Record<string, unknown>) { return { targetKind: "new", expectedAmount: 11000, expectedSettledAt: "2026-09-16T00:00:00Z", payload }; }
+
+describe("virement groupé et deux échéances mensuelles", () => {
+  const insurance = "40000000-0000-4000-8000-000000000002";
+  const thirdTx = "50000000-0000-4000-8000-000000000003";
+  async function setup() {
+    await db.query("update expenses set series_id=id,expense_date='2025-01-01',family='fixed',description='Mensualité fourgon',amount_including_tax_cents=36071 where id=$1",[expense]);
+    await db.query("insert into expenses(id,series_id,organization_id,expense_date,family,description,recurrence,amount_including_tax_cents,paid) values($1,$1,$2,'2025-01-04','fixed','Assurance véhicule','monthly',12215,true)",[insurance,org]);
+  }
+  async function transfer(id: string, date: string, amount: number, ignored = false) {
+    await bank(id,"debit",amount);
+    await db.query("update bank_transactions set label='Destinataire témoin',reference='Mensualités groupées',settled_at=$2,reconciliation=$3 where id=$1",
+      [id,date,ignored ? "ignored" : "unmatched"]);
+  }
+  const enable = async () => (await db.query<{rule:string}>("select enable_qonto_monthly_split($1,$2,$3,$4) rule",[org,tx,expense,insurance])).rows[0]!.rule;
+  const sync = () => db.query("select repair_qonto_postings($1)",[org]);
+  const amounts = async (id=tx) => (await db.query("select amount_cents::int as amount,cash_delta_cents::int as delta from expense_settlements where bank_transaction_id=$1 order by split_leg",[id])).rows;
+  it("rejoue le témoin ignoré, rattrape l’historique certain et traite les tarifs futurs sans troisième charge", async () => {
+    await setup(); await transfer(tx,"2025-11-03",48500,true); await transfer(secondTx,"2025-10-02",48286);
+    await enable(); await enable(); await sync(); await sync();
+    expect(await amounts()).toEqual([{amount:36071,delta:214},{amount:12215,delta:0}]);
+    expect(await amounts(secondTx)).toEqual([{amount:36071,delta:0},{amount:12215,delta:0}]);
+    await db.query("update expenses set ends_on='2025-11-30' where id=$1",[insurance]);
+    await db.query("insert into expenses(organization_id,series_id,expense_date,family,description,recurrence,amount_including_tax_cents) values($1,$2,'2025-12-04','fixed','Nouveau tarif','monthly',13215)",[org,insurance]);
+    await transfer(thirdTx,"2025-12-03",49500); await sync();
+    expect(await amounts(thirdTx)).toEqual([{amount:36071,delta:214},{amount:13215,delta:0}]);
+    expect(await count("expenses")).toBe(3); // only two initial schedules and the revised tariff
+    expect(await count("expense_settlements")).toBe(6);
+  });
+  it("ne traite que les montants historiques expressément confirmés et conserve un écart signé une seule fois", async () => {
+    await setup(); await transfer(tx,"2025-11-03",48500,true); await transfer(secondTx,"2025-09-03",36000,true);
+    const rule=await enable(); await sync(); expect(await amounts(secondTx)).toEqual([]);
+    const confirm=(amount:number) => db.query("select confirm_qonto_split_history($1,$2,$3,'2025-09-03',$4,36071,12215)",[org,rule,secondTx,amount]);
+    await expect(confirm(36001)).rejects.toThrow("confirmés");
+    await confirm(36000); await confirm(36000);
+    await sync(); await sync();
+    expect(await amounts(secondTx)).toEqual([{amount:36071,delta:-12286},{amount:12215,delta:0}]);
+    await db.query("update bank_transactions set amount_cents=36001,remote_updated_at=now() where id=$1",[secondTx]);
+    await sync(); expect(await amounts(secondTx)).toEqual([]);
+    expect((await db.query("select reconciliation from bank_transactions where id=$1",[secondTx])).rows[0]).toEqual({reconciliation:"ignored"});
+    expect(await amounts()).toHaveLength(2);
+  });
+  it("ne convertit ni un autre bénéficiaire ni deux virements concurrents ni une écriture existante", async () => {
+    await setup(); await transfer(tx,"2025-11-03",48500,true); await enable();
+    await transfer(secondTx,"2025-12-02",48500); await db.query("update bank_transactions set label='Autre bénéficiaire' where id=$1",[secondTx]);
+    await sync(); expect(await amounts(secondTx)).toEqual([]);
+    await db.query("update bank_transactions set label='Destinataire témoin' where id=$1",[secondTx]);
+    await transfer(thirdTx,"2025-12-04",48500); await sync();
+    expect(await amounts(secondTx)).toEqual([]); expect(await amounts(thirdTx)).toEqual([]);
+    const call=()=>db.query<{v:{kind:string}}>("select post_qonto_transaction($1,48500,'2025-12-02',$2) v",[secondTx,JSON.stringify({action:"expense",category:"Autre"})]);
+    expect((await call()).rows[0]?.v.kind).toBe("bank_only");
+    await db.query("update bank_transactions set status='reversed' where id=$1",[thirdTx]);
+    await db.query("insert into expenses(organization_id,expense_date,recurrence,amount_including_tax_cents,paid) values($1,'2025-12-02','one_off',48500,true)",[org]);
+    await sync(); expect((await call()).rows[0]?.v.kind).toBe("bank_only"); expect(await count("expense_settlements")).toBe(2);
+  });
+  it("rouvre les deux échéances après annulation et refuse une troisième part ou un accès utilisateur direct", async () => {
+    await setup(); await transfer(tx,"2025-11-03",48500,true); await enable();
+    await expect(db.query("insert into expense_settlements(organization_id,expense_id,period_month,paid_at,amount_cents,bank_transaction_id) values($1,$2,'2025-12-01',now(),100,$3)",[org,expense,tx])).rejects.toThrow("incompatible");
+    await db.query("update bank_transactions set status='reversed',remote_updated_at=now() where id=$1",[tx]); await sync(); await sync();
+    expect(await amounts()).toEqual([]); expect(await count("expenses")).toBe(2);
+    expect((await db.query("select has_function_privilege('authenticated','enable_qonto_monthly_split(uuid,uuid,uuid,uuid)','execute') as manage,has_function_privilege('authenticated','apply_qonto_split_history(uuid)','execute') as post,has_function_privilege('service_role','post_qonto_single_transaction(uuid,bigint,timestamptz,jsonb)','execute') as bypass")).rows[0]).toEqual({manage:false,post:false,bypass:false});
+  });
+});
 
 describe("journal financier autonome (migration 029)", () => {
   async function active() {

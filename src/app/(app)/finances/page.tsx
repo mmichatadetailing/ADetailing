@@ -150,6 +150,9 @@ function FinancesContent({ initialMonth, initialRegister }: { initialMonth: stri
   const monthLabel = formatMonth(selectedMonth);
   const monthSummary = expenseMonthSummary(data.expenses, selectedMonth);
   const selectedExpenses = monthSummary.occurrences.map((occurrence) => occurrence.expense);
+  const splitLegs = selectedExpenses.flatMap((expense) => (expense.settlements ?? []).filter((s) => s.month === selectedMonth && s.splitLeg));
+  const splitTotal = splitLegs.reduce((sum, s) => sum + s.amount, 0);
+  const splitDelta = splitLegs.reduce((sum, s) => sum + (s.cashDelta ?? 0), 0);
   const projectedExpenses = monthSummary.total;
   const estimatedDebits = monthSummary.occurrences.reduce((sum, entry) => sum + (isEstimatedDebit(entry) ? entry.amount : 0), 0);
   const confirmedDues = monthSummary.paid - estimatedDebits;
@@ -226,6 +229,10 @@ function FinancesContent({ initialMonth, initialRegister }: { initialMonth: stri
         ].map((item) => <dl key={item.label} data-tone={item.tone} className="finance-metric"><dt>{item.label}</dt><dd>{formatMoney(item.value)}</dd><div className="mt-1 text-xs text-zinc-600">{item.detail}</div></dl>)}
       </section>
 
+      {splitLegs.length > 0 && <aside aria-label="Virements groupés du mois" className="rounded-xl border border-line bg-surface p-4 text-sm">
+        <h3 className="font-bold">Virements groupés du mois</h3><p className="mt-1">{formatMoney(splitTotal + splitDelta)} sortis de Qonto pour {formatMoney(splitTotal)} d’échéances réglées.</p>
+        {splitDelta !== 0 && <p className="mt-1 text-xs text-zinc-600">Écart de trésorerie : {formatMoney(splitDelta)}. Les tarifs des charges restent inchangés.</p>}
+      </aside>}
       {monthSummary.due > 0 && (
         <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900">
           <AlertCircle className="mt-0.5 size-5 shrink-0 text-amber-600" />

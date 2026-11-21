@@ -27,12 +27,18 @@ export function expenseCategory(tx: BankTransaction) {
 }
 
 export function bankCashSummary(transactions: BankTransaction[], period: string, now = Date.now()) {
-  let receipts = 0, expenses = 0, other = 0;
+  let receipts = 0, expenses = 0, other = 0, splitCashDelta = 0;
   const bookedRefunds = { customer: 0, supplier: 0 };
   for (const tx of transactions) {
     if (!tx.settled_at || tx.status !== "completed" || tx.currency !== "EUR" || tx.amount_cents <= 0
       || Date.parse(tx.settled_at) > now || !bankDate(tx.settled_at).startsWith(period)) continue;
     const flow = bankFlow(tx);
+    if (tx.monthly_split_rule_id && tx.reconciliation === "matched" && tx.side === "debit" && tx.operation_type === "transfer") {
+      // The confirmed allocation is stronger evidence than a generic bank memo.
+      expenses += tx.amount_cents;
+      splitCashDelta += tx.split_cash_delta_cents ?? 0;
+      continue;
+    }
     if (flow === "internal" || flow === "financing" || tx.expense_family === "personal" || tx.expense_family === "investment") continue;
     // A previous explicit exclusion stands. A verified link to a sale/expense
     // is stronger evidence than a generic or aggregated counterparty name.
@@ -48,7 +54,7 @@ export function bankCashSummary(transactions: BankTransaction[], period: string,
     else if (tx.payment_id || (flow === "receipt" && namedPayer(tx))) receipts += tx.amount_cents;
     else other += tx.amount_cents;
   }
-  return { receipts, expenses, result: receipts - expenses, unallocatedCredits: other, bookedRefunds };
+  return { receipts, expenses, result: receipts - expenses, unallocatedCredits: other, bookedRefunds, ...(splitCashDelta ? { splitCashDelta } : {}) };
 }
 
 /** Recorded cash basis, all payment methods. Never add bank totals to ledger
