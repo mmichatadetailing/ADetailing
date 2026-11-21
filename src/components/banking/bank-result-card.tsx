@@ -13,7 +13,7 @@ import { useDemoStore } from "@/lib/demo/store";
 import { formatDate, formatMoney } from "@/lib/utils";
 
 type Report = { summary: ReturnType<typeof bankCashSummary> | null; syncedAt?: string; importSince?: string; incomplete?: boolean; paused?: boolean };
-type DashboardLayout = { financesHref: string; objective: ReactNode; otherIndicators: ReactNode };
+type DashboardLayout = { financesHref: string; objective: ReactNode; expenses: ReactNode; otherIndicators: ReactNode };
 type ResultProps = { period: string; label: string; dashboard?: DashboardLayout };
 
 export function ExpenseCheck({ charges, bank, partial }: {
@@ -85,8 +85,8 @@ function PeriodResult({ period, label, demo, dashboard }: ResultProps & { demo: 
   const activity = useMemo(() => recordedActivity(payments, expenses, period, customerRefunds), [payments, expenses, period, customerRefunds]);
   const resultTone = activity.result > 0 ? "emerald" : activity.result < 0 ? "rose" : "neutral";
   const received = <ActivityMetric label="Encaissements enregistrés" value={activity.received} detail="Tous moyens de paiement, espèces comprises" tone="teal" icon={ArrowDownLeft} href={dashboard?.financesHref} />;
-  const result = <ActivityMetric label="Résultat enregistré" value={activity.result} detail="Encaissements moins charges réglées" tone={resultTone} icon={Scale} lead href={dashboard?.financesHref} />;
-  const spent = <ActivityMetric label="Charges d’activité réglées" value={activity.spent} detail={activity.charges.cash ? `Registre interne · dont ${formatMoney(activity.charges.cash)} en espèces` : "Registre interne · tous moyens de paiement"} tone="blue" icon={ArrowUpRight} href={dashboard?.financesHref} />;
+  const result = <ActivityMetric label="Résultat enregistré" value={activity.result} detail="Encaissements moins charges fixes et variables réglées" tone={resultTone} icon={Scale} lead href={dashboard?.financesHref} />;
+  const spent = <ActivityMetric label="Charges d’activité réglées" value={activity.spent} detail={activity.charges.cash ? `Registre interne · dont ${formatMoney(activity.charges.cash)} en espèces` : "Registre interne · tous moyens de paiement"} tone="blue" icon={ArrowUpRight} />;
   const content = <>
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div><p className="text-xs font-semibold text-zinc-500">Activité enregistrée · TTC</p><h2 className="mt-1 text-lg font-bold">Résultat d’activité · {label}</h2></div>
@@ -96,10 +96,10 @@ function PeriodResult({ period, label, demo, dashboard }: ResultProps & { demo: 
       </div>
     </div>
     {dashboard ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-12">
-      {received}{dashboard.objective}{result}{spent}
+      {received}{dashboard.objective}{result}{dashboard.expenses}
       {dashboard.otherIndicators}
     </div> : <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1.2fr_1fr_1fr]">{result}{received}{spent}</div>}
-    <p className="text-xs leading-5 text-zinc-500">Les prévisions et les investissements sont exclus. Ce résultat de gestion TTC n’est pas un bénéfice comptable.</p>
+    <p className="text-xs leading-5 text-zinc-500">Le résultat d’activité exclut les dépenses non réglées, les investissements et les dépenses personnelles. Ce résultat de gestion TTC n’est pas un bénéfice comptable.</p>
     {isInternalLedgerHistory(start) && <p className="text-xs leading-5 text-zinc-600">Jusqu’au 23 juin 2026 inclus, les chiffres proviennent des encaissements et charges réglées du registre interne, espèces comprises, même sans prestation ou mouvement Qonto lié.</p>}
     {summary ? <details className="rounded-xl border border-line px-3 text-sm"><summary className="focus-ring cursor-pointer rounded py-3 font-semibold">Vérifier les montants avec Qonto{report?.paused ? " · en pause" : report?.incomplete ? " · import partiel" : ""}</summary>
     <ExpenseCheck charges={activity.charges} bank={summary} partial={Boolean(report?.paused || report?.incomplete || (report?.importSince && report.importSince > start))} />

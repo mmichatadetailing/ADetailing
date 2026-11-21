@@ -4,7 +4,7 @@ import { AlertCircle, Banknote, CalendarClock, CircleDollarSign, Landmark, Packa
 import { Suspense, useState, type FormEvent } from "react";
 import { FinanceState } from "@/components/banking/finance-state";
 import { useFinanceAnchor } from "@/components/banking/use-finance-anchor";
-import { expenseAccess, isEstimatedDebit, occurrenceState, registerState } from "@/lib/domain/finance-presentation";
+import { expenseAccess, expenseFamilyLabels as familyLabels, isEstimatedDebit, occurrenceState, registerState } from "@/lib/domain/finance-presentation";
 import { expensePaymentMethods, manualExpensePayment } from "@/lib/domain/expense-ledger";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -35,13 +35,6 @@ const recurrenceLabels: Record<Expense["recurrence"], string> = {
   one_off: "Ponctuelle",
   monthly: "Mensuelle",
   annual: "Annuelle",
-};
-
-const familyLabels: Record<Expense["family"], string> = {
-  fixed: "Fixe",
-  variable: "Variable",
-  investment: "Investissement",
-  personal: "Personnel",
 };
 
 function formatMonth(month: string, style: "long" | "short" = "long") {
