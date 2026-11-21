@@ -26,7 +26,8 @@ test("le résultat suit la période sans boîte de validation Qonto, sur ordinat
     const expenses = [
       ...[36071,12215].map((amount,i) => ({...base,id:"split-"+i,description:["Camion","Assurance"][i],recurrence:"monthly",amountIncludingTax:amount,
         settlements:[{id:"leg-"+i,bankTransactionId:"transfer",month:"2026-11",paidAt:"2026-11-03",amount,splitLeg:i+1,cashDelta:i===0?214:0}]})),
-      {...base,id:"paid",description:"Charge ponctuelle réglée",recurrence:"one_off",amountIncludingTax:95311},
+      {...base,id:"paid",description:"Charge ponctuelle réglée",recurrence:"one_off",amountIncludingTax:85311},
+      {...base,id:"cash-expense",description:"Produits réglés en liquide",recurrence:"one_off",amountIncludingTax:10000,paymentMethod:"Espèces"},
       {...base,id:"planned",description:"Charge prévue non réglée",recurrence:"one_off",amountIncludingTax:20000,paid:false},
     ];
     const payments = [{id:"service",amount:160000,paidAt:"2026-11-03",method:"Virement",maintenanceContractId:"entretien"},
@@ -48,6 +49,7 @@ test("le résultat suit la période sans boîte de validation Qonto, sur ordinat
   await expect(cards.nth(2)).toContainText(/325,03\s*€/);
   await expect(cards.nth(3)).toHaveAccessibleName(/^Charges d’activité réglées/);
   await expect(cards.nth(3)).toContainText(/1\s?435,97\s*€/);
+  await expect(cards.nth(3)).toContainText(/dont 100\s*€ en espèces/);
   for (const label of ["Encaissements enregistrés","Résultat enregistré","Charges d’activité réglées"])
     await expect(page.getByText(label,{exact:true})).toHaveCount(1);
   await expect(indicators.getByRole("link",{name:/^(CA encaissé|Flux de trésorerie estimé|Charges prévues)/})).toHaveCount(0);
@@ -63,6 +65,35 @@ test("le résultat suit la période sans boîte de validation Qonto, sur ordinat
   await expect(page.getByRole("heading", {name:"Journal bancaire"})).toBeVisible();
   await expect(page.getByText("Le journal bancaire est disponible en mode connecté.")).toBeVisible();
   expect(bankCalls).toEqual([]);
+});
+
+test("une dépense en espèces peut être créée, puis datée au mois du règlement sans doublon", async ({page}) => {
+  await page.clock.setFixedTime(new Date("2026-11-21T12:00:00Z"));
+  await page.addInitScript(() => {
+    const key = "adetailing-pilotage-demo-v1";
+    if (!localStorage.getItem(key)) localStorage.setItem(key,JSON.stringify({version:1,state:{expenses:[],payments:[]}}));
+  });
+  await page.goto("/finances?registre=charges&mois=2026-11");
+  await page.getByRole("button",{name:/Prévoir une charge ou saisir hors banque/}).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Date de la dépense").fill("2026-11-08");
+  await dialog.getByLabel("Catégorie").fill("Produits");
+  await dialog.getByLabel("Fournisseur").fill("Magasin test");
+  await dialog.getByLabel("Description").fill("Nettoyant payé en liquide");
+  await dialog.getByLabel("Montant TTC (€)").fill("42.50");
+  await dialog.getByLabel(/Moyen de paiement/).selectOption("Espèces");
+  await dialog.getByRole("button",{name:"Enregistrer la dépense"}).click();
+  const item = page.getByRole("listitem").filter({hasText:"Nettoyant payé en liquide"});
+  await expect(item).toContainText("Réglée · espèces");
+  const charges = page.locator("dl").filter({has:page.getByText("Charges d’activité réglées",{exact:true})});
+  await expect(charges).toContainText(/dont 42,50\s*€ en espèces/);
+  await item.getByRole("button",{name:"Modifier",exact:true}).click();
+  await dialog.getByLabel("Date du règlement").fill("2026-10-30");
+  await dialog.getByRole("button",{name:"Enregistrer les modifications"}).click();
+  await expect(charges.locator("dd")).toHaveText(/^0\s*€/);
+  await page.getByLabel("Mois analysé").fill("2026-10");
+  await expect(charges).toContainText(/dont 42,50\s*€ en espèces/);
+  await expect(item).toHaveCount(1);
 });
 
 test("les prévisions ouvrent le bon mois et le registre protège un débit importé", async ({page}) => {

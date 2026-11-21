@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BankCandidate, BankTransaction } from "@/lib/domain/banking";
 import { bankDate } from "@/lib/domain/banking";
+import { isCashExpenseMethod } from "@/lib/domain/expense-ledger";
 import { projectedExpensesForMonth, expenseOccurrenceDateKey } from "@/lib/domain/calculations";
 import { readAllPages } from "@/lib/supabase/pagination";
 import type { BankDraft } from "@/lib/domain/bank-drafts";
@@ -53,7 +54,9 @@ export async function qontoContext(db: SupabaseClient, org: string) {
     if (!contract || contract.archived_at) continue;
     targets.push({ key: `maintenance:${period.id}`, kind: "maintenance", id: String(period.id), label: `Encaisser l’entretien · ${clientNames(contract.client_id)[0] ?? ""} · échéance ${period.due_on}`, identities: clientNames(contract.client_id), amount: Number(period.amount_cents), date: String(period.due_on) });
   }
-  const expenses = rows.expenses.filter((expense) => !expense.archived_at).map((expense) => ({
+  // A cash purchase cannot be the bank debit, even for the same supplier,
+  // day and amount. Don't offer it to either live or historical matching.
+  const expenses = rows.expenses.filter((expense) => !expense.archived_at && !(expense.recurrence === "one_off" && expense.paid && isCashExpenseMethod(String(expense.payment_method ?? "")))).map((expense) => ({
     id: String(expense.id), date: String(expense.expense_date), endsAt: expense.ends_on ? String(expense.ends_on) : undefined, seriesId: expense.series_id ? String(expense.series_id) : undefined,
     amountIncludingTax: Number(expense.amount_including_tax_cents), recurrence: String(expense.recurrence) as "monthly" | "annual" | "one_off", paid: Boolean(expense.paid),
     settlements: rows.expense_settlements.filter((entry) => entry.expense_id === expense.id).map((entry) => ({ id: String(entry.id), month: String(entry.period_month).slice(0, 7), amount: Number(entry.amount_cents), paidAt: bankDate(String(entry.paid_at)), bankTransactionId: String(entry.bank_transaction_id) })),

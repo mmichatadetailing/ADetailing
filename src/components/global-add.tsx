@@ -8,6 +8,7 @@ import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { getServicePricingMode, servicePriceRuleLabel, suggestedServicePrice } from "@/lib/domain/service-pricing";
+import { expensePaymentMethods } from "@/lib/domain/expense-ledger";
 import { appointmentSlotDefaults, localPlanningDateTime, type PlanningSlot } from "@/lib/domain/planning-slot";
 import { useDemoStore } from "@/lib/demo/store";
 import { formatMoney } from "@/lib/utils";
@@ -53,6 +54,8 @@ const expenseSchema = z.object({
   amountEuros: z.number().positive("Montant requis"),
   vatRate: z.number().min(0).max(100),
   paid: z.boolean(),
+  paymentMethod: z.enum(expensePaymentMethods).or(z.literal("")).optional(),
+  paidOn: z.iso.date().or(z.literal("")).optional(),
 });
 
 const appointmentVehicleFormats = ["Citadine", "Berline", "SUV", "Monospace", "4x4", "Fourgon", "Autre"] as const;
@@ -272,13 +275,15 @@ function ExpenseForm({ close, onDirtyChange, onBusyChange }: { close: () => void
     defaultValues: { date: new Date().toISOString().slice(0, 10), recurrence: "one_off", family: "variable", vatRate: 20, paid: true },
   });
   const recurrence = useWatch({ control, name: "recurrence" });
+  const paid = useWatch({ control, name: "paid" });
   useEffect(() => { onDirtyChange(isDirty); }, [isDirty, onDirtyChange]);
   useEffect(() => { onBusyChange(isSubmitting); }, [isSubmitting, onBusyChange]);
   return (
     <form className="grid gap-4" onSubmit={handleSubmit(async (values) => {
       try {
-        const input = { date: new Date(`${values.date}T12:00:00`).toISOString(), recurrence: values.recurrence, family: values.family, category: values.category, supplier: values.supplier, description: values.description, amountIncludingTax: Math.round(values.amountEuros * 100), vatRateBasisPoints: Math.round(values.vatRate * 100), paid: values.paid };
-        if (mode === "supabase") await createRecord({ ...input, kind: "expense", date: values.date }); else addExpense(input);
+        const confirmed = values.paid && values.recurrence === "one_off";
+        const input = { date: values.date, recurrence: values.recurrence, family: values.family, category: values.category, supplier: values.supplier, description: values.description, amountIncludingTax: Math.round(values.amountEuros * 100), vatRateBasisPoints: Math.round(values.vatRate * 100), paid: values.paid, paymentMethod: confirmed ? values.paymentMethod || null : null, paidOn: confirmed ? values.paidOn || values.date : undefined };
+        if (mode === "supabase") await createRecord({ ...input, kind: "expense" }); else addExpense(input);
         toast.success("Dépense enregistrée");
         close();
       } catch (error) { toast.error(error instanceof Error ? error.message : "Enregistrement impossible"); }
@@ -304,6 +309,10 @@ function ExpenseForm({ close, onDirtyChange, onBusyChange }: { close: () => void
         <Field label="TVA (%)"><Input type="number" step="0.1" {...register("vatRate", { valueAsNumber: true })} /></Field>
       </div>
       <label className="flex items-center gap-3 rounded-xl border border-line bg-zinc-50 p-3 text-sm font-semibold text-zinc-700"><input type="checkbox" className="accent-brand-500" {...register("paid")} /> {recurrence === "one_off" ? "Dépense déjà payée" : "Estimer un prélèvement à chaque échéance"}</label>
+      {paid && recurrence === "one_off" && <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Moyen de paiement" hint="Les espèces sont comptées sans débit Qonto attendu."><Select {...register("paymentMethod")}><option value="">Non précisé</option>{expensePaymentMethods.map((method) => <option key={method}>{method}</option>)}</Select></Field>
+        <Field label="Date du règlement" hint="Facultatif, si différente de la date de dépense."><Input type="date" {...register("paidOn")} /></Field>
+      </div>}
       {recurrence !== "one_off" && <p className="-mt-2 text-[11px] leading-5 text-zinc-500">Cette option alimente la trésorerie estimée. Seul un règlement confirmé entre dans le résultat enregistré.</p>}
       <Button type="submit" className="mt-2" disabled={isSubmitting}>{isSubmitting ? "Enregistrement…" : "Enregistrer la dépense"}</Button>
     </form>

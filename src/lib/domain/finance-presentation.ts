@@ -2,6 +2,7 @@ import type { BankTransaction } from "./banking";
 import type { ExpenseOccurrence } from "./calculations";
 import { bankFlow } from "./qonto-finance";
 import { financialDateKey } from "./periods";
+import { isCashExpenseMethod, manualExpensePayment } from "./expense-ledger";
 import type { Expense, Payment } from "./types";
 
 export type FinanceTone = "emerald" | "amber" | "blue" | "violet" | "neutral" | "rose" | "teal";
@@ -36,16 +37,22 @@ export function isEstimatedDebit({ expense, month, status }: ExpenseOccurrence<E
 
 export function registerState(expense: Expense, month: string, today = financialDateKey(new Date().toISOString())): FinanceState {
   const settlement = expense.settlements?.find((s) => expense.recurrence === "one_off" || s.month === month);
+  const manual = manualExpensePayment(expense);
+  if (manual && manual.day > today) return {label:"À venir",tone:"blue"};
+  if (manual && isCashExpenseMethod(expense.paymentMethod)) return cashState(Boolean(settlement));
   if (settlement && financialDateKey(settlement.paidAt) <= today) return {label:settlement.splitLeg ? "Réglée · virement groupé" : "Réglée · Qonto", tone:"emerald"};
   if (expense.recurrence !== "one_off") return {label:expense.paid ? "Prélèvement prévu" : "Selon échéance",tone:"blue"};
   if (financialDateKey(expense.paidAt ?? expense.date) > today) return {label:"À venir",tone:"blue"};
   return expense.paid ? {label:"Règlement enregistré",tone:"emerald"} : {label:"Non réglée",tone:"amber"};
 }
 
+const cashState = (hasLink: boolean): FinanceState => hasLink ? {label:"Espèces · lien bancaire à vérifier",tone:"amber"} : {label:"Réglée · espèces",tone:"emerald"};
+
 export function occurrenceState({ expense, month, status }: ExpenseOccurrence<Expense>): FinanceState {
   if (status === "upcoming") return { label: "À venir", tone: "blue" };
   if (status === "due") return { label: "Échue · non réglée", tone: "amber" };
   const settlement = expense.settlements?.find((s) => s.month === month);
+  if (manualExpensePayment(expense) && isCashExpenseMethod(expense.paymentMethod)) return cashState(Boolean(settlement));
   if (settlement) return { label: settlement.splitLeg ? "Réglée · virement groupé" : "Réglée · Qonto", tone: "emerald" };
   if (expense.recurrence === "one_off") return { label: "Règlement enregistré", tone: "emerald" };
   return { label: "Prélèvement estimé", tone: "amber" };

@@ -5,6 +5,7 @@ import { Suspense, useState, type FormEvent } from "react";
 import { FinanceState } from "@/components/banking/finance-state";
 import { useFinanceAnchor } from "@/components/banking/use-finance-anchor";
 import { expenseAccess, isEstimatedDebit, occurrenceState, registerState } from "@/lib/domain/finance-presentation";
+import { expensePaymentMethods, manualExpensePayment } from "@/lib/domain/expense-ledger";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
@@ -72,6 +73,8 @@ function ExpenseEditor({ expense, onCancel, onSave }: { expense: Expense; onCanc
   const [amountEuros, setAmountEuros] = useState(expense.amountIncludingTax / 100);
   const [vatRate, setVatRate] = useState(vatRateForExpense(expense));
   const [paid, setPaid] = useState(expense.paid);
+  const [paymentMethod, setPaymentMethod] = useState(isRecurringRevision ? "" : expense.paymentMethod ?? "");
+  const [paidOn, setPaidOn] = useState(!isRecurringRevision && expense.paidAt ? financialDateKey(expense.paidAt) : "");
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -91,6 +94,8 @@ function ExpenseEditor({ expense, onCancel, onSave }: { expense: Expense; onCanc
       amountIncludingTax: Math.round(amountEuros * 100),
       vatRateBasisPoints: Math.round(vatRate * 100),
       paid,
+      paymentMethod: paid && recurrence === "one_off" ? paymentMethod || null : null,
+      paidOn: paid && recurrence === "one_off" ? paidOn || date : undefined,
     });
   };
 
@@ -118,6 +123,10 @@ function ExpenseEditor({ expense, onCancel, onSave }: { expense: Expense; onCanc
         <Field label="TVA (%)"><Input min="0" max="100" step="0.1" type="number" value={vatRate} onChange={(event) => setVatRate(Number(event.target.value))} /></Field>
       </div>
       <label className="flex items-center gap-3 rounded-xl border border-line bg-zinc-50 p-3 text-sm font-semibold text-zinc-700"><input type="checkbox" className="accent-brand-500" checked={paid} onChange={(event) => setPaid(event.target.checked)} /> {recurrence === "one_off" ? "Dépense déjà payée" : "Estimer un prélèvement à chaque échéance"}</label>
+      {paid && recurrence === "one_off" && <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Moyen de paiement"><Select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option value="">Non précisé</option>{Array.from(new Set([...expensePaymentMethods, ...(expense.paymentMethod && !isRecurringRevision ? [expense.paymentMethod] : [])])).map((method) => <option key={method}>{method}</option>)}</Select></Field>
+        <Field label="Date du règlement"><Input required type="date" value={paidOn || date} onChange={(event) => setPaidOn(event.target.value)} /></Field>
+      </div>}
       {recurrence !== "one_off" && <p className="-mt-2 text-[11px] leading-5 text-zinc-500">La charge reste dans le prévisionnel. Cette estimation ne devient pas un règlement confirmé à la date prévue.</p>}
       <div className="flex justify-end gap-2 pt-2"><Button variant="ghost" onClick={onCancel}>Annuler</Button><Button type="submit"><Save className="size-4" /> {isRecurringRevision ? "Appliquer à partir de cette date" : "Enregistrer les modifications"}</Button></div>
     </form>
@@ -195,7 +204,7 @@ function FinancesContent({ initialMonth, initialRegister }: { initialMonth: stri
       <PageHeader
         eyebrow="Trésorerie & charges"
         title="Finances"
-        description="Suivez le résultat enregistré, puis consultez les échéances du mois ou préparez les dépenses à venir. Les débits Qonto intégrés ne sont pas à ressaisir."
+        description="Les charges réglées proviennent du registre, espèces comprises. Comparez leur part bancaire avec Qonto ou consultez les dépenses à venir."
         actions={<label className="grid gap-1 text-sm font-semibold"><span>Mois analysé</span>
           <Input className="w-[170px]" type="month" min="2000-01" max="2099-12" value={selectedMonth} onChange={(event) => { if (/^20\d{2}-(0[1-9]|1[0-2])$/.test(event.target.value)) setSelectedMonth(event.target.value); }} /></label>}
       />
@@ -320,12 +329,14 @@ function FinancesContent({ initialMonth, initialRegister }: { initialMonth: stri
             <ul className="divide-y divide-line" aria-label="Registre des charges">{visibleExpenses.map((expense) => {
               const access = expenseAccess(expense);
               const settled = expense.settlements?.find((p) => expense.recurrence === "one_off" || p.month === selectedMonth);
+              const manual = manualExpensePayment(expense);
+              const paidDay = manual?.day ?? settled?.paidAt;
               return <li id={`charge-${expense.id}`} key={expense.id} tabIndex={-1} data-linked={linkedExpense === expense.id} className="finance-target grid min-w-0 gap-3 py-4 lg:grid-cols-[minmax(0,1fr)_minmax(12rem,auto)_auto] lg:items-center">
                 <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="break-words text-sm font-bold">{expense.description}</h3>{expense.endsAt && <FinanceState label="Historique" tone="neutral" />}</div>
                   <p className="mt-1 break-words text-sm text-zinc-600">{[expense.supplier, expense.category, familyLabels[expense.family]].filter(Boolean).join(" · ")}</p>
                   <p className="mt-1 text-xs text-zinc-500">{recurrenceLabels[expense.recurrence]} · {formatDate(expense.date)}{expense.endsAt && " – " + formatDate(expense.endsAt)}</p></div>
-                <div><p className="font-bold tabular-nums">{formatMoney(settled?.amount ?? expense.amountIncludingTax)} <span className="text-xs font-normal text-zinc-500">TTC · TVA {formatMoney(expense.vatAmount)}</span></p>
-                  <div className="mt-1 flex flex-wrap items-center gap-2"><FinanceState {...registerState(expense, selectedMonth)} />{settled && <span className="text-xs text-zinc-500">{formatDate(settled.paidAt)}</span>}</div></div>
+                <div><p className="font-bold tabular-nums">{formatMoney(manual?.amount ?? settled?.amount ?? expense.amountIncludingTax)} <span className="text-xs font-normal text-zinc-500">TTC · TVA {formatMoney(expense.vatAmount)}</span></p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2"><FinanceState {...registerState(expense, selectedMonth)} />{paidDay && <span className="text-xs text-zinc-500">{formatDate(paidDay)}</span>}</div></div>
                 {canManage && access.edit && <div className="flex flex-wrap gap-1"><Button size="sm" variant="secondary" onClick={() => setEditingExpense(expense)}><Pencil className="size-3.5" />{expense.recurrence === "one_off" ? "Modifier" : "Modifier le tarif"}</Button>{access.remove && <Button size="sm" variant="ghost" aria-label={`Supprimer ${expense.description}`} onClick={() => setDeletingExpense(expense)}><Trash2 className="size-4 text-red-600" /></Button>}</div>}
               </li>;
             })}</ul>

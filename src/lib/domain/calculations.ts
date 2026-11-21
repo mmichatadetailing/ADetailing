@@ -1,4 +1,6 @@
 import Decimal from "decimal.js";
+import { manualExpensePayment } from "./expense-ledger";
+import { financialDateKey } from "./periods";
 import type {
   Expense,
   Intervention,
@@ -135,7 +137,7 @@ export function projectedExpensesForMonth<T extends ExpenseSchedule>(expenses: T
 }
 
 export function projectedExpenseAmountForMonth(expenses: ExpenseSchedule[], month: string): Money {
-  return projectedExpensesForMonth(expenses, month).reduce((sum, expense) => sum + (expense.settlements?.find((s) => s.month === month)?.amount ?? expense.amountIncludingTax), 0);
+  return projectedExpensesForMonth(expenses, month).reduce((sum, expense) => sum + (manualExpensePayment(expense)?.amount ?? expense.settlements?.find((s) => s.month === month)?.amount ?? expense.amountIncludingTax), 0);
 }
 
 export function expenseOccurrencesForMonth<T extends ExpenseSchedule>(expenses: T[], month: string, reference = new Date()): ExpenseOccurrence<T>[] {
@@ -144,13 +146,14 @@ export function expenseOccurrencesForMonth<T extends ExpenseSchedule>(expenses: 
     .map((expense) => {
       const dueDate = expenseOccurrenceDateKey(expense, month)!;
       const settlement = expense.settlements?.find((entry) => entry.month === month);
-      const paymentDate = settlement ? settlement.paidAt.slice(0, 10) : expense.recurrence === "one_off" ? (expense.paidAt ?? expense.date).slice(0, 10) : dueDate;
+      const manual = manualExpensePayment(expense);
+      const paymentDate = manual?.day ?? (settlement ? financialDateKey(settlement.paidAt) : dueDate);
       const isPaid = Boolean(settlement || expense.paid) && Boolean(paymentDate) && paymentDate <= referenceDate;
       return {
         expense,
         month,
         dueDate,
-        amount: settlement?.amount ?? expense.amountIncludingTax,
+        amount: manual?.amount ?? settlement?.amount ?? expense.amountIncludingTax,
         status: isPaid ? "paid" as const : dueDate <= referenceDate ? "due" as const : "upcoming" as const,
       };
     })
@@ -209,14 +212,15 @@ export function expenseForecast(expenses: ExpenseSchedule[], startMonth: string,
 
 export function paidExpenseAmountForMonth(expenses: ExpenseSchedule[], month: string, reference = new Date()): Money {
   const referenceDate = dateKey(reference);
-  const actual = expenses.flatMap((expense) => expense.settlements ?? [])
-    .filter((entry) => entry.paidAt.slice(0, 7) === month && entry.paidAt.slice(0, 10) <= referenceDate)
-    // Only the first leg carries the cash difference; it never changes the monthly tariff.
-    .reduce((sum, entry) => sum + entry.amount + (entry.cashDelta ?? 0), 0);
-  const oneOff = expenses.filter((expense) => expense.recurrence === "one_off" && !expense.settlements?.length && expense.paid)
-    .filter((expense) => (expense.paidAt ?? expense.date).slice(0, 7) === month && (expense.paidAt ?? expense.date).slice(0, 10) <= referenceDate)
-    .reduce((sum, expense) => sum + expense.amountIncludingTax, 0);
-  return actual + oneOff + projectedExpensesForMonth(expenses, month).reduce((sum, expense) => {
+  const inMonth = (day: string) => day.startsWith(month) && day <= referenceDate;
+  const actual = expenses.reduce((sum, expense) => {
+    const manual = manualExpensePayment(expense);
+    if (manual) return sum + (inMonth(manual.day) ? manual.amount : 0);
+    // The split difference affects cash flow only, not recorded activity costs.
+    for (const entry of expense.settlements ?? []) if (inMonth(financialDateKey(entry.paidAt))) sum += entry.amount + (entry.cashDelta ?? 0);
+    return sum;
+  }, 0);
+  return actual + projectedExpensesForMonth(expenses, month).reduce((sum, expense) => {
     if (expense.recurrence === "one_off" || expense.settlements?.some((entry) => entry.month === month)) return sum;
     if (!expense.paid) return sum;
     const occurrence = expenseOccurrenceDateKey(expense, month);

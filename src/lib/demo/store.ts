@@ -96,6 +96,8 @@ export interface NewExpenseInput {
   amountIncludingTax: number;
   vatRateBasisPoints: number;
   paid: boolean;
+  paymentMethod?: string | null;
+  paidOn?: string;
 }
 
 export interface NewServiceInput {
@@ -434,8 +436,8 @@ export const useDemoStore = create<DemoStore>()(
           recurrence: input.recurrence,
           allocatedMonth: input.date.slice(0, 7),
           paid: input.paid,
-          paidAt: input.paid ? input.date : undefined,
-          paymentMethod: input.paid ? "Carte" : undefined,
+          paidAt: input.paid ? input.paidOn ?? input.date : undefined,
+          paymentMethod: input.paid && input.recurrence === "one_off" ? input.paymentMethod || undefined : undefined,
         };
         set((state) => ({
           expenses: [expense, ...state.expenses],
@@ -472,6 +474,7 @@ export const useDemoStore = create<DemoStore>()(
             seriesId: existing.seriesId ?? existing.id,
             replacesExpenseId: existing.id,
             endsAt: undefined,
+            settlements: [],
             date: normalizedDate,
             family: input.family,
             category: input.category.trim(),
@@ -484,8 +487,8 @@ export const useDemoStore = create<DemoStore>()(
             recurrence: input.recurrence,
             allocatedMonth: normalizedDate.slice(0, 7),
             paid: input.paid,
-            paidAt: input.paid ? normalizedDate : undefined,
-            paymentMethod: input.paid ? existing.paymentMethod ?? "Carte" : undefined,
+            paidAt: input.paid ? input.paidOn ?? normalizedDate : undefined,
+            paymentMethod: input.paid && input.recurrence === "one_off" ? input.paymentMethod || undefined : undefined,
           };
           set((state) => ({
             expenses: [revision, ...state.expenses.map((expense) => expense.id === expenseId
@@ -512,8 +515,8 @@ export const useDemoStore = create<DemoStore>()(
                 recurrence: input.recurrence,
                 allocatedMonth: normalizedDate.slice(0, 7),
                 paid: input.paid,
-                paidAt: input.paid ? normalizedDate : undefined,
-                paymentMethod: input.paid ? expense.paymentMethod ?? "Carte" : undefined,
+                paidAt: input.paid ? input.paidOn ?? normalizedDate : undefined,
+                paymentMethod: input.paid && input.recurrence === "one_off" ? (input.paymentMethod === undefined ? expense.paymentMethod : input.paymentMethod || undefined) : undefined,
                 updatedAt: nowIso(),
               }
             : expense),

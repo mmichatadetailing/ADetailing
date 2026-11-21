@@ -12,7 +12,7 @@ const occurrence = (e: Expense, month: string) => expenseOccurrencesForMonth([e]
 
 describe("finances : ce qui est confirmé, estimé ou simplement prévu", () => {
   it("affiche zéro et non moins zéro sur une période vide", () => {
-    expect(recordedActivity([], [], "2026-09")).toEqual({received:0,spent:0,result:0});
+    expect(recordedActivity([], [], "2026-09")).toEqual({received:0,spent:0,result:0,charges:{total:0,linked:0,cash:0,unlinked:0}});
   });
   it("ouvre seulement un dossier rattaché et visible, jamais un homonyme ni un ancien contrat supprimé", () => {
     const link = journalLinks({expenses:[{id:"charge",date:"2026-03-01"}],interventions:[{id:"dossier",invoiceId:"facture"}],

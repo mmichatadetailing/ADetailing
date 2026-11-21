@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { canManageBusiness, requireAuthenticatedWorkspace } from "@/lib/supabase/workspace";
 import { normalizePhone } from "@/lib/utils";
+import { expensePaymentMethods } from "@/lib/domain/expense-ledger";
 
 const optionalPhoneSchema = z.string().trim().refine((value) => value === "" || value.replace(/\D/g, "").length >= 6);
 
@@ -11,6 +12,8 @@ const clientSchema = z.object({
   vehicle: z.object({ make: z.string(), model: z.string(), registration: z.string(), format: z.string() }).optional(),
 });
 const expenseSchema = z.object({
+  paymentMethod: z.enum(expensePaymentMethods).nullish(),
+  paidOn: z.iso.date().optional(),
   kind: z.literal("expense"), date: z.iso.date(), recurrence: z.enum(["one_off", "monthly", "annual"]), family: z.enum(["fixed", "variable", "investment", "personal"]), category: z.string().min(2), supplier: z.string().min(2), description: z.string().min(2), amountIncludingTax: z.number().positive(), vatRateBasisPoints: z.number().min(0).max(10000), paid: z.boolean(),
 });
 const appointmentSchema = z.object({
@@ -94,7 +97,8 @@ export async function POST(request: Request) {
 
     const excludingTax = Math.round(input.amountIncludingTax / (1 + input.vatRateBasisPoints / 10000));
     const vatAmount = input.amountIncludingTax - excludingTax;
-    const { data, error } = await supabase.from("expenses").insert({ organization_id: organizationId, location_id: locationId, expense_date: input.date, family: input.family, category: input.category.trim(), supplier: input.supplier.trim(), description: input.description.trim(), amount_including_tax_cents: input.amountIncludingTax, amount_excluding_tax_cents: excludingTax, vat_rate_basis_points: input.vatRateBasisPoints, vat_amount_cents: vatAmount, vat_recoverable: input.family !== "personal", recurrence: input.recurrence, allocated_month: `${input.date.slice(0, 7)}-01`, paid: input.paid, paid_at: input.paid ? `${input.date}T12:00:00.000Z` : null, created_by: user.id }).select("id").single();
+    const paidOn = input.recurrence === "one_off" ? input.paidOn ?? input.date : input.date;
+    const { data, error } = await supabase.from("expenses").insert({ organization_id: organizationId, location_id: locationId, expense_date: input.date, family: input.family, category: input.category.trim(), supplier: input.supplier.trim(), description: input.description.trim(), amount_including_tax_cents: input.amountIncludingTax, amount_excluding_tax_cents: excludingTax, vat_rate_basis_points: input.vatRateBasisPoints, vat_amount_cents: vatAmount, vat_recoverable: input.family !== "personal", recurrence: input.recurrence, allocated_month: `${input.date.slice(0, 7)}-01`, paid: input.paid, paid_at: input.paid ? `${paidOn}T12:00:00.000Z` : null, payment_method: input.paid && input.recurrence === "one_off" ? input.paymentMethod ?? null : null, created_by: user.id }).select("id").single();
     if (error) throw error;
     return NextResponse.json({ id: data.id }, { status: 201 });
   } catch (error) {

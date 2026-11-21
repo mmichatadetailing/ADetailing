@@ -33,12 +33,15 @@ beforeAll(async () => {
     create table expenses(id uuid primary key default gen_random_uuid(),organization_id uuid,location_id uuid,expense_date date,family text,category text,supplier text,description text,amount_including_tax_cents bigint,amount_excluding_tax_cents bigint,vat_amount_cents bigint,vat_rate_basis_points integer,vat_recoverable boolean,recurrence text,allocated_month date,paid boolean,paid_at timestamptz,created_by uuid,archived_at timestamptz,ends_on date,series_id uuid);
     create table payments(id uuid primary key default gen_random_uuid(),organization_id uuid,location_id uuid,invoice_id uuid,intervention_id uuid,maintenance_contract_id uuid,maintenance_billing_period_id uuid,amount_cents bigint,paid_at timestamptz,method text,reference text,created_by uuid);
   `);
+  await db.exec("alter table expenses add column payment_method text, add column updated_at timestamptz, add column replaces_expense_id uuid");
+  await db.exec(await readFile("supabase/migrations/202610220017_exact_expense_revision_date.sql", "utf8"));
   await db.exec(await readFile("supabase/migrations/202611050025_qonto_banking.sql", "utf8"));
   await db.exec(await readFile("supabase/migrations/202611050026_qonto_historical_groups.sql", "utf8"));
   await db.exec(await readFile("supabase/migrations/202611050027_qonto_automatic_drafts.sql", "utf8"));
   await db.exec(await readFile("supabase/migrations/202611160028_qonto_direct_integration.sql", "utf8"));
   await db.exec(await readFile("supabase/migrations/202611190029_qonto_autonomous_finance.sql", "utf8"));
   await db.exec(await readFile("supabase/migrations/202611200030_qonto_monthly_split.sql", "utf8"));
+  await db.exec(await readFile("supabase/migrations/202611210031_cash_expense_register.sql", "utf8"));
 }, 30_000);
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
@@ -138,6 +141,24 @@ describe("virement groupé et deux échéances mensuelles", () => {
     await db.query("update bank_transactions set status='reversed',remote_updated_at=now() where id=$1",[tx]); await sync(); await sync();
     expect(await amounts()).toEqual([]); expect(await count("expenses")).toBe(2);
     expect((await db.query("select has_function_privilege('authenticated','enable_qonto_monthly_split(uuid,uuid,uuid,uuid)','execute') as manage,has_function_privilege('authenticated','apply_qonto_split_history(uuid)','execute') as post,has_function_privilege('service_role','post_qonto_single_transaction(uuid,bigint,timestamptz,jsonb)','execute') as bypass")).rows[0]).toEqual({manage:false,post:false,bypass:false});
+  });
+});
+
+describe("charges en espèces (migration 031)", () => {
+  it("refuse le lien Qonto dans les deux sens, même à montant et fournisseur identiques", async () => {
+    await bank(tx,"debit");
+    await db.query("update expenses set recurrence='one_off',expense_date='2026-09-16',payment_method='Espèces' where id=$1",[expense]);
+    await expect(reconcile(tx,"expense",expense,"2026-09-01")).rejects.toThrow("espèces");
+    expect(await count("expense_settlements")).toBe(0);
+    await db.query("update expenses set payment_method=null where id=$1",[expense]);
+    await reconcile(tx,"expense",expense,"2026-09-01");
+    await expect(db.query("update expenses set payment_method='liquide' where id=$1",[expense])).rejects.toThrow("déjà rattaché");
+  });
+  it("conserve le moyen déclaré et le jour réel si un tarif devient une charge ponctuelle", async () => {
+    const revision = {recurrence:"one_off",family:"fixed",category:"Transport",supplier:"Garage",description:"Dernière échéance",amountIncludingTax:11000,vatRateBasisPoints:0,paid:true,paymentMethod:"Espèces",paidOn:"2026-10-02"};
+    await db.query("select revise_recurring_expense($1,'2026-09-30',$2::jsonb)",[expense,JSON.stringify(revision)]);
+    expect((await db.query("select payment_method,(paid_at at time zone 'Europe/Paris')::date::text as paid_on from expenses where replaces_expense_id=$1",[expense])).rows).toEqual([{payment_method:"Espèces",paid_on:"2026-10-02"}]);
+    expect((await db.query("select has_function_privilege('authenticated','revise_recurring_expense_version(uuid,date,jsonb)','execute') as bypass")).rows[0]).toEqual({bypass:false});
   });
 });
 
