@@ -18,8 +18,9 @@ export function journalLinks(ledger: Ledger) {
   const contracts = new Set(ledger.maintenanceContracts.filter((c) => !c.archivedAt).map((c) => c.id));
   const periods = new Set(ledger.maintenanceBillingPeriods.filter((p) => contracts.has(p.contractId)).map((p) => p.id));
   const payments = new Map(ledger.payments.map((p) => [p.id, p]));
-  return (tx: Pick<BankTransaction,"status" | "reconciliation" | "expense_id" | "expense_month" | "payment_id">): JournalLink | undefined => {
+  return (tx: Pick<BankTransaction,"status" | "reconciliation" | "expense_id" | "expense_month" | "payment_id" | "monthly_split_rule_id">): JournalLink | undefined => {
     if (tx.status !== "completed" || tx.reconciliation !== "matched") return;
+    if (tx.monthly_split_rule_id && tx.expense_month) return {href:"/finances?mois=" + encodeURIComponent(tx.expense_month.slice(0,7)), label:"Voir les échéances du mois"};
     const expense = tx.expense_id && expenses.get(tx.expense_id);
     if (expense) {
       const month = (tx.expense_month || expense.date).slice(0, 7);

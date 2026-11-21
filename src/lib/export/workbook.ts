@@ -13,9 +13,10 @@ import { financialDateKey } from "@/lib/domain/periods";
 
 type Row = Record<string, unknown>;
 const without = (record: object, keys: string[]): Row => Object.fromEntries(Object.entries(record).filter(([key]) => !keys.includes(key)));
-const moneyKeys = new Set(["billingAmount", "amount", "maximumAmount", "estimatedAmount", "unitPrice", "discount", "netAmount", "revenueAllocated", "productCost", "travelCost", "otherDirectCosts", "depositAmount", "amountIncludingTax", "amountExcludingTax", "vatAmount", "priceIncludingTax", "expectedMonthlyRevenue", "revenueTarget", "averageBasketTarget", "hourlyMarginTarget", "targetProductCost", "targetTravelCost", "targetHourlyMargin", "totalExcludingTax", "totalTax", "totalIncludingTax"]);
+const moneyKeys = new Set(["cashDelta", "billingAmount", "amount", "maximumAmount", "estimatedAmount", "unitPrice", "discount", "netAmount", "revenueAllocated", "productCost", "travelCost", "otherDirectCosts", "depositAmount", "amountIncludingTax", "amountExcludingTax", "vatAmount", "priceIncludingTax", "expectedMonthlyRevenue", "revenueTarget", "averageBasketTarget", "hourlyMarginTarget", "targetProductCost", "targetTravelCost", "targetHourlyMargin", "totalExcludingTax", "totalTax", "totalIncludingTax"]);
 const moneyFormat = '#,##0.00 "€";[Red]-#,##0.00 "€"';
 const labels: Record<string, string> = {
+  cashDelta: "Écart de trésorerie du virement (€)", splitLeg: "Part du virement groupé",
   id: "Identifiant", organizationId: "ID entreprise", locationId: "ID établissement", createdAt: "Création", updatedAt: "Modification", legacyId: "ID historique", legacyRow: "Ligne historique",
   clientName: "Client", contractName: "Contrat", memberName: "Collaborateur", interventionName: "Prestation", clientId: "ID client", serviceId: "ID formule", invoiceId: "ID facture", quoteId: "ID devis", vehicleId: "ID véhicule", ownerId: "ID responsable", maintenanceContractId: "ID entretien", maintenanceBillingPeriodId: "ID échéance", interventionId: "ID prestation", contractId: "ID contrat",
   firstName: "Prénom", lastName: "Nom", company: "Société", email: "E-mail", phone: "Téléphone", address: "Adresse", postalCode: "Code postal", city: "Ville", kind: "Type", source: "Source d’acquisition", notes: "Notes", nextAction: "Prochaine action", archivedAt: "Archivage", siret: "SIRET", vatNumber: "N° TVA",

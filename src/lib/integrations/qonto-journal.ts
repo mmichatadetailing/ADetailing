@@ -8,7 +8,7 @@ type JournalRow = BankTransaction & { expense: LinkedExpense; historical: { note
 /** Journal and reports only need the bank rows, not every client, job and invoice. */
 export async function readQontoJournal(db: SupabaseClient, organizationId: string, period?: string) {
   const rows = await readAllPages<JournalRow>(async (from, to) => {
-    let query = db.from("bank_transactions").select("id,remote_id,account_name,label,counterparty,reference,amount_cents,currency,side,status,settled_at,emitted_at,operation_type,reconciliation,payment_id,expense_id,expense_month,created_entry,ignored_reason,reconciliation_group_id,automated_at,automation_note,posting_kind,expense:expenses(family),historical:bank_reconciliation_groups(note,payment_id,expense:expenses(family))").eq("organization_id", organizationId);
+    let query = db.from("bank_transactions").select("id,remote_id,account_name,label,counterparty,reference,amount_cents,currency,side,status,settled_at,emitted_at,operation_type,reconciliation,payment_id,expense_id,expense_month,created_entry,ignored_reason,monthly_split_rule_id,split_cash_delta_cents,reconciliation_group_id,automated_at,automation_note,posting_kind,expense:expenses(family),historical:bank_reconciliation_groups(note,payment_id,expense:expenses(family))").eq("organization_id", organizationId);
     if (period) {
       // A UTC day of padding covers French midnight/DST. Exact local period
       // and settled status are checked by bankCashSummary before aggregation.

@@ -170,9 +170,18 @@ Le détail **Sur Qonto uniquement** utilise uniquement les opérations Qonto en 
 
 - **Débit fournisseur** : rattachement à un règlement existant si la correspondance est unique, sinon création d’une charge ponctuelle réglée pour un nouvel achat. Le logiciel utilise la catégorie connue du fournisseur ou un classement par défaut, sans supposer de TVA récupérable.
 - **Abonnement** : un prélèvement identifié de manière unique (fournisseur et échéance proches) peut solder le mois au montant réellement débité. Le tarif prévu des autres mois reste inchangé.
+- **Un virement pour deux mensualités** : avec une règle activée, le journal conserve une seule sortie et **Finances → Échéances du mois** affiche les deux charges réglées. L’écart entre les tarifs et le virement reste en trésorerie : ce n’est ni une troisième charge ni une augmentation de tarif. Dans le journal, **Deux échéances réglées** ouvre le mois concerné.
 - **Virement client** : un paiement déjà enregistré est pointé ; sinon un dossier identifiable (prestation, facture ou échéance d’entretien) est encaissé. À défaut de dossier, un virement client identifiable crée une prestation terminée et un paiement à la date bancaire.
 - **Affectation incertaine** : le mouvement est visible au journal, sans doublon ni attribution inventée. Le moteur recherche à nouveau une correspondance au prochain passage. Aucun bouton de validation.
 - **Historique** : les anciennes opérations antérieures à l’activation ne créent pas de ventes ni de charges rétroactives. Les écritures déjà réglées peuvent être pointées ; les regroupements, exclusions, annulations et anciens brouillons modifiés ou écartés sont conservés.
+
+#### Règle de virement groupé (migration 030)
+
+La règle utilise un virement témoin confirmé, un compte source, le bénéficiaire et la référence normalisés ainsi que les deux séries de charges de la même entreprise. Seul un débit EUR définitif et unique, proche des deux échéances du même mois (7 jours au plus), est retenu. Le total peut être exact ou arrondi **vers le haut** à l’euro ou au multiple de 5 € suivant. Un nouveau tarif s’applique à sa date d’effet. Un montant différent, deux virements concurrents ou une charge déjà enregistrée ne déclenchent pas de nouvelle charge.
+
+La reprise examine aussi les mois antérieurs déjà importés. Elle ne crée rien pour un mois sans virement. Une ancienne exclusion ou une répartition exceptionnelle nécessite une confirmation ciblant ce virement précis ; elle ne modifie pas la règle des mois suivants. Une annulation bancaire rouvre les deux échéances, et relancer la synchronisation ne double pas les montants.
+
+Administration : après avoir vérifié l’entreprise, les identifiants, les montants et les dates, l’opérateur de la base peut appeler `enable_qonto_monthly_split(entreprise, virement_témoin, première_charge, deuxième_charge)`. Pour un historique explicitement confirmé, `confirm_qonto_split_history(entreprise, règle, virement, date_bancaire_Paris, débit_centimes, part_1_centimes, part_2_centimes)` conserve séparément la différence signée. `apply_qonto_split_history(entreprise)` rejoue les correspondances admissibles. Ces opérations ne sont pas des boutons de traitement manuel, ne sont pas accessibles aux utilisateurs de l’API et ne font aucun virement chez Qonto.
 
 ## 7. Activer et contrôler la synchronisation automatique
 

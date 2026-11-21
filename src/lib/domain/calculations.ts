@@ -211,7 +211,8 @@ export function paidExpenseAmountForMonth(expenses: ExpenseSchedule[], month: st
   const referenceDate = dateKey(reference);
   const actual = expenses.flatMap((expense) => expense.settlements ?? [])
     .filter((entry) => entry.paidAt.slice(0, 7) === month && entry.paidAt.slice(0, 10) <= referenceDate)
-    .reduce((sum, entry) => sum + entry.amount, 0);
+    // Only the first leg carries the cash difference; it never changes the monthly tariff.
+    .reduce((sum, entry) => sum + entry.amount + (entry.cashDelta ?? 0), 0);
   const oneOff = expenses.filter((expense) => expense.recurrence === "one_off" && !expense.settlements?.length && expense.paid)
     .filter((expense) => (expense.paidAt ?? expense.date).slice(0, 7) === month && (expense.paidAt ?? expense.date).slice(0, 10) <= referenceDate)
     .reduce((sum, expense) => sum + expense.amountIncludingTax, 0);

@@ -1,5 +1,22 @@
 import { expect, test } from "@playwright/test";
 
+test("un virement pour deux mensualités n’ajoute ni troisième charge ni arrondi aux tarifs", async ({page}) => {
+  await page.clock.setFixedTime(new Date("2026-11-20T12:00:00Z"));
+  await page.addInitScript(() => {
+    const expenses = [36071,12215].map((amount,i) => ({id:"split-"+i,organizationId:"demo",locationId:"demo",date:"2026-01-01",allocatedMonth:"2026-01",
+      family:"fixed",category:"Véhicule",supplier:"Exemple",description:["Camion test","Assurance test"][i],recurrence:"monthly",amountIncludingTax:amount,paid:true,
+      settlements:[{id:"s"+i,bankTransactionId:"one-transfer",paidAt:"2026-11-03",month:"2026-11",splitLeg:i+1,amount,cashDelta:i===0?214:0}]}));
+    localStorage.setItem("adetailing-pilotage-demo-v1",JSON.stringify({version:1,state:{expenses,payments:[]}}));
+  });
+  await page.goto("/finances?mois=2026-11");
+  await expect(page.getByText("Réglée · virement groupé",{exact:true})).toHaveCount(2);
+  const totals = page.getByLabel("Virements groupés du mois");
+  await expect(totals).toContainText(/485\s*€ sortis de Qonto pour 482,86\s*€/);
+  await expect(totals).toContainText(/Écart de trésorerie : 2,14\s*€/);
+  await page.getByLabel("Mois analysé").fill("2026-12");
+  await expect(totals).toHaveCount(0);
+});
+
 test("le résultat suit la période sans boîte de validation Qonto, sur ordinateur comme sur mobile", async ({ page }) => {
   const bankCalls: string[] = [];
   page.on("request", req => { if (new URL(req.url()).pathname.startsWith("/api/integrations/qonto")) bankCalls.push(req.url()); });

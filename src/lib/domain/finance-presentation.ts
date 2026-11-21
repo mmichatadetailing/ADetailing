@@ -36,7 +36,7 @@ export function isEstimatedDebit({ expense, month, status }: ExpenseOccurrence<E
 
 export function registerState(expense: Expense, month: string, today = financialDateKey(new Date().toISOString())): FinanceState {
   const settlement = expense.settlements?.find((s) => expense.recurrence === "one_off" || s.month === month);
-  if (settlement && financialDateKey(settlement.paidAt) <= today) return {label:"Réglée · Qonto", tone:"emerald"};
+  if (settlement && financialDateKey(settlement.paidAt) <= today) return {label:settlement.splitLeg ? "Réglée · virement groupé" : "Réglée · Qonto", tone:"emerald"};
   if (expense.recurrence !== "one_off") return {label:expense.paid ? "Prélèvement prévu" : "Selon échéance",tone:"blue"};
   if (financialDateKey(expense.paidAt ?? expense.date) > today) return {label:"À venir",tone:"blue"};
   return expense.paid ? {label:"Règlement enregistré",tone:"emerald"} : {label:"Non réglée",tone:"amber"};
@@ -45,7 +45,8 @@ export function registerState(expense: Expense, month: string, today = financial
 export function occurrenceState({ expense, month, status }: ExpenseOccurrence<Expense>): FinanceState {
   if (status === "upcoming") return { label: "À venir", tone: "blue" };
   if (status === "due") return { label: "Échue · non réglée", tone: "amber" };
-  if (expense.settlements?.some((s) => s.month === month)) return { label: "Réglée · Qonto", tone: "emerald" };
+  const settlement = expense.settlements?.find((s) => s.month === month);
+  if (settlement) return { label: settlement.splitLeg ? "Réglée · virement groupé" : "Réglée · Qonto", tone: "emerald" };
   if (expense.recurrence === "one_off") return { label: "Règlement enregistré", tone: "emerald" };
   return { label: "Prélèvement estimé", tone: "amber" };
 }
@@ -55,6 +56,7 @@ export function journalState(tx: BankTransaction, postingFrom?: string): Finance
   if (tx.status === "pending") return { label: "En attente bancaire", tone: "amber" };
   if (tx.reconciliation === "review" || tx.posting_kind === "repost") return { label: "Correction bancaire", tone: "amber" };
   if (tx.reconciliation_group_id) return { label: "Historique regroupé", tone: "violet" };
+  if (tx.monthly_split_rule_id && tx.reconciliation === "matched") return { label: "Deux échéances réglées", tone: "teal" };
   if (tx.posting_kind === "service") return { label: "Prestation encaissée", tone: "emerald" };
   if (tx.posting_kind === "expense") return { label: "Charge réglée", tone: "teal" };
   if (tx.reconciliation === "matched" || tx.posting_kind === "matched") {
