@@ -4,8 +4,7 @@ import { LoaderCircle, RefreshCw } from "lucide-react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { BrandLogo } from "@/components/brand-logo";
-import type { Expense } from "@/lib/domain/types";
-import type { NewAppointmentInput, NewClientInput } from "@/lib/demo/store";
+import type { NewAppointmentInput, NewClientInput, NewExpenseInput } from "@/lib/demo/store";
 import { useDemoStore } from "@/lib/demo/store";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/supabase/config";
@@ -16,7 +15,7 @@ import { toast } from "sonner";
 export type QuickCreateInput =
   | ({ kind: "client"; clientKind: NewClientInput["kind"] } & Omit<NewClientInput, "kind">)
   | ({ kind: "appointment" } & NewAppointmentInput)
-  | { kind: "expense"; date: string; recurrence: Expense["recurrence"]; family: Expense["family"]; category: string; supplier: string; description: string; amountIncludingTax: number; vatRateBasisPoints: number; paid: boolean };
+  | ({ kind: "expense" } & NewExpenseInput);
 
 interface WorkspaceContextValue {
   mode: "demo" | "supabase";

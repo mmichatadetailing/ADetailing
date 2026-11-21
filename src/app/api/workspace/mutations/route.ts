@@ -37,6 +37,8 @@ const expenseMutationFields = {
   amountIncludingTax: z.number().int().positive(),
   vatRateBasisPoints: z.number().int().min(0).max(10_000),
   paid: z.boolean(),
+  paymentMethod: z.string().trim().min(1).max(80).nullish(),
+  paidOn: z.iso.date().optional(),
 };
 const clientMutationFields = {
   clientId: z.uuid(),
@@ -255,6 +257,8 @@ export async function POST(request: Request) {
           amountIncludingTax: input.amountIncludingTax,
           vatRateBasisPoints: input.vatRateBasisPoints,
           paid: input.paid,
+          paymentMethod: input.paymentMethod ?? null,
+          paidOn: input.paidOn,
         },
       });
       ensureNoError(error);
@@ -277,7 +281,9 @@ export async function POST(request: Request) {
         recurrence: input.recurrence,
         allocated_month: `${input.date.slice(0, 7)}-01`,
         paid: input.paid,
-        paid_at: input.paid ? `${input.date}T12:00:00.000Z` : null,
+        paid_at: input.paid ? `${(input.recurrence === "one_off" ? input.paidOn : null) ?? input.date}T12:00:00.000Z` : null,
+        // Older clients omit the field: don't erase an existing payment method.
+        ...(!input.paid || input.recurrence !== "one_off" ? { payment_method: null } : input.paymentMethod !== undefined ? { payment_method: input.paymentMethod } : {}),
       }).eq("organization_id", organizationId).eq("id", input.expenseId).eq("recurrence", "one_off").is("archived_at", null).select("id").maybeSingle();
       ensureNoError(error);
       if (!expense) throw new Error("Cette charge récurrente doit être modifiée à partir d’une nouvelle date.");

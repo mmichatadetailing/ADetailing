@@ -169,7 +169,7 @@ export function buildExportWorkbook(data: AppData, options: { exportedAt?: Date;
     return charts.revenue.map((point, index) => {
       const cash = charts.cashFlow[index]!; // Les deux séries ont les mêmes douze mois.
       const bank = bankCashSummary(bankByMonth.get(point.key) ?? [], point.key, reference.getTime());
-      const activity = recordedActivity(data.payments, data.expenses, point.key, bank.bookedRefunds, reference);
+      const activity = recordedActivity(data.payments, data.expenses, point.key, bank.customerRefunds, reference);
       return {
         "Mois": excelDate(point.key),
         "Objectif encaissé (€)": point.objective === null ? null : point.objective / 100,

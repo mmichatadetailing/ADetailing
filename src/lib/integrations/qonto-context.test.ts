@@ -27,3 +27,11 @@ it("distingue les charges déjà payées des charges non payées pour le regroup
   expect(result.candidates.find((candidate) => candidate.id === "paid")).toMatchObject({ historicalEligible: true, date: "2026-09-17" });
   expect(result.candidates.find((candidate) => candidate.id === "unpaid")).toMatchObject({ historicalEligible: false });
 });
+it("ne rapproche pas une dépense en liquide même si le fournisseur, le montant et la date correspondent", async () => {
+  const expense = {expense_date:"2026-09-15", paid:true, recurrence:"one_off", supplier:"Même magasin", amount_including_tax_cents:3000};
+  const result = await qontoContext(database({
+    expenses:[{...expense,id:"cash",payment_method:"Espèces"},{...expense,id:"unknown",payment_method:null}],
+    bank_transactions:[{id:"debit",side:"debit",counterparty:"Même magasin",amount_cents:3000,reconciliation:"unmatched",settled_at:"2026-09-15T12:00:00Z"}],
+  }),"org");
+  expect(result.candidates.map((candidate) => candidate.id)).toEqual(["unknown"]);
+});

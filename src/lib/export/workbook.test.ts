@@ -51,7 +51,9 @@ describe("export Excel de l’entreprise", () => {
     data.maintenanceContracts = [{ ...data.interventions[0]!, id: "contract", clientId: client.id, title: "Forfait test", status: "active", billingFrequency: "prepaid", billingAmount: 60_000, termMonths: 6, renewalReminderDays: 30, vehicleCount: 1, firstVisitOn: "2026-11-05", visitDay: 5, preferredStartTime: "09:00", assignedMemberIds: [], notes: "" }];
     data.payments = [{ ...data.payments[0]!, id: "paid", invoiceId: undefined, interventionId: undefined, maintenanceContractId: "contract", maintenanceBillingPeriodId: "period", amount: 60_000, paidAt: reference.toISOString() }];
     data.expenses = [{ ...data.expenses[0]!, date: "2026-11-01", recurrence: "one_off", family: "variable", paid: true, paidAt: "2026-11-01", settlements: [], amountIncludingTax: 12000 }];
-    const book = buildExportWorkbook(data, { exportedAt: reference });
+    const book = buildExportWorkbook(data, { exportedAt: reference, bankTransactions: [
+      {id:"refund",remote_id:"ref",account_name:"Principal",label:"Avoir fournisseur",counterparty:"Magasin",reference:"",amount_cents:2500,currency:"EUR",side:"credit",status:"completed",settled_at:"2026-11-03T12:00:00Z",emitted_at:"2026-11-03",operation_type:"card",reconciliation:"ignored",posting_kind:"ignored",automated_at:"2026-11-04",payment_id:null,expense_id:null,expense_month:null,created_entry:false,ignored_reason:null},
+    ] });
     const payments = book.getWorksheet("Paiements")!;
     expect(payments.getCell("B5").value).toBe(client.company || `${client.firstName} ${client.lastName}`.trim());
     expect(payments.getCell("D5").value).toBe("Forfait test");

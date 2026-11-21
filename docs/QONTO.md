@@ -29,7 +29,7 @@ npx supabase db push
 ```
 
 Le projet doit être celui déjà lié à votre base de production. Vérifiez le projet
-affiché par Supabase avant de valider. Appliquez toutes les migrations jusqu’à `202611190029_qonto_autonomous_finance.sql` incluse. Elle remplace les anciens modes et protège les écritures existantes. Une connexion déjà active reste active ; une connexion en pause le reste. Aucune clé à régénérer.
+affiché par Supabase avant de valider. Appliquez toutes les migrations jusqu’à `202611210031_cash_expense_register.sql` incluse. La migration 031 empêche de rattacher une dépense réglée en espèces à un débit Qonto ; elle ne modifie aucune écriture historique. Une connexion déjà active reste active ; une connexion en pause le reste. Aucune clé à régénérer.
 
 Ne passez pas cette étape : elle crée les tables bancaires, le suivi des règlements
 des charges et les protections contre les doublons. Les anciennes données ne sont
@@ -164,7 +164,11 @@ Aucune migration supplémentaire n’est nécessaire pour cette vue.
 
 ### Journal et résultat d’activité
 
-Dans **Finances** et sur le **Dashboard**, le **résultat enregistré** reprend les encaissements de tous les moyens de paiement (y compris les espèces), moins les charges fixes et variables effectivement réglées. Les remboursements enregistrés automatiquement corrigent le flux correspondant. Un abonnement prévu mais sans règlement confirmé ne réduit pas ce résultat.
+Dans **Finances**, **Dashboard**, **Pilotage** et le bilan mensuel exporté, les charges d’activité réglées viennent du **registre interne**, au mois de leur règlement. Un paiement confirmé, importé ou saisi, ne compte qu’une fois. Une prévision, un investissement ou un remboursement fournisseur visible seulement sur Qonto ne modifient pas ces charges. Le traitement des encaissements et des remboursements clients est inchangé.
+
+Pour un achat en liquide : dans **Finances → Charges et matériel**, créez ou modifiez la dépense ponctuelle, cochez **Dépense déjà payée**, puis choisissez **Espèces**. Une ancienne charge payée dont le moyen n’est pas précisé est déjà comprise dans le total : corrigez-la si nécessaire, sans la recréer.
+
+**Vérifier les montants avec Qonto** compare, en lecture seule, les totaux des écritures rapprochées. Les espèces, les saisies sans rapprochement, les débits sans charge rattachée, les remboursements fournisseurs et les écarts de virements groupés sont distingués. Un règlement ou un débit à cheval sur deux mois peut produire un écart mensuel ; ce contrôle n’ajuste pas les écritures.
 
 Le détail **Sur Qonto uniquement** utilise uniquement les opérations Qonto en euros terminées à leur date de règlement (Europe/Paris). Il ne cumule pas un relevé et sa copie dans le logiciel. Il ne comprend ni espèces hors Qonto, ni prévisions, ni virements internes ou financements identifiés. Les remboursements identifiés diminuent les dépenses ou les recettes selon leur sens. Les crédits non identifiés comme des ventes sont indiqués séparément. Ce suivi de trésorerie TTC n’est pas un bénéfice comptable.
 
