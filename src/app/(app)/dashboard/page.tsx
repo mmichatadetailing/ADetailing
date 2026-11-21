@@ -16,6 +16,7 @@ import {
   TrendingDown,
   TrendingUp,
   WalletCards,
+  type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -55,6 +56,21 @@ function evolutionLabel(current: number, previous: number, previousLabel: string
   return `${evolution >= 0 ? "+" : "\u2212"}${Math.abs(evolution)} % vs ${previousLabel}`;
 }
 
+type DashboardKpi = { label: string; value: string; detail: string; comparison: string; icon: LucideIcon; tone: string; href: string };
+
+function KpiCard({ kpi, span = "xl:col-span-3" }: { kpi: DashboardKpi; span?: string }) {
+  return <Link href={kpi.href} className={`focus-ring group min-w-0 rounded-2xl ${span}`}>
+    <Card data-tone={kpi.tone} className="brand-kpi h-full transition duration-200 group-hover:border-brand-400/30 group-hover:shadow-md motion-safe:group-hover:-translate-y-0.5">
+      <CardContent className="p-4 sm:p-5">
+        <div className="flex items-start justify-between gap-2"><span className="text-sm font-semibold text-zinc-500">{kpi.label}</span><span className="tone-icon grid size-8 shrink-0 place-items-center rounded-full"><kpi.icon className="size-4" aria-hidden="true" /></span></div>
+        <p className="kpi-value mt-3 text-zinc-900">{kpi.value}</p>
+        <p className="mt-1 text-xs text-zinc-600">{kpi.detail}</p>
+        <p className="mt-2 text-xs font-bold text-zinc-500">{kpi.comparison}</p>
+      </CardContent>
+    </Card>
+  </Link>;
+}
+
 export default function DashboardPage() {
   const [periodKey, setPeriodKey] = useState<CompanyStatsPeriodKey>(() => `year:${new Date().getFullYear()}`);
   const data = useDemoStore();
@@ -86,16 +102,7 @@ export default function DashboardPage() {
   const previousCompleted = data.interventions.filter((item) => item.status === "completed" && isDateInRange(item.startAt, previousPeriodRange));
   const averageHourly = averageHourlyMargin(completed);
   const collected = collectedInterventionRevenue(revenueInterventions, periodPayments);
-  const cashReceipts = collectedRevenue(periodPayments);
   const previousCollected = collectedInterventionRevenue(revenueInterventions, previousPayments);
-  const previousCashReceipts = collectedRevenue(previousPayments);
-  const projectedExpenses = statisticsPeriod.monthKeys.reduce((sum, month) => sum + projectedExpenseAmountForMonth(data.expenses, month), 0);
-  const paidExpenses = statisticsPeriod.monthKeys.reduce((sum, month) => sum + paidExpenseAmountForMonth(data.expenses, month, periodReference), 0);
-  const remainingExpenses = remainingExpenseAmountForMonths(data.expenses, statisticsPeriod.monthKeys, periodReference);
-  const previousProjectedExpenses = previousStatisticsPeriod.monthKeys.reduce((sum, month) => sum + projectedExpenseAmountForMonth(data.expenses, month), 0);
-  const previousPaidExpenses = previousStatisticsPeriod.monthKeys.reduce((sum, month) => sum + paidExpenseAmountForMonth(data.expenses, month, previousPeriodReference), 0);
-  const cashFlow = cashReceipts - paidExpenses;
-  const previousCashFlow = previousCashReceipts - previousPaidExpenses;
   const objective = data.objectives.filter((item) => statisticsPeriod.monthKeys.includes(item.month)).reduce((sum, item) => sum + item.revenueTarget, 0);
   const fillWindowEnd = new Date(now);
   fillWindowEnd.setDate(fillWindowEnd.getDate() + 5);
@@ -148,15 +155,29 @@ export default function DashboardPage() {
     const renewal = maintenanceRenewalStatus(contract, now);
     return renewal.state === "due" || renewal.state === "expired";
   });
-  const kpis = [
-    { label: "CA encaissé", value: formatMoney(collected), detail: `Prestations et entretiens · ${statisticsPeriod.label}`, comparison: evolutionLabel(collected, previousCollected, previousLabel), icon: Banknote, tone: "emerald", href: financesUrl },
-    { label: statisticsPeriod.kind === "year" ? "Objectif annuel" : "Objectif du mois", value: objective > 0 ? `${Math.round(collected / objective * 100)} %` : "À définir", detail: objective > 0 ? `${formatMoney(Math.max(objective - collected, 0))} restant sur ${formatMoney(objective)}` : "Renseignez vos objectifs dans Paramètres", comparison: evolutionLabel(collected, previousCollected, previousLabel), icon: Target, tone: "blue", href: "/parametres#objectifs-chiffre-affaires" },
-    { label: "Flux de trésorerie estimé", value: formatMoney(cashFlow), detail: `${formatMoney(cashReceipts)} reçu − ${formatMoney(paidExpenses)} déduit, prélèvements échus inclus`, comparison: evolutionLabel(cashFlow, previousCashFlow, previousLabel), icon: WalletCards, tone: cashFlow >= 0 ? "emerald" : "rose", href: financesUrl },
-    { label: "Charges prévues", value: formatMoney(projectedExpenses), detail: `${formatMoney(projectedExpenses - remainingExpenses)} couverts, prélèvements estimés inclus · ${formatMoney(remainingExpenses)} restant sur ces échéances`, comparison: evolutionLabel(projectedExpenses, previousProjectedExpenses, previousLabel), icon: TrendingDown, tone: "amber", href: financesUrl },
+  const objectiveKpi = { label: statisticsPeriod.kind === "year" ? "Objectif annuel" : "Objectif du mois", value: objective > 0 ? `${Math.round(collected / objective * 100)} %` : "À définir", detail: objective > 0 ? `${formatMoney(Math.max(objective - collected, 0))} restant sur ${formatMoney(objective)}` : "Renseignez vos objectifs dans Paramètres", comparison: evolutionLabel(collected, previousCollected, previousLabel), icon: Target, tone: "blue", href: "/parametres#objectifs-chiffre-affaires" };
+  const operationalKpis = [
     { label: "Prestations réalisées", value: String(completed.length), detail: statisticsPeriod.label, comparison: evolutionLabel(completed.length, previousCompleted.length, previousLabel), icon: Sparkles, tone: "amber", href: "/prestations" },
     { label: "Panier moyen", value: formatMoney(averageBasket), detail: `${completed.length} prestation(s) terminée(s)`, comparison: evolutionLabel(averageBasket, previousAverageBasket, previousLabel), icon: Gauge, tone: "violet", href: "/pilotage" },
     { label: "Marge brute", value: formatMoney(margin), detail: averageHourly === null ? "Durées non renseignées" : `${formatMoney(averageHourly)}/heure-personne`, comparison: evolutionLabel(margin, previousMargin, previousLabel), icon: TrendingUp, tone: margin >= 0 ? "teal" : "rose", href: "/pilotage" },
   ];
+
+  // Accounts without business-management access keep their existing view, without requesting a bank report.
+  function indicatorsWithoutBankAccess(): DashboardKpi[] {
+    const cashReceipts = collectedRevenue(periodPayments);
+    const paidExpenses = statisticsPeriod.monthKeys.reduce((sum, month) => sum + paidExpenseAmountForMonth(data.expenses, month, periodReference), 0);
+    const cashFlow = cashReceipts - paidExpenses;
+    const previousCashFlow = collectedRevenue(previousPayments) - previousStatisticsPeriod.monthKeys.reduce((sum, month) => sum + paidExpenseAmountForMonth(data.expenses, month, previousPeriodReference), 0);
+    const projectedExpenses = statisticsPeriod.monthKeys.reduce((sum, month) => sum + projectedExpenseAmountForMonth(data.expenses, month), 0);
+    const previousProjectedExpenses = previousStatisticsPeriod.monthKeys.reduce((sum, month) => sum + projectedExpenseAmountForMonth(data.expenses, month), 0);
+    const remainingExpenses = remainingExpenseAmountForMonths(data.expenses, statisticsPeriod.monthKeys, periodReference);
+    return [
+      { label: "CA encaissé", value: formatMoney(collected), detail: `Prestations et entretiens · ${statisticsPeriod.label}`, comparison: evolutionLabel(collected, previousCollected, previousLabel), icon: Banknote, tone: "emerald", href: financesUrl },
+      objectiveKpi,
+      { label: "Flux de trésorerie estimé", value: formatMoney(cashFlow), detail: `${formatMoney(cashReceipts)} reçu − ${formatMoney(paidExpenses)} déduit, prélèvements échus inclus`, comparison: evolutionLabel(cashFlow, previousCashFlow, previousLabel), icon: WalletCards, tone: cashFlow >= 0 ? "emerald" : "rose", href: financesUrl },
+      { label: "Charges prévues", value: formatMoney(projectedExpenses), detail: `${formatMoney(projectedExpenses - remainingExpenses)} couverts, prélèvements estimés inclus · ${formatMoney(remainingExpenses)} restant sur ces échéances`, comparison: evolutionLabel(projectedExpenses, previousProjectedExpenses, previousLabel), icon: TrendingDown, tone: "amber", href: financesUrl },
+    ];
+  }
 
   return (
     <div className="space-y-7">
@@ -173,22 +194,13 @@ export default function DashboardPage() {
         </label>
       } />
 
-      {showTreasury && <BankResultCard period={statisticsPeriod.month ?? String(statisticsPeriod.year)} label={statisticsPeriod.label} />}
-      <section aria-label="Indicateurs de la période" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-12">
-        {kpis.map((kpi, index) => (
-          <Link href={kpi.href} key={kpi.label} className={`focus-ring group rounded-2xl ${showTreasury ? "xl:col-span-3" : index === kpis.length - 1 ? "sm:col-span-2 xl:col-span-4" : kpis.length % 4 === 3 && index >= kpis.length - 3 ? "xl:col-span-4" : "xl:col-span-3"}`}>
-            <Card data-tone={kpi.tone} className={`brand-kpi h-full transition duration-200 group-hover:-translate-y-0.5 group-hover:border-brand-400/30 group-hover:shadow-md`}>
-              <CardContent className="p-4 sm:p-5">
-                <div className="flex items-start justify-between"><span className="text-xs font-semibold text-zinc-500">{kpi.label}</span><span className="tone-icon grid size-8 shrink-0 place-items-center rounded-full"><kpi.icon className="size-[16px]" /></span></div>
-                <p className="kpi-value mt-3 text-zinc-900">{kpi.value}</p>
-                <p className="mt-1 text-[11px] text-zinc-600">{kpi.detail}</p>
-                <p className="mt-2 text-[10px] font-bold text-zinc-500">{kpi.comparison}</p>
-              </CardContent>
-            </Card>
-          </Link>
-        ))}
-        {showTreasury && <QontoTreasuryCard />}
-      </section>
+      {showTreasury ? <BankResultCard period={statisticsPeriod.month ?? String(statisticsPeriod.year)} label={statisticsPeriod.label}
+        dashboard={{ financesHref: financesUrl, objective: <KpiCard kpi={objectiveKpi} />,
+          otherIndicators: <>{operationalKpis.map((kpi) => <KpiCard key={kpi.label} kpi={kpi} />)}<QontoTreasuryCard /></> }} />
+      : <section aria-label="Indicateurs de la période" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-12">
+        {indicatorsWithoutBankAccess().map((kpi) => <KpiCard key={kpi.label} kpi={kpi} />)}
+        {operationalKpis.map((kpi, index) => <KpiCard key={kpi.label} kpi={kpi} span={index === operationalKpis.length - 1 ? "sm:col-span-2 xl:col-span-4" : "xl:col-span-4"} />)}
+      </section>}
 
       <DashboardCharts year={dashboardYear} revenue={dashboardCharts.revenue} cashFlow={dashboardCharts.cashFlow} focusMonth={statisticsPeriod.month} periodLabel={statisticsPeriod.label} />
 

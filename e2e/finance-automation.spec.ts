@@ -20,11 +20,41 @@ test("un virement pour deux mensualités n’ajoute ni troisième charge ni arro
 test("le résultat suit la période sans boîte de validation Qonto, sur ordinateur comme sur mobile", async ({ page }) => {
   const bankCalls: string[] = [];
   page.on("request", req => { if (new URL(req.url()).pathname.startsWith("/api/integrations/qonto")) bankCalls.push(req.url()); });
+  await page.clock.setFixedTime(new Date("2026-11-21T12:00:00Z"));
+  await page.addInitScript(() => {
+    const base = {organizationId:"demo",locationId:"demo",date:"2026-11-03",allocatedMonth:"2026-11",family:"fixed",category:"Véhicule",supplier:"Test",paid:true};
+    const expenses = [
+      ...[36071,12215].map((amount,i) => ({...base,id:"split-"+i,description:["Camion","Assurance"][i],recurrence:"monthly",amountIncludingTax:amount,
+        settlements:[{id:"leg-"+i,bankTransactionId:"transfer",month:"2026-11",paidAt:"2026-11-03",amount,splitLeg:i+1,cashDelta:i===0?214:0}]})),
+      {...base,id:"paid",description:"Charge ponctuelle réglée",recurrence:"one_off",amountIncludingTax:95311},
+      {...base,id:"planned",description:"Charge prévue non réglée",recurrence:"one_off",amountIncludingTax:20000,paid:false},
+    ];
+    const payments = [{id:"service",amount:160000,paidAt:"2026-11-03",method:"Virement",maintenanceContractId:"entretien"},
+      {id:"cash",amount:16100,paidAt:"2026-11-04",method:"Espèces"}, {id:"oct",amount:2000,paidAt:"2026-10-15",method:"Espèces"}];
+    localStorage.setItem("adetailing-pilotage-demo-v1",JSON.stringify({version:1,state:{expenses,payments,objectives:[{id:"obj",month:"2026-11",revenueTarget:400000}]}}));
+  });
   await page.goto("/dashboard");
-  await expect(page.getByRole("heading", {name:/Résultat d’activité ·/})).toBeVisible();
-  await expect(page.getByText("Résultat enregistré", {exact:true})).toBeVisible();
-  await page.getByRole("link", {name:/^Charges prévues/}).click();
-  await expect(page).toHaveURL(/\/finances$/);
+  const indicators = page.getByRole("region",{name:"Indicateurs de la période"});
+  const cards = indicators.getByRole("link");
+  await expect(cards.nth(0)).toHaveAccessibleName(/^Encaissements enregistrés/);
+  await expect(cards.nth(0)).toContainText(/1\s?781\s*€/);
+  await expect(cards.nth(1)).toHaveAccessibleName(/^Objectif annuel/);
+  await page.getByRole("combobox",{name:"Période analysée"}).selectOption("month:2026-11");
+  await expect(cards.nth(0)).toContainText(/1\s?761\s*€/);
+  await expect(cards.nth(1)).toHaveAccessibleName(/^Objectif du mois/);
+  await expect(cards.nth(1)).toContainText("40 %");
+  await expect(cards.nth(1)).toHaveAttribute("href","/parametres#objectifs-chiffre-affaires");
+  await expect(cards.nth(2)).toHaveAccessibleName(/^Résultat enregistré/);
+  await expect(cards.nth(2)).toContainText(/325,03\s*€/);
+  await expect(cards.nth(3)).toHaveAccessibleName(/^Charges d’activité réglées/);
+  await expect(cards.nth(3)).toContainText(/1\s?435,97\s*€/);
+  for (const label of ["Encaissements enregistrés","Résultat enregistré","Charges d’activité réglées"])
+    await expect(page.getByText(label,{exact:true})).toHaveCount(1);
+  await expect(indicators.getByRole("link",{name:/^(CA encaissé|Flux de trésorerie estimé|Charges prévues)/})).toHaveCount(0);
+  await expect(indicators.getByRole("region",{name:"Trésorerie actuelle"})).toHaveCount(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await cards.nth(3).click();
+  await expect(page).toHaveURL(/\/finances\?mois=2026-11$/);
   await page.getByLabel("Mois analysé").fill("2026-09");
   await expect(page.getByRole("heading", {name:/Résultat d’activité · septembre 2026/i})).toBeVisible();
   await expect(page.getByText("Charges d’activité réglées", {exact:true})).toBeVisible();
