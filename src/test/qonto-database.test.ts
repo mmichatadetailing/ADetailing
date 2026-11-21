@@ -23,7 +23,7 @@ beforeAll(async () => {
     create function public.is_org_member(target uuid) returns boolean language sql as $$select target::text=current_setting('app.org',true)$$;
     create table organizations(id uuid primary key); create table locations(id uuid primary key); create table profiles(id uuid primary key);
     create table clients(id uuid primary key default gen_random_uuid(),organization_id uuid,archived_at timestamptz,location_id uuid,kind text,first_name text default '',last_name text default '',company text,notes text);
-    create table organization_members(id uuid primary key,organization_id uuid,profile_id uuid,active boolean);
+    create table organization_members(id uuid primary key,organization_id uuid,profile_id uuid,active boolean,role text);
     create table maintenance_contracts(id uuid primary key,organization_id uuid,client_id uuid,archived_at timestamptz);
     create table invoices(id uuid primary key,organization_id uuid,total_including_tax_cents bigint,status text,archived_at timestamptz,client_id uuid);
     create table interventions(id uuid primary key default gen_random_uuid(),organization_id uuid,status text,invoice_id uuid,maintenance_contract_id uuid,archived_at timestamptz,location_id uuid,client_id uuid,title text,start_at timestamptz,end_at timestamptz,planned_duration_minutes integer,actual_duration_minutes integer,notes text,created_by uuid);
@@ -42,6 +42,7 @@ beforeAll(async () => {
   await db.exec(await readFile("supabase/migrations/202611190029_qonto_autonomous_finance.sql", "utf8"));
   await db.exec(await readFile("supabase/migrations/202611200030_qonto_monthly_split.sql", "utf8"));
   await db.exec(await readFile("supabase/migrations/202611210031_cash_expense_register.sql", "utf8"));
+  await db.exec(await readFile("supabase/migrations/202611210032_qonto_credit_services.sql", "utf8"));
 }, 30_000);
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
@@ -141,6 +142,70 @@ describe("virement groupé et deux échéances mensuelles", () => {
     await db.query("update bank_transactions set status='reversed',remote_updated_at=now() where id=$1",[tx]); await sync(); await sync();
     expect(await amounts()).toEqual([]); expect(await count("expenses")).toBe(2);
     expect((await db.query("select has_function_privilege('authenticated','enable_qonto_monthly_split(uuid,uuid,uuid,uuid)','execute') as manage,has_function_privilege('authenticated','apply_qonto_split_history(uuid)','execute') as post,has_function_privilege('service_role','post_qonto_single_transaction(uuid,bigint,timestamptz,jsonb)','execute') as bypass")).rows[0]).toEqual({manage:false,post:false,bypass:false});
+  });
+});
+
+describe("prestations depuis les crédits (migration 032)", () => {
+  const register = async (decision: object, actor: string | null = null, organization = org, id = tx) =>
+    (await db.query<{v:{kind?:string;skipped?:boolean;interventionId?:string}}>("select register_qonto_service_credit($1,$2,11000,'2026-09-16','2026-09-16',$3,$4) v",[organization,id,JSON.stringify(decision),actor])).rows[0]!.v;
+  const document = {action:"service",clientName:"",unidentified:true};
+  const partner = () => db.query("insert into organization_members(id,profile_id,organization_id,active,role) values($1,$1,$2,true,'partner')",[user,org]);
+  it("importe une pièce ajoutée plus tard, distingue inconnu et zéro, ignore les versions anciennes", async () => {
+    const entry = {remote_id:"receipt",remote_organization_id:"qonto",account_id:"account",account_name:"Compte",label:"Vente",counterparty:"",reference:"",amount_cents:11000,currency:"EUR",side:"credit",status:"completed",settled_at:"2026-09-16",emitted_at:"2026-09-16",remote_updated_at:"2026-09-16",operation_type:"income"};
+    const ingest = (overrides: object) => db.query("select ingest_qonto_transactions($1,$2)",[org,JSON.stringify([{...entry,...overrides}])]);
+    const stored = async () => (await db.query("select attachment_count from bank_transactions where remote_id='receipt'")).rows;
+    await ingest({}); expect(await stored()).toEqual([{attachment_count:null}]);
+    await ingest({attachment_count:0}); expect(await stored()).toEqual([{attachment_count:0}]);
+    await ingest({remote_updated_at:"2026-09-19",attachment_count:2});
+    await ingest({attachment_count:0}); await ingest({remote_updated_at:"2026-09-19"});
+    expect(await stored()).toEqual([{attachment_count:2}]);
+    await ingest({remote_updated_at:"2026-09-20",attachment_count:0}); expect(await stored()).toEqual([{attachment_count:0}]);
+    expect(await count("bank_transactions")).toBe(1);
+  });
+  it("crée une seule prestation terminée et un seul règlement, même après un clic et une resynchronisation", async () => {
+    await bank(); await db.exec("update qonto_connections set posting_from='2026-09-01'; update bank_transactions set attachment_count=2,operation_type='check'");
+    await partner();
+    const first = await register(document); expect(first.kind).toBe("service"); expect(first.interventionId).toBeTruthy();
+    expect(await register(document,user)).toEqual({kind:"existing",interventionId:first.interventionId});
+    expect(await register(document)).toEqual({kind:"existing",interventionId:first.interventionId});
+    expect((await db.query("select status,planned_duration_minutes from interventions where id=$1",[first.interventionId])).rows).toEqual([{status:"completed",planned_duration_minutes:0}]);
+    expect((await db.query("select amount_cents::int,paid_at='2026-09-16' as bank_date,method from payments")).rows).toEqual([{amount_cents:11000,bank_date:true,method:"Chèque Qonto"}]);
+    await bank(secondTx); await db.exec("update bank_transactions set attachment_count=1");
+    await register(document,null,org,secondTx);
+    expect((await db.query("select count(*)::int n from clients where qonto_unidentified")).rows).toEqual([{n:1}]);
+    expect(await count("payments")).toBe(2);
+    await db.query("update bank_transactions set status='reversed',remote_updated_at=now() where id=$1",[tx]);
+    await db.query("select repair_qonto_postings($1)",[org]); expect(await count("payments")).toBe(1);
+  });
+  it("autorise une déclaration explicite sans pièce dans l’historique, mais jamais la création automatique", async () => {
+    await bank(); await partner();
+    const sale={action:"service",clientId:user,title:"Entretien cuir"};
+    expect(await register(sale)).toEqual({skipped:true});
+    await db.exec("update bank_transactions set attachment_count=1");
+    expect(await register(sale)).toEqual({skipped:true});
+    await db.exec("update bank_transactions set attachment_count=0");
+    const result=await register(sale,user);
+    expect(result.kind).toBe("service");
+    expect((await db.query("select title,client_id from interventions where id=$1",[result.interventionId])).rows).toEqual([{title:"Entretien cuir",client_id:user}]);
+    expect((await db.query("select service_declared_by from bank_transactions")).rows).toEqual([{service_declared_by:user}]);
+  });
+  it("rattache le paiement existant et refuse les crédits exclus, périmés, inter-entreprises ou provenant d’un employé", async () => {
+    await bank(); await partner();
+    await db.query("insert into payments(id,organization_id,intervention_id,paid_at,amount_cents) values($1,$2,$3,'2026-09-16',11000)",[user,org,job]);
+    await expect(register(document,user,"10000000-0000-4000-8000-000000000009")).rejects.toThrow();
+    await db.exec("update organization_members set role='employee'"); await expect(register(document,user)).rejects.toThrow("associés");
+    await db.exec("update organization_members set role='partner'; update bank_transactions set side='debit'");
+    expect(await register(document,user)).toEqual({skipped:true});
+    await db.exec("update bank_transactions set side='credit', label='Virement interne'");
+    expect(await register(document,user)).toEqual({skipped:true});
+    await db.exec("update bank_transactions set label='',status='pending'");
+    expect(await register(document,user)).toEqual({skipped:true});
+    await db.exec("update bank_transactions set status='completed',remote_updated_at='2026-09-17'");
+    await expect(register(document,user)).rejects.toThrow("changé");
+    await db.exec("update bank_transactions set remote_updated_at='2026-09-16'");
+    expect(await register({action:"match",kind:"payment",id:user},user)).toEqual({kind:"matched",interventionId:job});
+    expect(await count("payments")).toBe(1);
+    expect((await db.query("select has_function_privilege('authenticated','register_qonto_service_credit(uuid,uuid,bigint,timestamptz,timestamptz,jsonb,uuid)','execute') allowed")).rows[0]).toEqual({allowed:false});
   });
 });
 

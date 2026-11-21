@@ -1,6 +1,7 @@
 import { normalizeText } from "@/lib/utils";
 import { bankDate, type BankTransaction } from "./banking";
 import { recordedExpenses } from "./expense-ledger";
+import { isInternalLedgerHistory } from "./ledger-history";
 import type { Payment } from "./types";
 
 export function namedPayer(tx: BankTransaction) {
@@ -53,7 +54,7 @@ export function bankCashSummary(transactions: BankTransaction[], period: string,
       } else {
         receipts -= tx.amount_cents;
         // Keep the existing treatment of posted customer refunds on receipts.
-        if (tx.posting_kind === "ignored" && tx.automated_at) customerRefunds += tx.amount_cents;
+        if (tx.posting_kind === "ignored" && tx.automated_at && !isInternalLedgerHistory(tx.settled_at)) customerRefunds += tx.amount_cents;
       }
     } else if (tx.side === "debit") {
       expenses += tx.amount_cents;

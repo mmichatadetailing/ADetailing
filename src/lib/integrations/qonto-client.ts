@@ -7,6 +7,7 @@ const remoteTransaction = z.object({
   transaction_id: z.string().min(1).optional(), id: z.string().min(1), amount_cents: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   currency: z.string(), side: z.enum(["credit", "debit"]), status: z.enum(["pending", "completed", "declined", "reversed"]),
   settled_at: z.string().nullable(), emitted_at: z.string(), updated_at: z.string(),
+  attachment_ids: z.array(z.string().trim().min(1)).nullish(),
   label: z.string().nullable().optional(), clean_counterparty_name: z.string().nullable().optional(), reference: z.string().nullable().optional(), operation_type: z.string(),
   transfer: z.object({ counterparty_account_number: z.string().nullable().optional() }).nullable().optional(),
 });

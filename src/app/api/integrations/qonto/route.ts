@@ -8,6 +8,7 @@ import { QontoClient } from "@/lib/integrations/qonto-client";
 import { readQontoJournal } from "@/lib/integrations/qonto-journal";
 import { bankCashSummary } from "@/lib/domain/qonto-finance";
 import { syncQonto } from "@/lib/integrations/qonto-sync";
+import { declareQontoService } from "@/lib/integrations/qonto-automation";
 import { normalizeText } from "@/lib/utils";
 
 export const runtime = "nodejs";
@@ -18,6 +19,9 @@ const schema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("sync") }),
   z.object({ action: z.literal("settings"), enabled: z.boolean() }).strict(),
   z.object({ action: z.literal("disconnect") }),
+  z.object({ action: z.literal("declare_service"), transactionId: z.uuid(), expectedAmount: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    expectedSettledAt: z.iso.datetime({ offset: true }), expectedVersion: z.iso.datetime({ offset: true }),
+    title: z.string().trim().min(2).max(160), clientId: z.uuid().optional(), clientName: z.string().trim().min(2).max(150).optional() }).strict(),
 ]);
 
 async function access() {
@@ -62,6 +66,7 @@ export async function POST(request: Request) {
     const input = schema.parse(await request.json());
     const admin = createSupabaseAdminClient();
     if (input.action === "sync") return NextResponse.json(await syncQonto(admin, workspace.organizationId));
+    if (input.action === "declare_service") return NextResponse.json(await declareQontoService(admin, workspace.organizationId, workspace.user.id, input));
     if (input.action === "connect") {
       if (tokenEncryptionKeyStatus() !== "valid") throw new Error("Configurez OAUTH_TOKEN_ENCRYPTION_KEY dans Vercel avant de connecter Qonto.");
       if (new Date(input.importSince).getTime() > Date.now()) throw new Error("La date de début d’import ne peut pas être dans le futur.");

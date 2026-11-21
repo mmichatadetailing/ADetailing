@@ -2,6 +2,13 @@ import { expect, it } from "vitest";
 import { recordedExpenses } from "./expense-ledger";
 
 const now = new Date("2026-11-20T12:00:00Z");
+it("une ancienne ligne récurrente importée payée prouve un seul règlement, pas toutes les échéances", () => {
+  const legacy={family:"fixed" as const,recurrence:"monthly" as const,date:"2026-05-28",paidAt:"2026-06-02",paid:true,legacyRow:12,amountIncludingTax:6000};
+  expect(recordedExpenses([legacy],"2026-06",now)).toMatchObject({total:6000,unlinked:6000});
+  expect(recordedExpenses([legacy],"2026",now).total).toBe(6000);
+  expect(recordedExpenses([{...legacy,legacyRow:undefined}],"2026",now).total).toBe(0);
+  expect(recordedExpenses([{...legacy,settlements:[{id:"s",bankTransactionId:"tx",month:"2026-05",paidAt:"2026-06-03",amount:5900}]}],"2026",now)).toMatchObject({total:5900,linked:5900,unlinked:0});
+});
 const entry = { family: "variable" as const, recurrence: "one_off" as const, date: "2026-10-12", paidAt: "2026-10-31T23:30:00Z", paid: true, amountIncludingTax: 1200 };
 it("distingue les espèces déclarées et les charges non pointées, sans les inventer ni changer le mois du règlement", () => {
   const expenses = [{...entry, paymentMethod:"en liquide"}, entry, {...entry,paymentMethod:"Carte"},

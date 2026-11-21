@@ -1,7 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BankCandidate, BankTransaction } from "@/lib/domain/banking";
 import { bankDate } from "@/lib/domain/banking";
-import { isCashExpenseMethod } from "@/lib/domain/expense-ledger";
+import { historicalRecurringPayment, isCashPaymentMethod } from "@/lib/domain/expense-ledger";
+import { isInternalLedgerHistory } from "@/lib/domain/ledger-history";
 import { projectedExpensesForMonth, expenseOccurrenceDateKey } from "@/lib/domain/calculations";
 import { readAllPages } from "@/lib/supabase/pagination";
 import type { BankDraft } from "@/lib/domain/bank-drafts";
@@ -31,34 +32,37 @@ export async function qontoContext(db: SupabaseClient, org: string) {
   const linked = new Set(transactions.filter((tx) => tx.payment_id).map((tx) => tx.payment_id));
   const clientNames = (id: unknown) => clients.get(String(id)) ?? [];
   for (const payment of rows.payments) {
-    if (linked.has(String(payment.id))) continue;
+    if (linked.has(String(payment.id)) || isCashPaymentMethod(String(payment.method ?? ""))) continue;
     const job = jobs.get(String(payment.intervention_id));
     const invoice = invoices.get(String(payment.invoice_id));
     const contract = contracts.get(String(payment.maintenance_contract_id));
-    const names = clientNames(job?.client_id ?? invoice?.client_id ?? contract?.client_id);
-    targets.push({ key: `payment:${payment.id}`, kind: "payment", id: String(payment.id), documentReference: String(payment.reference ?? ""), label: `Paiement existant · ${names[0] ?? "Client"} · ${contract?.title ?? job?.title ?? invoice?.number ?? "Encaissement"}`, identities: [...names, String(invoice?.number ?? ""), String(payment.reference ?? "")], amount: Number(payment.amount_cents), date: String(payment.paid_at), historicalEligible: bankDate(String(payment.paid_at)) <= bankDate(new Date().toISOString()) });
+    const clientId = job?.client_id ?? invoice?.client_id ?? contract?.client_id;
+    const names = clientNames(clientId);
+    targets.push({ key: `payment:${payment.id}`, kind: "payment", id: String(payment.id), clientId: clientId ? String(clientId) : undefined, documentReference: String(payment.reference ?? ""), label: `Paiement existant · ${names[0] ?? "Client"} · ${contract?.title ?? job?.title ?? invoice?.number ?? "Encaissement"}`, identities: [...names, String(invoice?.number ?? ""), String(payment.reference ?? "")], amount: Number(payment.amount_cents), date: String(payment.paid_at), historicalEligible: bankDate(String(payment.paid_at)) <= bankDate(new Date().toISOString()) });
   }
   const paidFor = (key: string, id: unknown) => rows.payments.filter((payment) => payment[key] === id).reduce((sum, payment) => sum + Number(payment.amount_cents), 0);
   for (const job of rows.interventions.filter((job) => !job.archived_at && job.status === "completed" && !job.maintenance_contract_id && !job.invoice_id)) {
     const amount = rows.intervention_items.filter((item) => item.intervention_id === job.id).reduce((sum, item) => sum + Number(item.revenue_allocated_cents), 0) - paidFor("intervention_id", job.id);
-    if (amount > 0) targets.push({ key: `intervention:${job.id}`, kind: "intervention", id: String(job.id), label: `Encaisser la prestation · ${clientNames(job.client_id)[0] ?? ""} · ${job.title}`, identities: clientNames(job.client_id), amount, date: String(job.start_at ?? job.created_at) });
+    if (amount > 0) targets.push({ key: `intervention:${job.id}`, kind: "intervention", id: String(job.id), clientId: String(job.client_id), label: `Encaisser la prestation · ${clientNames(job.client_id)[0] ?? ""} · ${job.title}`, identities: clientNames(job.client_id), amount, date: String(job.start_at ?? job.created_at) });
   }
   for (const invoice of rows.invoices.filter((invoice) => !invoice.archived_at && !["cancelled", "credit_note"].includes(String(invoice.status)))) {
     const linkedJobs = new Set(rows.interventions.filter((job) => job.invoice_id === invoice.id).map((job) => job.id));
     const alreadyPaid = rows.payments.filter((payment) => payment.invoice_id === invoice.id || linkedJobs.has(payment.intervention_id)).reduce((sum, payment) => sum + Number(payment.amount_cents), 0);
     const amount = Number(invoice.total_including_tax_cents) - alreadyPaid;
-    if (amount > 0) targets.push({ key: `invoice:${invoice.id}`, kind: "invoice", id: String(invoice.id), documentReference: String(invoice.number ?? ""), label: `Encaisser la facture · ${invoice.number} · ${clientNames(invoice.client_id)[0] ?? ""}`, identities: [...clientNames(invoice.client_id), String(invoice.number)], amount, date: String(invoice.due_at ?? invoice.issued_at) });
+    if (amount > 0) targets.push({ key: `invoice:${invoice.id}`, kind: "invoice", id: String(invoice.id), clientId: String(invoice.client_id), documentReference: String(invoice.number ?? ""), label: `Encaisser la facture · ${invoice.number} · ${clientNames(invoice.client_id)[0] ?? ""}`, identities: [...clientNames(invoice.client_id), String(invoice.number)], amount, date: String(invoice.due_at ?? invoice.issued_at) });
   }
   for (const period of rows.maintenance_billing_periods.filter((period) => period.status === "due")) {
     const contract = contracts.get(String(period.contract_id));
     if (!contract || contract.archived_at) continue;
-    targets.push({ key: `maintenance:${period.id}`, kind: "maintenance", id: String(period.id), label: `Encaisser l’entretien · ${clientNames(contract.client_id)[0] ?? ""} · échéance ${period.due_on}`, identities: clientNames(contract.client_id), amount: Number(period.amount_cents), date: String(period.due_on) });
+    targets.push({ key: `maintenance:${period.id}`, kind: "maintenance", id: String(period.id), clientId: String(contract.client_id), label: `Encaisser l’entretien · ${clientNames(contract.client_id)[0] ?? ""} · échéance ${period.due_on}`, identities: clientNames(contract.client_id), amount: Number(period.amount_cents), date: String(period.due_on) });
   }
   // A cash purchase cannot be the bank debit, even for the same supplier,
   // day and amount. Don't offer it to either live or historical matching.
-  const expenses = rows.expenses.filter((expense) => !expense.archived_at && !(expense.recurrence === "one_off" && expense.paid && isCashExpenseMethod(String(expense.payment_method ?? "")))).map((expense) => ({
+  const expenses = rows.expenses.filter((expense) => !expense.archived_at && !(expense.recurrence === "one_off" && expense.paid && isCashPaymentMethod(String(expense.payment_method ?? "")))).map((expense) => ({
     id: String(expense.id), date: String(expense.expense_date), endsAt: expense.ends_on ? String(expense.ends_on) : undefined, seriesId: expense.series_id ? String(expense.series_id) : undefined,
     amountIncludingTax: Number(expense.amount_including_tax_cents), recurrence: String(expense.recurrence) as "monthly" | "annual" | "one_off", paid: Boolean(expense.paid),
+    paidAt: expense.paid_at ? String(expense.paid_at) : undefined, paymentMethod: expense.payment_method ? String(expense.payment_method) : undefined,
+    legacyRow: expense.legacy_row == null ? undefined : Number(expense.legacy_row), legacyId: expense.legacy_id ? String(expense.legacy_id) : undefined,
     settlements: rows.expense_settlements.filter((entry) => entry.expense_id === expense.id).map((entry) => ({ id: String(entry.id), month: String(entry.period_month).slice(0, 7), amount: Number(entry.amount_cents), paidAt: bankDate(String(entry.paid_at)), bankTransactionId: String(entry.bank_transaction_id) })),
     supplier: String(expense.supplier ?? ""), description: String(expense.description),
   }));
@@ -71,9 +75,12 @@ export async function qontoContext(db: SupabaseClient, org: string) {
   for (const month of months) for (const expense of projectedExpensesForMonth(expenses, month)) {
     if (rows.expense_settlements.some((entry) => entry.expense_id === expense.id && String(entry.period_month).slice(0, 7) === month)) continue;
     const date = expenseOccurrenceDateKey(expense, month)!;
-    const original = rows.expenses.find((entry) => entry.id === expense.id);
-    const paidDate = expense.recurrence === "one_off" && original?.paid_at ? bankDate(String(original.paid_at)) : date;
-    targets.push({ key: `expense:${expense.id}:${month}`, kind: "expense", id: expense.id, month, label: `Charge · ${expense.supplier || expense.description} · ${expense.description} · ${month}`, identities: [expense.supplier, expense.description], amount: expense.amountIncludingTax, date: paidDate, historicalEligible: expense.paid && paidDate <= bankDate(new Date().toISOString()), recurringSupplier: expense.recurrence === "one_off" ? undefined : expense.supplier });
+    const legacy = historicalRecurringPayment(expense);
+    if (legacy?.month === month && isCashPaymentMethod(expense.paymentMethod)) continue;
+    const paidDate = expense.recurrence === "one_off" && expense.paidAt ? bankDate(expense.paidAt) : legacy?.month === month ? legacy.day : date;
+    const recordedExpenseOccurrence = expense.paid && (expense.recurrence === "one_off" || legacy?.month === month);
+    const historicalEligible = expense.paid && paidDate <= bankDate(new Date().toISOString()) && (!isInternalLedgerHistory(paidDate) || recordedExpenseOccurrence);
+    targets.push({ key: `expense:${expense.id}:${month}`, kind: "expense", id: expense.id, month, label: `Charge · ${expense.supplier || expense.description} · ${expense.description} · ${month}`, identities: [expense.supplier, expense.description], amount: expense.amountIncludingTax, date: paidDate, historicalEligible, recordedExpenseOccurrence, recurringSupplier: expense.recurrence === "one_off" ? undefined : expense.supplier });
   }
   const transactionById = new Map(transactions.map((transaction) => [transaction.id, transaction]));
   const drafts = rows.bank_transaction_drafts.flatMap((draft) => {

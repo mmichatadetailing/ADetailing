@@ -32,7 +32,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import {
-  collectedInterventionRevenue,
+  companyCollectedRevenue,
   collectedRevenue,
   grossMargin,
   averageHourlyMargin,
@@ -43,6 +43,7 @@ import {
   remainingExpenseAmountForMonths,
 } from "@/lib/domain/calculations";
 import { interventionStatusLabels } from "@/lib/domain/labels";
+import { isInternalLedgerHistory } from "@/lib/domain/ledger-history";
 import { buildDashboardChartData } from "@/lib/domain/dashboard-charts";
 import { getInterventionWorkflow } from "@/lib/domain/intervention-workflow";
 import { maintenanceRenewalStatus } from "@/lib/domain/maintenance";
@@ -101,8 +102,8 @@ export default function DashboardPage() {
   const previousPayments = data.payments.filter((item) => isDateInRange(item.paidAt, previousPeriodRange));
   const previousCompleted = data.interventions.filter((item) => item.status === "completed" && isDateInRange(item.startAt, previousPeriodRange));
   const averageHourly = averageHourlyMargin(completed);
-  const collected = collectedInterventionRevenue(revenueInterventions, periodPayments);
-  const previousCollected = collectedInterventionRevenue(revenueInterventions, previousPayments);
+  const collected = companyCollectedRevenue(revenueInterventions, periodPayments);
+  const previousCollected = companyCollectedRevenue(revenueInterventions, previousPayments);
   const objective = data.objectives.filter((item) => statisticsPeriod.monthKeys.includes(item.month)).reduce((sum, item) => sum + item.revenueTarget, 0);
   const fillWindowEnd = new Date(now);
   fillWindowEnd.setDate(fillWindowEnd.getDate() + 5);
@@ -125,7 +126,7 @@ export default function DashboardPage() {
   });
   const toCollect = interventionWorkflows.filter(({ intervention, workflow }) => intervention.status === "completed" && !workflow.isComplete && workflow.outstanding > 0);
   const recentInterventionPayments = periodPayments
-    .filter((payment) => payment.maintenanceContractId || payment.maintenanceBillingPeriodId || payment.interventionId || Boolean(payment.invoiceId && data.interventions.some((intervention) => intervention.invoiceId === payment.invoiceId)))
+    .filter((payment) => isInternalLedgerHistory(payment.paidAt) || payment.maintenanceContractId || payment.maintenanceBillingPeriodId || payment.interventionId || Boolean(payment.invoiceId && data.interventions.some((intervention) => intervention.invoiceId === payment.invoiceId)))
     .sort((a, b) => b.paidAt.localeCompare(a.paidAt))
     .slice(0, 8);
   const todayActions = [
@@ -270,14 +271,14 @@ export default function DashboardPage() {
       </section>
 
       <Card>
-        <CardHeader className="flex-wrap"><div><h2 className="font-bold">Encaissements récents · {statisticsPeriod.label}</h2><p className="mt-1 text-xs text-zinc-500">Paiements des prestations et des entretiens, classés par date de réception.</p></div><Link href="/prestations" className="text-xs font-semibold text-brand-600 hover:text-brand-700">Ouvrir les prestations</Link></CardHeader>
-        <CardContent><ul aria-label="Derniers paiements de prestations et d’entretiens" className="divide-y divide-line">
+        <CardHeader className="flex-wrap"><div><h2 className="font-bold">Encaissements récents · {statisticsPeriod.label}</h2><p className="mt-1 text-xs text-zinc-500">Règlements du logiciel, classés par date de réception.</p></div><Link href="/prestations" className="text-xs font-semibold text-brand-600 hover:text-brand-700">Ouvrir les prestations</Link></CardHeader>
+        <CardContent><ul aria-label="Derniers encaissements enregistrés" className="divide-y divide-line">
           {recentInterventionPayments.map((payment) => {
             const job = data.interventions.find((i) => i.id === payment.interventionId || (payment.invoiceId && i.invoiceId === payment.invoiceId));
             const due = payment.maintenanceBillingPeriodId ? data.maintenanceBillingPeriods.find((p) => p.id === payment.maintenanceBillingPeriodId) : undefined;
             const contract = data.maintenanceContracts.find((c) => c.id === (payment.maintenanceContractId ?? due?.contractId));
             const client = data.clients.find((c) => c.id === (job?.clientId ?? contract?.clientId));
-            const title = contract?.title ?? job?.title ?? "Prestation liée";
+            const title = contract?.title ?? job?.title ?? payment.reference ?? "Encaissement du registre interne";
             const href = contract && !contract.archivedAt && visibleMaintenanceContracts.some((c) => c.id === contract.id) ? "/entretiens" + (due ? "#echeance-" + encodeURIComponent(due.id) : "") : job ? "/prestations?intervention=" + encodeURIComponent(job.id) : null;
             return <li key={payment.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
               <div className="min-w-0"><p className="break-words text-sm font-semibold">{href ? <Link href={href} className="focus-ring rounded underline decoration-dotted underline-offset-4 hover:decoration-solid">{title}</Link> : title}</p>
@@ -285,7 +286,7 @@ export default function DashboardPage() {
               <div className="flex flex-wrap items-center gap-2"><FinanceState tone={payment.bankLinked ? "teal" : "neutral"} label={payment.bankLinked ? "Qonto" : "Hors synchronisation"} /><strong className="tabular-nums">{formatMoney(payment.amount)}</strong></div>
             </li>;
           })}
-        </ul>{!recentInterventionPayments.length && <p className="py-4 text-center text-sm text-zinc-500">Aucun encaissement de prestation sur cette période.</p>}
+        </ul>{!recentInterventionPayments.length && <p className="py-4 text-center text-sm text-zinc-500">Aucun encaissement enregistré sur cette période.</p>}
         </CardContent>
       </Card>
 

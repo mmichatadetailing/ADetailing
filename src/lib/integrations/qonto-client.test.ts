@@ -21,6 +21,16 @@ it("n’expose jamais le corps d’une erreur Qonto ou les identifiants", async 
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("secret et corps privé", { status: 401 })));
   await expect(new QontoClient("login", "secret").organization()).rejects.toThrow("Qonto refuse l’accès");
 });
+it("lit les identifiants de justificatifs sur le crédit sans demander le contenu du fichier", async () => {
+  const tx={id:"tx",amount_cents:1500,currency:"EUR",side:"credit",status:"completed",settled_at:"2026-09-01",emitted_at:"2026-09-01",updated_at:"2026-09-02",operation_type:"income"};
+  const fetchMock=vi.fn().mockResolvedValue(new Response(JSON.stringify({transactions:[{...tx,attachment_ids:["proof"],attachments:[{url:"private-url"}]},{...tx,id:"other",attachment_required:true}],meta:{next_page:null,total_pages:1}})));
+  vi.stubGlobal("fetch",fetchMock);
+  const {transactions}=await new QontoClient("id","secret").transactions({id:"bank",iban:"FR123",name:"Compte",currency:"EUR"},"2026-09-01","2026-09-03",1);
+  expect(transactions[0]?.attachment_ids).toEqual(["proof"]);
+  expect(transactions[1]?.attachment_ids).toBeUndefined();
+  expect(JSON.stringify(transactions)).not.toContain("private-url");
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
 
 it("lit toutes les pages de factures clients, imports compris, et dédoublonne sur l’identifiant", async () => {
   const invoice = { id: "q1", organization_id: "org", number: "F-1", status: "unpaid", due_date: "2026-11-09", issue_date: "2026-11-02", client: { first_name: "Ada", last_name: "Martin", email: "private@qonto.test" }, currency: "EUR", total_amount: { value: "150.10", currency: "EUR" }, amount_paid: { value: "50.03", currency: "EUR" }, invoice_url: "https://pay.qonto.com/private" };

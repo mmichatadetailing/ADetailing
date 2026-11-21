@@ -54,6 +54,18 @@ it("reprend exactement la fenêtre et la page sauvegardées", async () => {
   await expect(syncQonto(db, "org")).rejects.toThrow("Pause du test");
   expect(mocks.transactions).toHaveBeenCalledWith(connection.accounts[0], connection.cursor_at, connection.window_to, 4);
 });
+it("relit les anciens crédits sans changer la date d’activation, garde seulement le nombre de justificatifs distincts", async () => {
+  const { db,updates,rpc }=database({...connection,attachment_replay_required:true,cursor_at:"2026-11-01",next_page:3});
+  const tx={id:"a",side:"credit",settled_at:"2026-09-04",emitted_at:"2026-09-04",updated_at:"2026-09-04",amount_cents:4200,operation_type:"check",currency:"EUR",status:"completed"};
+  mocks.transactions.mockResolvedValueOnce({transactions:[{...tx,attachment_ids:["private-id","private-id","other"]},{...tx,id:"b",attachment_ids:[]},{...tx,id:"c",attachment_required:true}],meta:{next_page:2,total_pages:2}}).mockRejectedValueOnce(new Error("Pause du test"));
+  await expect(syncQonto(db,"org")).rejects.toThrow("Pause du test");
+  expect(mocks.transactions.mock.calls[0]!.slice(1)).toEqual(["2026-09-01T00:00:00Z","2026-09-08T00:00:00.000Z",1]);
+  const entries=rpc.mock.calls[0]![1].entries;
+  expect(entries[0].attachment_count).toBe(2); expect(entries[1].attachment_count).toBe(0); expect(entries[2].attachment_count).toBeUndefined();
+  expect(JSON.stringify(entries)).not.toContain("private-id");
+  expect(updates).toContainEqual(expect.objectContaining({attachment_replay_required:false,next_page:2}));
+  expect(updates.some(update => "posting_from" in update)).toBe(false);
+});
 it("termine les comptes, reprend 48 h et identifie les virements internes", async () => {
   vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-05T12:00:00Z"));
   try {

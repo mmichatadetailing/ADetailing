@@ -39,4 +39,22 @@ describe("intégration directe Qonto", () => {
     expect(qontoAutomationDecision({ ...tx, counterparty: "" }, context)).toMatchObject({ action: "defer" });
     expect(qontoAutomationDecision(tx, { ...context, clients: [{ id: "a", names: [tx.counterparty] }, { id: "b", names: [tx.counterparty] }] })).toMatchObject({ action: "defer" });
   });
+  it("reconnaît un crédit sur justificatif, mais ne confond pas un intermédiaire avec le client", () => {
+    const credit = {...tx,operation_type:"check",counterparty:"",attachment_count:1};
+    for (const payer of ["","Virement SEPA","Stripe"]) expect(qontoAutomationDecision({...credit,counterparty:payer},context)).toEqual({action:"service",unidentified:true,clientName:""});
+    expect(qontoAutomationDecision({...credit,attachment_count:0},context).action).toBe("defer");
+    expect(qontoAutomationDecision({...credit,counterparty:"Camille Bernard"},context)).toEqual({action:"service",clientName:"Camille Bernard"});
+    for (const label of ["Virement interne","Apport en capital","Remboursement"]) expect(qontoAutomationDecision({...credit,label},context).action).toBe("ignore");
+    expect(qontoAutomationDecision({...credit,status:"pending"},context).action).toBe("defer");
+    expect(qontoAutomationDecision({...credit,side:"debit"},context).action).toBe("expense");
+  });
+  it("la déclaration sans justificatif rapproche d’abord le dossier du client, même si le nom est court", () => {
+    const credit = {...tx,operation_type:"check",counterparty:"Stripe",attachment_count:0};
+    const payer={id:"c",names:["Li"]};
+    const ctx={...context,transactions:[credit],clients:[payer],candidates:[{...candidate,clientId:"c",identities:payer.names}]};
+    expect(qontoAutomationDecision(credit,ctx,{clientId:"c"})).toEqual({action:"match",kind:"intervention",id:"job"});
+    expect(qontoAutomationDecision(credit,ctx,{}).action).toBe("defer");
+    expect(qontoAutomationDecision(credit,{...ctx,candidates:[]},{clientName:"Camille Bernard"})).toEqual({action:"service",clientName:"Camille Bernard"});
+    expect(qontoAutomationDecision(credit,ctx,{clientId:"other-org"}).action).toBe("defer");
+  });
 });

@@ -122,6 +122,12 @@ describe("calculs financiers", () => {
     expect(metrics.collected).toBe(24_000);
     expect(metrics.revenueEntryCount).toBe(2);
   });
+  it("rattache le règlement d’une ancienne facture à son seul client, sans inventer de prestation", () => {
+    const old={...payment("ancien",6500),invoiceId:invoice.id,paidAt:"2026-06-23",method:"Espèces"};
+    const unknown={...old,id:"sans-lien",invoiceId:undefined};
+    expect(clientRevenueMetrics(invoice.clientId,[invoice],[],[old,unknown]).collected).toBe(6500);
+    expect(clientRevenueMetrics("autre-client",[invoice],[],[old,unknown]).collected).toBe(0);
+  });
   it("distingue paiement partiel et facture payée", () => {
     expect(paymentStatusForInvoice(invoice, [payment("p1", 5_000)], new Date("2026-07-10"))).toBe("partial");
     expect(paymentStatusForInvoice(invoice, [payment("p1", 12_000)], new Date("2026-07-10"))).toBe("paid");

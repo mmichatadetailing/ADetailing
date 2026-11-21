@@ -10,6 +10,12 @@ function database(rows: Record<string, Row[]>) {
 }
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-05T12:00:00Z")); });
 afterEach(() => vi.useRealTimers());
+it("une prestation déjà encaissée en espèces ne fournit pas un candidat pour le crédit bancaire", async () => {
+  const p={intervention_id:"job",amount_cents:11000,paid_at:"2026-06-20"};
+  const result=await qontoContext(database({payments:[{...p,id:"cash",method:"Espèces"},{...p,id:"transfer",method:"Virement"}],
+    interventions:[{id:"job",client_id:"client",status:"completed"}],clients:[{id:"client",last_name:"Martin"}]}),"org");
+  expect(result.candidates.map(c=>[c.kind,c.id,c.clientId])).toEqual([["payment","transfer","client"]]);
+});
 it("retrouve la cible commune des mouvements groupés et ne la propose plus au rapprochement", async () => {
   const result = await qontoContext(database({
     payments: [{ id: "payment", intervention_id: "job", amount_cents: 11000, paid_at: "2026-09-15" }],
@@ -18,6 +24,15 @@ it("retrouve la cible commune des mouvements groupés et ne la propose plus au r
   }), "org");
   expect(result.candidates.some((candidate) => candidate.id === "payment")).toBe(false);
   expect(result.transactions[0]).toMatchObject({ payment_id: "payment", reconciliation_group_id: "group", group_size: 2, group_note: "Deux virements" });
+});
+it("avant le 24 juin, une simple prévision ne devient pas une charge réglée par la reprise bancaire", async () => {
+  const charge={expense_date:"2026-06-15",amount_including_tax_cents:11000,recurrence:"monthly",paid:true,supplier:"Exemple",description:"Abonnement"};
+  const result=await qontoContext(database({expenses:[{...charge,id:"forecast"},{...charge,id:"registered",legacy_row:4},{...charge,id:"cash",legacy_row:5,payment_method:"Espèces"}],
+    bank_transactions:[{id:"b",side:"debit",reconciliation:"unmatched",settled_at:"2026-06-15"}]}),"org");
+  const june=result.candidates.filter(c=>c.month==="2026-06");
+  expect(june.find(c=>c.id==="forecast")?.historicalEligible).toBe(false);
+  expect(june.find(c=>c.id==="registered")?.historicalEligible).toBe(true);
+  expect(june.some(c=>c.id==="cash")).toBe(false);
 });
 it("distingue les charges déjà payées des charges non payées pour le regroupement historique", async () => {
   const result = await qontoContext(database({
