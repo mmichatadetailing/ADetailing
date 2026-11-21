@@ -2,7 +2,7 @@ import type { BankTransaction } from "./banking";
 import type { ExpenseOccurrence } from "./calculations";
 import { bankFlow } from "./qonto-finance";
 import { financialDateKey } from "./periods";
-import { isCashExpenseMethod, manualExpensePayment } from "./expense-ledger";
+import { historicalRecurringPayment, isCashExpenseMethod, manualExpensePayment } from "./expense-ledger";
 import type { Expense, Payment } from "./types";
 
 export type FinanceTone = "emerald" | "amber" | "blue" | "violet" | "neutral" | "rose" | "teal";
@@ -32,7 +32,7 @@ export function expenseAccess(expense: Pick<Expense, "endsAt" | "recurrence" | "
 }
 
 export function isEstimatedDebit({ expense, month, status }: ExpenseOccurrence<Expense>) {
-  return status === "paid" && expense.recurrence !== "one_off" && !expense.settlements?.some((s) => s.month === month);
+  return status === "paid" && expense.recurrence !== "one_off" && !expense.settlements?.some((s) => s.month === month) && historicalRecurringPayment(expense)?.month !== month;
 }
 
 export function registerState(expense: Expense, month: string, today = financialDateKey(new Date().toISOString())): FinanceState {
@@ -41,6 +41,8 @@ export function registerState(expense: Expense, month: string, today = financial
   if (manual && manual.day > today) return {label:"À venir",tone:"blue"};
   if (manual && isCashExpenseMethod(expense.paymentMethod)) return cashState(Boolean(settlement));
   if (settlement && financialDateKey(settlement.paidAt) <= today) return {label:settlement.splitLeg ? "Réglée · virement groupé" : "Réglée · Qonto", tone:"emerald"};
+  const legacy = historicalRecurringPayment(expense);
+  if (legacy?.month === month && legacy.day <= today) return isCashExpenseMethod(expense.paymentMethod) ? cashState(false) : {label:"Règlement historique enregistré",tone:"emerald"};
   if (expense.recurrence !== "one_off") return {label:expense.paid ? "Prélèvement prévu" : "Selon échéance",tone:"blue"};
   if (financialDateKey(expense.paidAt ?? expense.date) > today) return {label:"À venir",tone:"blue"};
   return expense.paid ? {label:"Règlement enregistré",tone:"emerald"} : {label:"Non réglée",tone:"amber"};
@@ -54,6 +56,7 @@ export function occurrenceState({ expense, month, status }: ExpenseOccurrence<Ex
   const settlement = expense.settlements?.find((s) => s.month === month);
   if (manualExpensePayment(expense) && isCashExpenseMethod(expense.paymentMethod)) return cashState(Boolean(settlement));
   if (settlement) return { label: settlement.splitLeg ? "Réglée · virement groupé" : "Réglée · Qonto", tone: "emerald" };
+  if (historicalRecurringPayment(expense)?.month === month) return isCashExpenseMethod(expense.paymentMethod) ? cashState(false) : {label:"Règlement historique enregistré",tone:"emerald"};
   if (expense.recurrence === "one_off") return { label: "Règlement enregistré", tone: "emerald" };
   return { label: "Prélèvement estimé", tone: "amber" };
 }

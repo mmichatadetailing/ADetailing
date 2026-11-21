@@ -96,6 +96,33 @@ test("une dépense en espèces peut être créée, puis datée au mois du règle
   await expect(item).toHaveCount(1);
 });
 
+test("juin : les anciens encaissements, même en espèces sans prestation, alimentent le résultat et les objectifs", async ({page}) => {
+  await page.clock.setFixedTime(new Date("2026-11-19T12:00:00Z"));
+  await page.addInitScript(() => {
+    const expenses=[{id:"cash",organizationId:"demo",locationId:"demo",family:"variable",category:"Produits",description:"Achats en espèces",recurrence:"one_off",
+      date:"2026-06-19",allocatedMonth:"2026-06",paid:true,paymentMethod:"Espèces",amountIncludingTax:3000,amountExcludingTax:3000,vatAmount:0}];
+    const payments=[{id:"pre",amount:9000,paidAt:"2026-06-23T21:59:59Z",method:"Espèces",reference:"Historique juin"},
+      {id:"may",amount:2000,paidAt:"2026-05-02",method:"Chèque",invoiceId:"ancienne-facture"}];
+    localStorage.setItem("adetailing-pilotage-demo-v1",JSON.stringify({version:1,state:{expenses,payments,interventions:[],objectives:[{id:"obj",month:"2026-06",revenueTarget:20000}]}}));
+  });
+  await page.goto("/dashboard");
+  const period=page.getByRole("combobox",{name:"Période analysée"});
+  const cards=page.getByRole("region",{name:"Indicateurs de la période"});
+  await expect(cards.getByRole("link",{name:/^Encaissements enregistrés/})).toContainText(/110\s*€/);
+  await period.selectOption("month:2026-06");
+  await expect(cards.getByRole("link",{name:/^Objectif du mois/})).toBeVisible();
+  await expect(cards.getByRole("link",{name:/^Encaissements enregistrés/})).toContainText(/90\s*€/);
+  await expect(cards.getByRole("link",{name:/^Objectif du mois/})).toContainText("45 %");
+  await expect(cards.getByRole("link",{name:/^Résultat enregistré/})).toContainText(/60\s*€/);
+  await expect(cards.getByRole("link",{name:/^Charges d’activité réglées/})).toContainText(/dont 30\s*€ en espèces/);
+  await expect(page.getByText("Historique juin",{exact:true})).toBeVisible();
+  await period.selectOption("year:2026");
+  await expect(cards.getByRole("link",{name:/^Encaissements enregistrés/})).toContainText(/110\s*€/);
+  await expect(cards.getByRole("link",{name:/^Objectif annuel/})).toContainText("55 %");
+  await page.goto("/finances?mois=2026-06");
+  await expect(page.locator("dl").filter({has:page.getByText("Charges d’activité réglées",{exact:true})})).toContainText(/dont 30\s*€ en espèces/);
+});
+
 test("les prévisions ouvrent le bon mois et le registre protège un débit importé", async ({page}) => {
   await page.clock.setFixedTime(new Date("2026-11-19T12:00:00Z"));
   await page.addInitScript(() => {

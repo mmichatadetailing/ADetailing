@@ -1,5 +1,5 @@
 import type { Intervention, MonthlyObjective, Payment } from "./types";
-import { collectedInterventionRevenue, paidExpenseAmountForMonth, projectedExpenseAmountForMonth, type ExpenseSchedule } from "./calculations";
+import { companyCollectedRevenue, paidExpenseAmountForMonth, projectedExpenseAmountForMonth, type ExpenseSchedule } from "./calculations";
 import { financialDateKey } from "./periods";
 
 export interface RevenueChartPoint {
@@ -51,7 +51,7 @@ export function buildDashboardChartData({
     const label = monthLabel(year, monthIndex);
     const objective = objectives.find((item) => item.month === key)?.revenueTarget ?? null;
     const monthPayments = payments.filter((payment) => financialDateKey(payment.paidAt).slice(0, 7) === key);
-    const collected = collectedInterventionRevenue(interventions.filter((intervention) => intervention.status !== "cancelled"), monthPayments);
+    const collected = companyCollectedRevenue(interventions.filter((intervention) => intervention.status !== "cancelled"), monthPayments);
     const receipts = monthPayments.reduce((sum, payment) => sum + payment.amount, 0);
     const paidExpenses = paidExpenseAmountForMonth(expenses, key, reference);
     const scheduledExpenses = projectedExpenseAmountForMonth(expenses, key);

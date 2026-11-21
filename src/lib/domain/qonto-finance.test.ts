@@ -11,6 +11,17 @@ const debit: BankTransaction = {...tx,side:"debit",amount_cents:3000,operation_t
 const expense: BankCandidate = { id:"charge",key:"charge:09",kind:"expense",month:"2026-09",label:"Abonnement",date:"2026-09-14",amount:2500,identities:[debit.counterparty],recurringSupplier:debit.counterparty };
 const context = {transactions:[debit], candidates:[expense], clients:[], blockers:[]};
 describe("résultat et suivi automatiques dans le logiciel", () => {
+  it("avant le 24 juin, le résultat interne ne dépend pas du relevé Qonto, même sur un mois ou une année mixtes", () => {
+    const refunds=["2026-06-23T21:59:59Z","2026-06-23T22:00:00Z"].map(settled_at => ({...debit,label:"Remboursement client",posting_kind:"ignored" as const,automated_at:"2026-11-05",settled_at}));
+    const cash={family:"fixed" as const,recurrence:"one_off" as const,date:"2026-05-12",paid:true,paymentMethod:"Espèces",amountIncludingTax:2100};
+    const charges=[cash,{...cash,date:"2026-06-15",amountIncludingTax:3100,paymentMethod:"Carte",settlements:[{id:"s",month:"2026-06",paidAt:"2026-06-15",amount:3100,bankTransactionId:"tx"}]}, {...cash,paid:false}];
+    const payments=[{paidAt:"2026-05-21",amount:8800},{paidAt:"2026-06-12",amount:10000}];
+    const receivedBankOnly={...tx,settled_at:"2026-06-12",amount_cents:12345};
+    for(const [period,expected] of [["2026-05",{received:8800,spent:2100,result:6700}],["2026-06",{received:7000,spent:3100,result:3900}],["2026",{received:15800,spent:5200,result:10600}]] as const) {
+      const bank=bankCashSummary([...refunds,receivedBankOnly],period);
+      expect(recordedActivity(payments,charges,period,bank.customerRefunds)).toMatchObject(expected);
+    }
+  });
   it("sépare l’activité, les remboursements et les transferts sans compter les liens une deuxième fois", () => {
     const list: BankTransaction[] = [
       {...tx,reconciliation:"matched",payment_id:"p"},debit,{...tx,amount_cents:500,operation_type:"card"},

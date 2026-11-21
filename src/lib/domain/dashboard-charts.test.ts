@@ -2,6 +2,23 @@ import { describe, expect, it } from "vitest";
 import { buildDashboardChartData, totalRevenueObjective } from "./dashboard-charts";
 
 describe("données des graphiques du dashboard", () => {
+  it("compte une seule fois tout le registre avant le 24 juin, sans exiger une prestation ni un paiement bancaire", () => {
+    const data={year:2026,objectives:[],interventions:[{id:"presta",invoiceId:"facture"}],payments:[
+      {paidAt:"2026-05-30",amount:1300},
+      {invoiceId:"ancienne",paidAt:"2026-06-23T21:59:59Z",amount:7000},
+      {invoiceId:"facture",interventionId:"presta",paidAt:"2026-06-12",amount:11000},
+      {invoiceId:"sans-dossier",paidAt:"2026-06-23T22:00:00Z",amount:9000},
+      {maintenanceBillingPeriodId:"entretien",paidAt:"2026-06-24",amount:1500},
+    ], expenses:[
+      {date:"2026-06-10",paid:true,recurrence:"one_off" as const,amountIncludingTax:3500,paymentMethod:"Espèces"},
+      {date:"2026-06-11",paid:true,recurrence:"one_off" as const,amountIncludingTax:5500,settlements:[{id:"s",bankTransactionId:"tx",month:"2026-06",paidAt:"2026-06-11",amount:5500}]},
+    ]};
+    const charts=buildDashboardChartData(data);
+    expect(charts.revenue[4]?.collected).toBe(1300);
+    expect(charts.revenue[5]?.collected).toBe(19500);
+    expect(charts.revenue.reduce((s,m)=>s+m.collected,0)).toBe(20800);
+    expect(charts.cashFlow[5]).toMatchObject({receipts:28500,paidExpenses:9000});
+  });
   it("utilise le mois français de la banque et ne double pas une charge rapprochée", () => {
     const result = buildDashboardChartData({
       year: 2026, objectives: [], interventions: [{ id: "job" }],

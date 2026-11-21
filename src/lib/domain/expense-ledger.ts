@@ -1,14 +1,26 @@
 import { normalizeText } from "@/lib/utils";
 import { financialDateKey } from "./periods";
+import { isInternalLedgerHistory } from "./ledger-history";
 import type { Expense } from "./types";
 
 export const expensePaymentMethods = ["Espèces", "Carte", "Virement", "Prélèvement", "Chèque", "Autre"] as const;
 
-export function isCashExpenseMethod(method?: string | null) {
+export function isCashPaymentMethod(method?: string | null) {
   return /^(?:en )?(?:especes?|liquides?|cash)$/.test(normalizeText(method ?? ""));
 }
+export const isCashExpenseMethod = isCashPaymentMethod;
 
-type LedgerExpense = Pick<Expense, "family" | "date" | "paidAt" | "paid" | "paymentMethod" | "recurrence" | "settlements" | "amountIncludingTax">;
+type LedgerExpense = Pick<Expense, "family" | "date" | "paidAt" | "paid" | "paymentMethod" | "recurrence" | "settlements" | "amountIncludingTax" | "legacyRow" | "legacyId">;
+
+// A paid line from the historical register proves one occurrence, not every
+// instalment. A normal schedule's automatic-debit flag is not proof of payment.
+export function historicalRecurringPayment(expense: Omit<LedgerExpense, "family">) {
+  if (!expense.paid || expense.recurrence === "one_off" || (expense.legacyRow == null && !expense.legacyId && !expense.paymentMethod)) return null;
+  const day = financialDateKey(expense.paidAt ?? expense.date);
+  const month = financialDateKey(expense.date).slice(0,7);
+  return isInternalLedgerHistory(day) && !expense.settlements?.some(s => s.month === month)
+    ? {day, month, amount:expense.amountIncludingTax} : null;
+}
 
 export function manualExpensePayment(expense: Omit<LedgerExpense, "family">) {
   if (expense.recurrence !== "one_off" || !expense.paid) return null;
@@ -39,6 +51,11 @@ export function recordedExpenses(expenses: LedgerExpense[], period: string, now 
       } else if (expense.settlements?.length) linked += manual.amount;
       else unlinked += manual.amount;
     } else {
+      const legacy = historicalRecurringPayment(expense);
+      if (legacy && inPeriod(legacy.day)) {
+        if (isCashPaymentMethod(expense.paymentMethod)) cash += legacy.amount;
+        else unlinked += legacy.amount;
+      }
       for (const entry of expense.settlements ?? []) if (inPeriod(entry.paidAt)) linked += entry.amount;
     }
   }

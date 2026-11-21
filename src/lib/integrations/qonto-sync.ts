@@ -22,10 +22,13 @@ export async function syncQonto(db: SupabaseClient, organizationId: string, budg
     const accounts = connection.accounts as QontoAccount[];
     const normalizeIban = (value: string) => value.replace(/\s/g, "").toUpperCase();
     const ownIbans = new Set(accounts.map((a) => normalizeIban(a.iban)).filter(Boolean));
-    let cursor = String(connection.cursor_at);
-    let until = connection.window_to ? String(connection.window_to) : new Date(Math.min(Date.now(), new Date(cursor).getTime() + 7 * 86_400_000)).toISOString();
-    let accountIndex = Number(connection.account_index);
-    let page = Number(connection.next_page);
+    // Existing journals predate attachment metadata. Reuse the resumable import
+    // once, without moving the cutoff for creating new financial entries.
+    const replay = connection.attachment_replay_required === true;
+    let cursor = replay ? `${connection.import_since}T00:00:00Z` : String(connection.cursor_at);
+    let until = !replay && connection.window_to ? String(connection.window_to) : new Date(Math.min(Date.now(), new Date(cursor).getTime() + 7 * 86_400_000)).toISOString();
+    let accountIndex = replay ? 0 : Number(connection.account_index);
+    let page = replay ? 1 : Number(connection.next_page);
     let pending = true;
     let pages = 0;
     // Keep time for reconciliation/creation even while the import is catching up.
@@ -40,6 +43,7 @@ export async function syncQonto(db: SupabaseClient, organizationId: string, budg
         label: (tx.label ?? "").slice(0, 500), counterparty: (tx.clean_counterparty_name ?? "").slice(0, 300), reference: (tx.reference ?? "").slice(0, 500),
         amount_cents: tx.amount_cents, currency: tx.currency, side: tx.side, status: tx.status,
         settled_at: tx.settled_at, emitted_at: tx.emitted_at, remote_updated_at: tx.updated_at,
+        ...(tx.side === "credit" && tx.attachment_ids != null ? { attachment_count: new Set(tx.attachment_ids).size } : {}),
         operation_type: tx.transfer?.counterparty_account_number && ownIbans.has(normalizeIban(tx.transfer.counterparty_account_number)) ? "internal_transfer" : tx.operation_type,
       }));
       const { error: ingestError } = await db.rpc("ingest_qonto_transactions", { target_org: organizationId, entries });
@@ -56,7 +60,7 @@ export async function syncQonto(db: SupabaseClient, organizationId: string, budg
         cursor = pending ? completedUntil : new Date(Math.max(new Date(`${connection.import_since}T00:00:00Z`).getTime(), new Date(completedUntil).getTime() - 2 * 86_400_000)).toISOString();
         until = pending ? new Date(Math.min(Date.now(), new Date(cursor).getTime() + 7 * 86_400_000)).toISOString() : "";
       }
-      const { error: checkpointError } = await db.from("qonto_connections").update({ cursor_at: cursor, window_to: until || null, account_index: accountIndex, next_page: page, last_error: null, updated_at: new Date().toISOString() }).eq("organization_id", organizationId).eq("lease_token", token);
+      const { error: checkpointError } = await db.from("qonto_connections").update({ cursor_at: cursor, window_to: until || null, account_index: accountIndex, next_page: page, ...(replay ? { attachment_replay_required: false } : {}), last_error: null, updated_at: new Date().toISOString() }).eq("organization_id", organizationId).eq("lease_token", token);
       if (checkpointError) throw new Error("La progression de synchronisation n’a pas pu être enregistrée. Le prochain essai reprendra sans doublon.");
     }
     const { data: currentSettings, error: settingsError } = await db.from("qonto_connections").select("enabled,posting_from").eq("organization_id", organizationId).maybeSingle();

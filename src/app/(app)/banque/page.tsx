@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { ServiceCreditForm } from "@/components/banking/service-credit-form";
+import { isInternalLedgerHistory } from "@/lib/domain/ledger-history";
 import { FinanceState } from "@/components/banking/finance-state";
 import { connectionState } from "@/lib/domain/finance-presentation";
 import { journalLinks } from "@/lib/domain/journal-links";
@@ -26,7 +29,7 @@ interface BankPayload {
 }
 async function bankRequest(input: Record<string, unknown>) {
   const response = await fetch("/api/integrations/qonto", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input) });
-  const payload = await response.json() as { error?: string; pending?: boolean; busy?: boolean; imported?: number; reconciled?: number };
+  const payload = await response.json() as { error?: string; pending?: boolean; busy?: boolean; imported?: number; reconciled?: number; kind?: string; interventionId?: string | null };
   if (!response.ok) throw new Error(payload.error ?? "L’opération bancaire a échoué.");
   return payload;
 }
@@ -56,16 +59,18 @@ export default function BankPage() {
   return <BankWorkspacePage key={workspace?.organizationId ?? mode} />;
 }
 
-function JournalEntries({transactions, postingFrom}: {transactions: BankTransaction[]; postingFrom?: string}) {
+function JournalEntries({transactions, postingFrom, onDeclare}: {transactions: BankTransaction[]; postingFrom?: string; onDeclare: (tx: BankTransaction) => void}) {
   const expenses = useDemoStore(s => s.expenses), payments = useDemoStore(s => s.payments);
   const interventions = useDemoStore(s => s.interventions), maintenanceContracts = useDemoStore(s => s.maintenanceContracts);
   const maintenanceBillingPeriods = useDemoStore(s => s.maintenanceBillingPeriods);
   const link = useMemo(() => journalLinks({expenses,payments,interventions,maintenanceContracts,maintenanceBillingPeriods}), [expenses,payments,interventions,maintenanceContracts,maintenanceBillingPeriods]);
-  return transactions.map(tx => <BankJournalRow key={tx.id} tx={tx} postingFrom={postingFrom} destination={link(tx)} />);
+  return transactions.map(tx => <BankJournalRow key={tx.id} tx={tx} postingFrom={postingFrom} destination={link(tx)} onDeclare={onDeclare} />);
 }
 
 function BankWorkspacePage() {
   const { mode, workspace, refresh } = useWorkspace();
+  const router = useRouter();
+  const [credit, setCredit] = useState<BankTransaction | null>(null);
   const allowed = mode === "supabase" && Boolean(workspace?.canManageBusiness);
   const [data, setData] = useState<BankPayload | null>(null);
   const [error, setError] = useState("");
@@ -122,7 +127,7 @@ function BankWorkspacePage() {
   };
   const connection = data?.connection;
   return <div className="space-y-6">
-    <PageHeader eyebrow="Banque · Qonto" title="Journal bancaire" description="Suivez les entrées, les sorties et leur effet sur l’activité. Les écritures bancaires se consultent ici sans validation."
+    <PageHeader eyebrow="Banque · Qonto" title="Journal bancaire" description="Suivez les entrées et les sorties. Un justificatif ou un payeur identifié permet de reconnaître une prestation ; vous pouvez aussi la déclarer depuis un crédit."
       actions={allowed && <Link href="/finances" className="focus-ring inline-flex min-h-11 items-center rounded-xl border border-line bg-surface px-4 text-sm font-semibold hover:underline">Voir les finances</Link>} />
     {!allowed ? <Card><CardContent className="flex items-start gap-4 p-5 sm:p-6">
       <span data-tone="teal" className="tone-icon grid size-10 shrink-0 place-items-center rounded-xl"><Banknote className="size-5" /></span>
@@ -155,10 +160,18 @@ function BankWorkspacePage() {
         <div className="flex flex-wrap items-center justify-between gap-3"><div role="group" aria-label="Filtrer par sens" data-tone="teal" className="finance-nav">{([["all","Tous"],["credit","Entrées"],["debit","Sorties"]] as const).map(([id,label]) => <button key={id} type="button" className="focus-ring" aria-pressed={id === filter} onClick={() => { setFilter(id); setPage(0); }}>{label}</button>)}</div>
           <Input type="search" className="w-full sm:max-w-xs" aria-label="Rechercher une transaction" placeholder="Fournisseur, client, référence…" value={query} onChange={(event) => { setQuery(event.target.value); setPage(0); }} /></div>
         {data.transactions.length === 0 && <div className="rounded-xl border border-dashed border-line p-6 text-center text-sm text-zinc-500">{query || filter !== "all" ? <><p>Aucun mouvement ne correspond aux filtres.</p><Button variant="ghost" size="sm" onClick={() => { setQuery(""); setFilter("all"); setPage(0); }}>Effacer les filtres</Button></> : connection?.connected ? "Aucun mouvement importé sur la période d’historique." : "Les mouvements apparaîtront ici après la connexion et la première synchronisation."}</div>}
-        {data.transactions.length > 0 && <JournalEntries transactions={data.transactions} postingFrom={connection?.posting_from} />}
+        {data.transactions.length > 0 && <JournalEntries transactions={data.transactions} postingFrom={connection?.posting_from} onDeclare={setCredit} />}
         {data.total > 50 && <div className="flex items-center justify-between gap-2 text-xs"><Button size="sm" variant="secondary" disabled={!page} onClick={() => setPage(page - 1)}>Précédent</Button>Page {page + 1} / {Math.ceil(data.total / 50)}<Button size="sm" variant="secondary" disabled={(page + 1)*50 >= data.total} onClick={() => setPage(page + 1)}>Suivant</Button></div>}
       </CardContent></Card>}
     </>}
+    {credit?.settled_at && <ServiceCreditForm key={credit.id} tx={credit} historical={isInternalLedgerHistory(credit.settled_at) || Boolean(connection && Date.parse(credit.settled_at) < Date.parse(connection.posting_from))} onClose={() => setCredit(null)}
+      onSubmit={async details => {
+        const result = await bankRequest({ action:"declare_service", transactionId:credit.id, expectedAmount:credit.amount_cents, expectedSettledAt:credit.settled_at, expectedVersion:credit.remote_updated_at, ...details });
+        setCredit(null);
+        toast.success(result.kind === "service" ? "Prestation créée et encaissée" : "Règlement rattaché, sans double encaissement");
+        await Promise.all([load(), refresh()]);
+        if (result.interventionId) router.push("/prestations?intervention=" + encodeURIComponent(result.interventionId));
+      }} />}
     <Modal open={connecting} onClose={() => setConnecting(false)} title="Connexion Qonto" description="Vos identifiants sont chiffrés côté serveur.">{connecting && <ConnectForm onCancel={() => setConnecting(false)} onConnected={async () => { setConnecting(false); await load(); await sync(); }} />}</Modal>
     <Modal open={disconnecting} onClose={() => setDisconnecting(false)} title="Déconnecter Qonto ?"><p className="text-sm text-zinc-600">Les identifiants seront effacés. L’historique et les écritures seront conservés.</p><div className="mt-4 flex justify-end gap-2"><Button variant="ghost" disabled={busy} onClick={() => setDisconnecting(false)}>Annuler</Button><Button variant="danger" disabled={busy} onClick={() => void changeConnection({action:"disconnect"})}>Déconnecter</Button></div></Modal>
   </div>;

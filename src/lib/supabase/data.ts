@@ -128,20 +128,23 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User, 
   // Dashboard results must not stop at PostgREST's first page of payments/expenses.
   const paymentsQuery = supabase.from("payments").select("*,bank_link:bank_transactions!bank_transactions_payment_id_fkey(id),bank_group:bank_reconciliation_groups!bank_reconciliation_groups_payment_id_fkey(id)").eq("organization_id", organizationId).order("paid_at", { ascending: false });
   const expensesQuery = supabase.from("expenses").select("*,expense_settlements(*)").eq("organization_id", organizationId).is("archived_at", null).order("expense_date", { ascending: false });
+  const clientsQuery = supabase.from("clients").select("*,lead_sources(name)").eq("organization_id", organizationId).order("created_at", { ascending: false });
+  const invoicesQuery = supabase.from("invoices").select("*,invoice_items(*)").eq("organization_id", organizationId).is("archived_at", null).order("issued_at", { ascending: false });
+  const jobsQuery = supabase.from("interventions").select("*,intervention_items(*),intervention_workers(*),intervention_checklist_items(*)").eq("organization_id", organizationId).is("archived_at", null).order("start_at");
   const results = await Promise.all([
     supabase.from("organization_members").select("id,organization_id,profile_id,provisional_first_name,provisional_last_name,provisional_email,role,location_id,active,weekly_capacity_minutes,color,created_at,updated_at,profiles(id,first_name,last_name,email,phone,created_at,updated_at)").eq("organization_id", organizationId),
     supabase.from("lead_sources").select("id,name,display_order").eq("organization_id", organizationId).eq("active", true).order("display_order"),
     supabase.from("vehicle_formats").select("id,name,display_order").eq("organization_id", organizationId).eq("active", true).order("display_order"),
     // Les contacts archivés restent chargés uniquement pour conserver leur nom dans
     // les anciennes prestations, factures et devis. Les écrans de saisie les filtrent.
-    supabase.from("clients").select("*,lead_sources(name)").eq("organization_id", organizationId).order("created_at", { ascending: false }),
+    clientsQuery,
     supabase.from("vehicles").select("*,vehicle_formats(name)").eq("organization_id", organizationId).is("archived_at", null).order("created_at", { ascending: false }),
     supabase.from("leads").select("*,lead_sources(name)").eq("organization_id", organizationId).is("archived_at", null).order("requested_at", { ascending: false }),
     supabase.from("services").select("*,service_categories(name),service_prices(amount_cents,maximum_amount_cents,pricing_label,minimum_vehicle_count,maximum_vehicle_count,vehicle_formats(name)),service_aliases(alias)").eq("organization_id", organizationId).is("archived_at", null).order("display_order"),
     supabase.from("quotes").select("*,quote_items(*)").eq("organization_id", organizationId).is("archived_at", null).order("issued_at", { ascending: false }),
-    supabase.from("invoices").select("*,invoice_items(*)").eq("organization_id", organizationId).is("archived_at", null).order("issued_at", { ascending: false }),
+    invoicesQuery,
     paymentsQuery,
-    supabase.from("interventions").select("*,intervention_items(*),intervention_workers(*),intervention_checklist_items(*)").eq("organization_id", organizationId).is("archived_at", null).order("start_at"),
+    jobsQuery,
     supabase.from("planning_events").select("*").eq("organization_id", organizationId).is("archived_at", null).order("starts_at"),
     // Les contrats archivés restent chargés pour rattacher leurs encaissements
     // historiques au bon client, sans les réafficher dans la gestion courante.
@@ -156,7 +159,7 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User, 
     supabase.from("app_settings").select("key,value").eq("organization_id", organizationId),
     supabase.from("organization_invitations").select("id,pending_member_id,invited_first_name,invited_last_name,email,role,weekly_capacity_minutes,expires_at,accepted_at,revoked_at,created_at").eq("organization_id", organizationId).order("created_at", { ascending: false }),
   ].map(async (query) => {
-    if (!options.allRows && query !== paymentsQuery && query !== expensesQuery) return query;
+    if (!options.allRows && query !== paymentsQuery && query !== expensesQuery && query !== clientsQuery && query !== invoicesQuery && query !== jobsQuery) return query;
     // Taille inférieure au plafond Supabase standard et tri stable pour ne pas
     // tronquer l’export aux 1 000 premiers clients, paiements ou prestations.
     const paginatedQuery = query.order("id");

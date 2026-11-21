@@ -71,7 +71,7 @@ export function DashboardCharts({
             <span className="grid size-10 shrink-0 place-items-center rounded-full tone-icon" data-tone="blue"><Target className="size-[18px]" /></span>
             <div>
               <h2 className="font-bold">Objectif & encaissements</h2>
-              <p className="mt-1 text-xs text-zinc-500">Exercice {year} · encaissements des prestations et des entretiens, comptés une seule fois.</p>
+              <p className="mt-1 text-xs text-zinc-500">Exercice {year} · encaissements des prestations, des entretiens et du registre historique, comptés une seule fois.</p>
             </div>
           </div>
           <Badge>{periodLabel}</Badge>

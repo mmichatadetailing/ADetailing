@@ -1,6 +1,7 @@
 import Decimal from "decimal.js";
-import { manualExpensePayment } from "./expense-ledger";
+import { historicalRecurringPayment, manualExpensePayment } from "./expense-ledger";
 import { financialDateKey } from "./periods";
+import { isInternalLedgerHistory } from "./ledger-history";
 import type {
   Expense,
   Intervention,
@@ -216,12 +217,14 @@ export function paidExpenseAmountForMonth(expenses: ExpenseSchedule[], month: st
   const actual = expenses.reduce((sum, expense) => {
     const manual = manualExpensePayment(expense);
     if (manual) return sum + (inMonth(manual.day) ? manual.amount : 0);
+    const legacy = historicalRecurringPayment(expense);
+    if (legacy && inMonth(legacy.day)) sum += legacy.amount;
     // The split difference affects cash flow only, not recorded activity costs.
     for (const entry of expense.settlements ?? []) if (inMonth(financialDateKey(entry.paidAt))) sum += entry.amount + (entry.cashDelta ?? 0);
     return sum;
   }, 0);
   return actual + projectedExpensesForMonth(expenses, month).reduce((sum, expense) => {
-    if (expense.recurrence === "one_off" || expense.settlements?.some((entry) => entry.month === month)) return sum;
+    if (expense.recurrence === "one_off" || expense.settlements?.some((entry) => entry.month === month) || historicalRecurringPayment(expense)?.month === month) return sum;
     if (!expense.paid) return sum;
     const occurrence = expenseOccurrenceDateKey(expense, month);
     return occurrence && occurrence <= referenceDate ? sum + expense.amountIncludingTax : sum;
@@ -371,9 +374,12 @@ export function clientRevenueMetrics(
       ?? (payment.maintenanceBillingPeriodId ? billingPeriodContractIds.get(payment.maintenanceBillingPeriodId) : undefined);
     return Boolean(contractId && clientContractIds.has(contractId));
   });
-  const collected = collectedInterventionRevenue(
+  const invoiceIds = new Set(clientInvoices.map(invoice => invoice.id));
+  const jobIds = new Set(clientInterventions.map(job => job.id));
+  const collected = companyCollectedRevenue(
     clientInterventions.filter((intervention) => intervention.status !== "cancelled"),
-    clientPayments,
+    clientPayments.filter(p => !isInternalLedgerHistory(p.paidAt) || p.maintenanceContractId || p.maintenanceBillingPeriodId
+      || (p.invoiceId && invoiceIds.has(p.invoiceId)) || (p.interventionId && jobIds.has(p.interventionId))),
   );
   // Un forfait payé d’avance ne doit pas masquer une autre prestation impayée.
   const outstanding = completedInterventions
@@ -443,8 +449,16 @@ export function invoicedRevenue(invoices: Invoice[]): Money {
     .reduce((sum, invoice) => sum + invoice.totalIncludingTax, 0);
 }
 
-export function collectedRevenue(payments: Payment[]): Money {
+export function collectedRevenue(payments: Array<Pick<Payment, "amount">>): Money {
   return payments.reduce((sum, payment) => sum + payment.amount, 0);
+}
+
+/** Company-wide only: legacy payments need not have a modern service link.
+ * Per-client/per-service reports must still require ownership of the payment. */
+export function companyCollectedRevenue(interventions: Array<Pick<Intervention, "id" | "invoiceId">>,
+  payments: Array<Pick<Payment, "invoiceId" | "interventionId" | "maintenanceContractId" | "maintenanceBillingPeriodId" | "amount" | "paidAt">>): Money {
+  const linkedPeriod = payments.filter(p => !isInternalLedgerHistory(p.paidAt));
+  return collectedRevenue(payments.filter(p => isInternalLedgerHistory(p.paidAt))) + collectedInterventionRevenue(interventions, linkedPeriod);
 }
 
 export function collectedInterventionRevenue(

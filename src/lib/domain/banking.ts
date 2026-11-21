@@ -12,8 +12,10 @@ export interface BankCandidate {
   amount: number;
   date: string;
   historicalEligible?: boolean;
+  recordedExpenseOccurrence?: boolean;
   recurringSupplier?: string;
   documentReference?: string;
+  clientId?: string;
 }
 export interface BankTransaction {
   id: string;
@@ -45,6 +47,10 @@ export interface BankTransaction {
   split_cash_delta_cents?: number;
   posting_kind?: "service" | "expense" | "matched" | "ignored" | "bank_only" | "repost" | null;
   remote_updated_at?: string;
+  attachment_count?: number | null;
+  service_declared_by?: string | null;
+  declared_service_client_id?: string | null;
+  declared_service_title?: string | null;
 }
 
 export function historicalGroupCandidates(transactions: BankTransaction[], candidates: BankCandidate[]) {

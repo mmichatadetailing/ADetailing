@@ -21,3 +21,12 @@ it.each([
   expect(html).toContain(label);
   expect(html).not.toMatch(/<button|<select|<input|À traiter|À valider/);
 });
+it("montre les pièces réelles et l’action seulement pour un crédit disponible", () => {
+  const row = (patch: Partial<BankTransaction>) => renderToStaticMarkup(<BankJournalRow tx={{...tx,remote_updated_at:tx.settled_at!,...patch}} onDeclare={() => {}} />);
+  expect(row({attachment_count:2})).toMatch(/2 pièces jointes Qonto/);
+  expect(row({attachment_count:0})).toMatch(/Sans pièce jointe/);
+  expect(row({})).toMatch(/Justificatifs non vérifiés/);
+  expect(row({})).toContain("Déclarer une prestation");
+  for (const patch of [{side:"debit"},{status:"pending"},{reconciliation:"matched",payment_id:"p"},{operation_type:"internal_transfer"},{label:"Remboursement"},{reconciliation_group_id:"g"}] as const)
+    expect(row(patch)).not.toContain("Déclarer une prestation");
+});

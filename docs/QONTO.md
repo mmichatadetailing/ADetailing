@@ -29,7 +29,7 @@ npx supabase db push
 ```
 
 Le projet doit être celui déjà lié à votre base de production. Vérifiez le projet
-affiché par Supabase avant de valider. Appliquez toutes les migrations jusqu’à `202611210031_cash_expense_register.sql` incluse. La migration 031 empêche de rattacher une dépense réglée en espèces à un débit Qonto ; elle ne modifie aucune écriture historique. Une connexion déjà active reste active ; une connexion en pause le reste. Aucune clé à régénérer.
+affiché par Supabase avant de valider. Appliquez toutes les migrations jusqu’à `202611210032_qonto_credit_services.sql` incluse. La 031 protège les règlements en espèces ; la 032 ajoute la détection des justificatifs et la déclaration de prestations. Au prochain passage, la synchronisation relit progressivement les pages déjà importées, sans modifier la date de début des créations automatiques. Aucune clé à régénérer.
 
 Ne passez pas cette étape : elle crée les tables bancaires, le suivi des règlements
 des charges et les protections contre les doublons. Les anciennes données ne sont
@@ -176,8 +176,11 @@ Le détail **Sur Qonto uniquement** utilise uniquement les opérations Qonto en 
 - **Abonnement** : un prélèvement identifié de manière unique (fournisseur et échéance proches) peut solder le mois au montant réellement débité. Le tarif prévu des autres mois reste inchangé.
 - **Un virement pour deux mensualités** : avec une règle activée, le journal conserve une seule sortie et **Finances → Échéances du mois** affiche les deux charges réglées. L’écart entre les tarifs et le virement reste en trésorerie : ce n’est ni une troisième charge ni une augmentation de tarif. Dans le journal, **Deux échéances réglées** ouvre le mois concerné.
 - **Virement client** : un paiement déjà enregistré est pointé ; sinon un dossier identifiable (prestation, facture ou échéance d’entretien) est encaissé. À défaut de dossier, un virement client identifiable crée une prestation terminée et un paiement à la date bancaire.
-- **Affectation incertaine** : le mouvement est visible au journal, sans doublon ni attribution inventée. Le moteur recherche à nouveau une correspondance au prochain passage. Aucun bouton de validation.
+- **Crédit avec pièce jointe** : un crédit d’activité en euros, définitivement reçu, peut créer une prestation terminée et encaissée même si le nom du payeur manque. Le logiciel lit les [identifiants de pièces de la transaction Qonto](https://docs.qonto.com/api-reference/business-api/transactions-statements/transactions/list-transactions), sans télécharger les fichiers. « Sans pièce jointe » ne veut pas dire « non vérifié ». Si un justificatif est ajouté après le virement, le mouvement est réévalué à sa prochaine importation. Le rapprochement d’un paiement ou dossier existant reste prioritaire, et les virements internes, financements et remboursements ne deviennent pas des ventes.
+- **Déclarer une prestation** : dans **Journal bancaire → Entrées**, un associé ou un administrateur peut ouvrir un crédit disponible, choisir le client (ou saisir son nom), modifier l’intitulé puis cliquer sur **Créer ou rattacher la prestation**. Aucune facture requise. En l’absence de nom exploitable, la vente est portée sur « Client à identifier (Qonto) ». Un crédit effectivement rattaché n’est pas encaissé une seconde fois.
+- **Affectation incertaine** : en cas de dossiers concurrents le mouvement reste au journal sans doublon. Les sorties restent automatiques, sans validation.
 - **Historique** : les anciennes opérations antérieures à l’activation ne créent pas de ventes ni de charges rétroactives. Les écritures déjà réglées peuvent être pointées ; les regroupements, exclusions, annulations et anciens brouillons modifiés ou écartés sont conservés.
+- **Statistiques de l’historique interne** : avant le **24 juin 2026** (heure de Paris), les encaissements du logiciel, y compris ceux d’une facture sans prestation associée et les espèces, comptent à leur date de paiement dans les objectifs, graphiques et totaux mensuels et annuels. Les charges d’activité réglées au registre sont incluses même sans lien bancaire. Les mouvements uniquement présents chez Qonto et les simples prévisions ne s’ajoutent pas au résultat enregistré.
 
 #### Règle de virement groupé (migration 030)
 

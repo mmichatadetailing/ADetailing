@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { useWorkspace } from "@/components/workspace-provider";
 import { recordedActivity, type bankCashSummary } from "@/lib/domain/qonto-finance";
+import { isInternalLedgerHistory } from "@/lib/domain/ledger-history";
 import type { recordedExpenses } from "@/lib/domain/expense-ledger";
 import { useDemoStore } from "@/lib/demo/store";
 import { formatDate, formatMoney } from "@/lib/utils";
@@ -99,6 +100,7 @@ function PeriodResult({ period, label, demo, dashboard }: ResultProps & { demo: 
       {dashboard.otherIndicators}
     </div> : <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1.2fr_1fr_1fr]">{result}{received}{spent}</div>}
     <p className="text-xs leading-5 text-zinc-500">Les prévisions et les investissements sont exclus. Ce résultat de gestion TTC n’est pas un bénéfice comptable.</p>
+    {isInternalLedgerHistory(start) && <p className="text-xs leading-5 text-zinc-600">Jusqu’au 23 juin 2026 inclus, les chiffres proviennent des encaissements et charges réglées du registre interne, espèces comprises, même sans prestation ou mouvement Qonto lié.</p>}
     {summary ? <details className="rounded-xl border border-line px-3 text-sm"><summary className="focus-ring cursor-pointer rounded py-3 font-semibold">Vérifier les montants avec Qonto{report?.paused ? " · en pause" : report?.incomplete ? " · import partiel" : ""}</summary>
     <ExpenseCheck charges={activity.charges} bank={summary} partial={Boolean(report?.paused || report?.incomplete || (report?.importSince && report.importSince > start))} />
     <p className="border-t border-line py-2"><strong>Sur Qonto uniquement : {formatMoney(summary.result)}</strong> · {formatMoney(summary.receipts)} d’entrées d’activité − {formatMoney(summary.expenses)} de sorties, remboursements déduits. Ce montant n’est pas ajouté au résultat enregistré.</p>
