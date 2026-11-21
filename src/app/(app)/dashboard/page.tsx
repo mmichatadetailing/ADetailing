@@ -24,6 +24,7 @@ import { Avatar } from "@/components/avatar";
 import { DashboardCharts } from "@/components/dashboard-charts";
 import { FinanceState } from "@/components/banking/finance-state";
 import { BankResultCard } from "@/components/banking/bank-result-card";
+import { DashboardExpensesCard } from "@/components/banking/dashboard-expenses-card";
 import { QontoTreasuryCard } from "@/components/banking/qonto-treasury-card";
 import { PageHeader } from "@/components/page-header";
 import { useWorkspace } from "@/components/workspace-provider";
@@ -197,6 +198,7 @@ export default function DashboardPage() {
 
       {showTreasury ? <BankResultCard period={statisticsPeriod.month ?? String(statisticsPeriod.year)} label={statisticsPeriod.label}
         dashboard={{ financesHref: financesUrl, objective: <KpiCard kpi={objectiveKpi} />,
+          expenses: <DashboardExpensesCard key={statisticsPeriod.key} expenses={data.expenses} months={statisticsPeriod.monthKeys} label={statisticsPeriod.label} />,
           otherIndicators: <>{operationalKpis.map((kpi) => <KpiCard key={kpi.label} kpi={kpi} />)}<QontoTreasuryCard /></> }} />
       : <section aria-label="Indicateurs de la période" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-12">
         {indicatorsWithoutBankAccess().map((kpi) => <KpiCard key={kpi.label} kpi={kpi} />)}

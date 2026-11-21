@@ -30,33 +30,48 @@ export function manualExpensePayment(expense: Omit<LedgerExpense, "family">) {
   return { day: financialDateKey(expense.paidAt ?? settlementDate ?? expense.date), amount: expense.amountIncludingTax };
 }
 
+interface RegisterPayment {
+  day: string;
+  month: string; // Month of the obligation, which may differ from the payment date.
+  amount: number;
+  source: "cash" | "linked" | "unlinked";
+  settlement?: NonNullable<Expense["settlements"]>[number];
+}
+
+/** One entry per confirmed register payment, never one per raw bank movement. */
+export function expenseRegisterPayments(expense: LedgerExpense): RegisterPayment[] {
+  const manual = manualExpensePayment(expense);
+  const dueMonth = expense.date.slice(0, 7);
+  const cash = isCashExpenseMethod(expense.paymentMethod);
+  if (manual) {
+    const settlement = expense.settlements?.[0];
+    return [{ ...manual, month: dueMonth, source: cash ? "cash" : settlement ? "linked" : "unlinked", settlement }];
+  }
+  const payments: RegisterPayment[] = [];
+  const legacy = historicalRecurringPayment(expense);
+  if (legacy) payments.push({ ...legacy, source: cash ? "cash" : "unlinked" });
+  for (const settlement of expense.settlements ?? []) {
+    payments.push({ day: financialDateKey(settlement.paidAt), amount: settlement.amount,
+      month: expense.recurrence === "one_off" ? dueMonth : settlement.month, source: "linked", settlement });
+  }
+  return payments;
+}
+
 /** Confirmed payments in the internal register, by payment date (not due date).
  * An imported settlement is already a ledger entry. Never add the bank feed,
  * a scheduled estimate or a grouped transfer's cash difference to this total. */
 export function recordedExpenses(expenses: LedgerExpense[], period: string, now = new Date()) {
   const today = financialDateKey(now.toISOString());
-  const inPeriod = (date: string) => {
-    const day = financialDateKey(date);
-    return day.startsWith(period) && day <= today;
-  };
   let linked = 0, cash = 0, unlinked = 0, cashWithBankLink = 0;
   for (const expense of expenses) {
     if (expense.family !== "fixed" && expense.family !== "variable") continue;
-    const manual = manualExpensePayment(expense);
-    if (manual) {
-      if (!inPeriod(manual.day)) continue;
-      if (isCashExpenseMethod(expense.paymentMethod)) {
-        cash += manual.amount;
-        if (expense.settlements?.length) cashWithBankLink += manual.amount;
-      } else if (expense.settlements?.length) linked += manual.amount;
-      else unlinked += manual.amount;
-    } else {
-      const legacy = historicalRecurringPayment(expense);
-      if (legacy && inPeriod(legacy.day)) {
-        if (isCashPaymentMethod(expense.paymentMethod)) cash += legacy.amount;
-        else unlinked += legacy.amount;
-      }
-      for (const entry of expense.settlements ?? []) if (inPeriod(entry.paidAt)) linked += entry.amount;
+    for (const payment of expenseRegisterPayments(expense)) {
+      if (!payment.day.startsWith(period) || payment.day > today) continue;
+      if (payment.source === "cash") {
+        cash += payment.amount;
+        if (payment.settlement) cashWithBankLink += payment.amount;
+      } else if (payment.source === "linked") linked += payment.amount;
+      else unlinked += payment.amount;
     }
   }
   return { total: linked + cash + unlinked, linked, cash, unlinked, ...(cashWithBankLink ? { cashWithBankLink } : {}) };

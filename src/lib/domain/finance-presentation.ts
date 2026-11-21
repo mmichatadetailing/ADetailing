@@ -8,6 +8,10 @@ import type { Expense, Payment } from "./types";
 export type FinanceTone = "emerald" | "amber" | "blue" | "violet" | "neutral" | "rose" | "teal";
 export type FinanceState = { label: string; tone: FinanceTone };
 
+export const expenseFamilyLabels: Record<Expense["family"], string> = {
+  fixed: "Fixe", variable: "Variable", investment: "Investissement", personal: "Personnel",
+};
+
 type Connection = { connected: boolean; enabled: boolean; last_error?: string | null; last_synced_at?: string | null; posting_pending?: boolean; window_to?: string | null };
 export function connectionState(connection: Connection | null | undefined, configured: boolean, scheduled: boolean, now = Date.now()): FinanceState {
   if (!connection?.connected) return { label: "Non connecté", tone: "neutral" };

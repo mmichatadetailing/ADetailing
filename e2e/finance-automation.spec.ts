@@ -29,6 +29,8 @@ test("le résultat suit la période sans boîte de validation Qonto, sur ordinat
       {...base,id:"paid",description:"Charge ponctuelle réglée",recurrence:"one_off",amountIncludingTax:85311},
       {...base,id:"cash-expense",description:"Produits réglés en liquide",recurrence:"one_off",amountIncludingTax:10000,paymentMethod:"Espèces"},
       {...base,id:"planned",description:"Charge prévue non réglée",recurrence:"one_off",amountIncludingTax:20000,paid:false},
+      {...base,id:"tool",description:"Achat de matériel",family:"investment",recurrence:"one_off",amountIncludingTax:1550},
+      {...base,id:"personal",description:"Dépense personnelle prévue",family:"personal",recurrence:"one_off",amountIncludingTax:825,paid:false},
     ];
     const payments = [{id:"service",amount:160000,paidAt:"2026-11-03",method:"Virement",maintenanceContractId:"entretien"},
       {id:"cash",amount:16100,paidAt:"2026-11-04",method:"Espèces"}, {id:"oct",amount:2000,paidAt:"2026-10-15",method:"Espèces"}];
@@ -37,9 +39,11 @@ test("le résultat suit la période sans boîte de validation Qonto, sur ordinat
   await page.goto("/dashboard");
   const indicators = page.getByRole("region",{name:"Indicateurs de la période"});
   const cards = indicators.getByRole("link");
+  const expensesCard = indicators.getByRole("button",{name:/^Charges de la période/});
   await expect(cards.nth(0)).toHaveAccessibleName(/^Encaissements enregistrés/);
   await expect(cards.nth(0)).toContainText(/1\s?781\s*€/);
   await expect(cards.nth(1)).toHaveAccessibleName(/^Objectif annuel/);
+  await expect(expensesCard).toContainText(/Reste à payer\s*691,11\s*€/);
   await page.getByRole("combobox",{name:"Période analysée"}).selectOption("month:2026-11");
   await expect(cards.nth(0)).toContainText(/1\s?761\s*€/);
   await expect(cards.nth(1)).toHaveAccessibleName(/^Objectif du mois/);
@@ -47,16 +51,28 @@ test("le résultat suit la période sans boîte de validation Qonto, sur ordinat
   await expect(cards.nth(1)).toHaveAttribute("href","/parametres#objectifs-chiffre-affaires");
   await expect(cards.nth(2)).toHaveAccessibleName(/^Résultat enregistré/);
   await expect(cards.nth(2)).toContainText(/325,03\s*€/);
-  await expect(cards.nth(3)).toHaveAccessibleName(/^Charges d’activité réglées/);
-  await expect(cards.nth(3)).toContainText(/1\s?435,97\s*€/);
-  await expect(cards.nth(3)).toContainText(/dont 100\s*€ en espèces/);
-  for (const label of ["Encaissements enregistrés","Résultat enregistré","Charges d’activité réglées"])
+  await expect(expensesCard).toContainText(/Réglées\s*1\s?451,47\s*€/);
+  await expect(expensesCard).toContainText(/dont 100\s*€ en espèces/);
+  await expect(expensesCard).toContainText(/Reste à payer\s*208,25\s*€/);
+  for (const label of ["Encaissements enregistrés","Résultat enregistré","Charges de la période"])
     await expect(page.getByText(label,{exact:true})).toHaveCount(1);
   await expect(indicators.getByRole("link",{name:/^(CA encaissé|Flux de trésorerie estimé|Charges prévues)/})).toHaveCount(0);
   await expect(indicators.getByRole("region",{name:"Trésorerie actuelle"})).toHaveCount(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await cards.nth(3).click();
-  await expect(page).toHaveURL(/\/finances\?mois=2026-11$/);
+  await expensesCard.click();
+  const detail = page.getByRole("dialog",{name:"Détail des charges"});
+  const paid = detail.getByRole("list", {name:"Réglées"});
+  await expect(paid.getByRole("listitem")).toHaveCount(5);
+  await expect(paid.getByText(/Virement groupé/)).toHaveCount(2);
+  await expect(paid.getByText("Achat de matériel",{exact:true})).toBeVisible();
+  await detail.getByRole("button",{name:/^Reste à payer/}).click();
+  const due = detail.getByRole("list",{name:"Reste à payer"});
+  await expect(due.getByRole("listitem")).toHaveCount(2);
+  await expect(due.getByText("Dépense personnelle prévue",{exact:true})).toBeVisible();
+  await due.getByRole("link",{name:/^Charge prévue non réglée/}).click();
+  await expect(page).toHaveURL(/\/finances\?registre=charges&mois=2026-11#charge-planned$/);
+  await expect(page.locator("#charge-planned")).toBeFocused();
+  await page.getByRole("button",{name:"Échéances du mois",exact:true}).click();
   await page.getByLabel("Mois analysé").fill("2026-09");
   await expect(page.getByRole("heading", {name:/Résultat d’activité · septembre 2026/i})).toBeVisible();
   await expect(page.getByText("Charges d’activité réglées", {exact:true})).toBeVisible();
@@ -114,7 +130,15 @@ test("juin : les anciens encaissements, même en espèces sans prestation, alime
   await expect(cards.getByRole("link",{name:/^Encaissements enregistrés/})).toContainText(/90\s*€/);
   await expect(cards.getByRole("link",{name:/^Objectif du mois/})).toContainText("45 %");
   await expect(cards.getByRole("link",{name:/^Résultat enregistré/})).toContainText(/60\s*€/);
-  await expect(cards.getByRole("link",{name:/^Charges d’activité réglées/})).toContainText(/dont 30\s*€ en espèces/);
+  const expensesCard=cards.getByRole("button",{name:/^Charges de la période/});
+  await expect(expensesCard).toContainText(/dont 30\s*€ en espèces/);
+  await expect(expensesCard).toContainText(/Reste à payer\s*0\s*€/);
+  await expensesCard.click();
+  const detail=page.getByRole("dialog",{name:"Détail des charges"});
+  await detail.getByRole("button",{name:/Reste à payer/}).click();
+  await expect(detail.getByText("Rien ne reste à payer sur cette période.")).toBeVisible();
+  await detail.getByRole("button",{name:"Fermer",exact:true}).click();
+  await expect(expensesCard).toBeFocused();
   await expect(page.getByText("Historique juin",{exact:true})).toBeVisible();
   await period.selectOption("year:2026");
   await expect(cards.getByRole("link",{name:/^Encaissements enregistrés/})).toContainText(/110\s*€/);

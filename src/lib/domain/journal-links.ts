@@ -2,6 +2,10 @@ import type { BankTransaction } from "./banking";
 import type { Expense, Intervention, MaintenanceBillingPeriod, MaintenanceContract, Payment } from "./types";
 
 export type JournalLink = { href: string; label: string };
+export function expenseRegisterHref(id: string, month: string) {
+  return "/finances?registre=charges&mois=" + encodeURIComponent(month) + "#charge-" + encodeURIComponent(id);
+}
+
 type Ledger = {
   expenses: Pick<Expense,"id" | "date">[];
   interventions: Pick<Intervention,"id" | "invoiceId">[];
@@ -24,7 +28,7 @@ export function journalLinks(ledger: Ledger) {
     const expense = tx.expense_id && expenses.get(tx.expense_id);
     if (expense) {
       const month = (tx.expense_month || expense.date).slice(0, 7);
-      return {href: "/finances?registre=charges&mois=" + encodeURIComponent(month) + "#charge-" + encodeURIComponent(expense.id), label:"Voir la charge"};
+      return {href: expenseRegisterHref(expense.id, month), label:"Voir la charge"};
     }
     const payment = tx.payment_id && payments.get(tx.payment_id);
     if (!payment) return;
