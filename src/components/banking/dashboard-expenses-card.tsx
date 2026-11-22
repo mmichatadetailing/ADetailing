@@ -16,6 +16,7 @@ type Section = keyof typeof sections;
 
 function lineDescription(line: PeriodExpenseLine, today: string) {
   const date = formatDate(line.day, { day: "numeric", month: "short", year: "numeric", timeZone: "Europe/Paris" });
+  if (!line.source && line.expense.qontoRecurrence === "estimated") return "Mensualité estimée pour le " + date + " · non réglée";
   if (!line.source) return (line.day < today ? "Échue le " : "Échéance le ") + date;
   const method = line.source === "cash" ? "Espèces" : line.grouped ? "Virement groupé" :
     line.source === "linked" ? "Rapprochée de Qonto" : line.expense.paymentMethod || "Règlement enregistré";

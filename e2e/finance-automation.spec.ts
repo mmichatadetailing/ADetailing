@@ -1,5 +1,27 @@
 import { expect, test } from "@playwright/test";
 
+test("une mensualité estimée ouvre la bonne charge et ne s’étend pas au mois suivant", async ({page}) => {
+  await page.clock.setFixedTime(new Date("2026-11-22T12:00:00Z"));
+  await page.addInitScript(() => {
+    const expense = {id:"subscription-atlas",organizationId:"demo",locationId:"demo",date:"2026-11-10",allocatedMonth:"2026-11",endsAt:"2026-12-31",
+      family:"variable",category:"Logiciel",supplier:"Atlas",description:"Prélèvement Atlas",recurrence:"monthly",paid:false,amountIncludingTax:2900,
+      vatAmount:0,qontoRecurrence:"estimated",settlements:[{id:"p",month:"2026-11",paidAt:"2026-11-10",amount:2900,bankTransactionId:"bank"}]};
+    localStorage.setItem("adetailing-pilotage-demo-v1",JSON.stringify({version:1,state:{expenses:[expense],payments:[]}}));
+  });
+  await page.goto("/finances?vue=previsions&mois=2026-12");
+  const list = page.getByRole("list",{name:"Abonnements détectés"});
+  const link = list.getByRole("link",{name:/Atlas/});
+  await expect(link).toContainText("Mensualité estimée");
+  await expect(link).toContainText("Non réglée");
+  await expect(link).toContainText(/29\s*€/);
+  await link.click();
+  await expect(page).toHaveURL(/registre=charges&mois=2026-12#charge-subscription-atlas$/);
+  await expect(page.locator("#charge-subscription-atlas")).toBeFocused();
+  await page.goto("/finances?vue=previsions&mois=2027-01");
+  await expect(list).toHaveCount(0);
+  await expect(page.getByText("Aucun abonnement détecté avec une échéance ce mois-ci.")).toBeVisible();
+});
+
 test("un virement pour deux mensualités n’ajoute ni troisième charge ni arrondi aux tarifs", async ({page}) => {
   await page.clock.setFixedTime(new Date("2026-11-20T12:00:00Z"));
   await page.addInitScript(() => {

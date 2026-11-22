@@ -33,7 +33,7 @@ beforeAll(async () => {
     create table expenses(id uuid primary key default gen_random_uuid(),organization_id uuid,location_id uuid,expense_date date,family text,category text,supplier text,description text,amount_including_tax_cents bigint,amount_excluding_tax_cents bigint,vat_amount_cents bigint,vat_rate_basis_points integer,vat_recoverable boolean,recurrence text,allocated_month date,paid boolean,paid_at timestamptz,created_by uuid,archived_at timestamptz,ends_on date,series_id uuid);
     create table payments(id uuid primary key default gen_random_uuid(),organization_id uuid,location_id uuid,invoice_id uuid,intervention_id uuid,maintenance_contract_id uuid,maintenance_billing_period_id uuid,amount_cents bigint,paid_at timestamptz,method text,reference text,created_by uuid);
   `);
-  await db.exec("alter table expenses add column payment_method text, add column updated_at timestamptz, add column replaces_expense_id uuid");
+  await db.exec("alter table expenses add column payment_method text, add column updated_at timestamptz, add column replaces_expense_id uuid; create table assets(id uuid primary key,expense_id uuid references expenses(id))");
   await db.exec(await readFile("supabase/migrations/202610220017_exact_expense_revision_date.sql", "utf8"));
   await db.exec(await readFile("supabase/migrations/202611050025_qonto_banking.sql", "utf8"));
   await db.exec(await readFile("supabase/migrations/202611050026_qonto_historical_groups.sql", "utf8"));
@@ -43,6 +43,7 @@ beforeAll(async () => {
   await db.exec(await readFile("supabase/migrations/202611200030_qonto_monthly_split.sql", "utf8"));
   await db.exec(await readFile("supabase/migrations/202611210031_cash_expense_register.sql", "utf8"));
   await db.exec(await readFile("supabase/migrations/202611210032_qonto_credit_services.sql", "utf8"));
+  await db.exec(await readFile("supabase/migrations/202611220033_qonto_monthly_subscriptions.sql", "utf8"));
 }, 30_000);
 afterAll(async () => { await db.close(); });
 beforeEach(async () => {
@@ -65,6 +66,112 @@ async function reconcile(id: string, kind: string, target: string | null = null,
   return db.query("select reconcile_bank_transaction($1,$2,$3,$4)", [id, kind, target, month]);
 }
 async function count(table: string) { return (await db.query<{ count: number }>(`select count(*)::integer count from ${table}`)).rows[0]!.count; }
+
+describe("mensualités détectées : registre, prévision et rapprochement (033)", () => {
+  const refresh = () => db.query("select refresh_qonto_subscriptions($1)", [org]);
+  const postDebit = async (id: string, action: object = { action: "expense", category: "Logiciel" }) =>
+    (await db.query<{result: {kind?: string; skipped?: boolean}}>("select post_qonto_transaction(id,amount_cents,settled_at,$2) result from bank_transactions where id=$1", [id, JSON.stringify(action)])).rows[0]!.result;
+  const rules = () => db.query<{id:string; qonto_recurrence:string; ends_on:string | null; expense_date:string}>("select id,qonto_recurrence,ends_on::text,expense_date::text from expenses where qonto_recurrence is not null and archived_at is null");
+  let first = "", second = "";
+  beforeEach(async () => {
+    await db.exec("delete from expenses; update qonto_connections set posting_from='2026-06-24'");
+    const dates = (await db.query<{d1:string;d2:string}>(`with d as (select ((now() at time zone 'Europe/Paris')::date - 1) as yesterday)
+      select (yesterday-interval '1 month')::date::text d1, yesterday::text d2 from d`)).rows[0]!;
+    first=dates.d1; second=dates.d2;
+  });
+  async function debit(id: string, day: string, label = "Prélèvement", operation = "direct_debit", amount = 2900, account = "courant", party = "Logiciel Atlas") {
+    await bank(id,"debit",amount);
+    await db.query(`update bank_transactions set settled_at=$2::date + time '12:00', emitted_at=$2::date + time '12:00',
+      account_id=$6,counterparty=$7,label=$3,operation_type=$4,amount_cents=$5 where id=$1`,[id,day,label,operation,amount,account,party]);
+  }
+  it("prévoit dès le premier prélèvement, conserve la preuve et rapproche le débit variable sans doubler ni le mois ni le montant", async () => {
+    await debit(tx, first); expect((await postDebit(tx)).kind).toBe("expense");
+    const proof = (await db.query("select id,expense_id,amount_cents,paid_at from expense_settlements")).rows[0];
+    await refresh(); await refresh();
+    expect((await db.query("select id,expense_id,amount_cents,paid_at from expense_settlements")).rows).toEqual([proof]);
+    const learned = (await rules()).rows[0]!;
+    expect(learned).toMatchObject({qonto_recurrence:"estimated",expense_date:first});
+    expect(learned.ends_on?.slice(0,7)).toBe(second.slice(0,7));
+    await debit(secondTx, second, "Prélèvement tarif révisé", "direct_debit", 3190);
+    expect((await postDebit(secondTx)).kind).toBe("matched");
+    expect((await postDebit(secondTx)).skipped).toBe(true);
+    await refresh();
+    expect((await rules()).rows).toEqual([{...learned,qonto_recurrence:"confirmed",ends_on:null}]);
+    expect(await count("expenses")).toBe(1);
+    expect((await db.query("select expense_id,sum(amount_cents)::int total,count(distinct period_month)::int months from expense_settlements group by expense_id")).rows)
+      .toEqual([{expense_id:learned.id,total:6090,months:2}]);
+  });
+  it("reconnaît un libellé mensuel sur une seule carte et retire sa prévision si la banque annule le débit", async () => {
+    await debit(tx,second,"Abonnement mensuel Atlas","card"); await postDebit(tx); await refresh();
+    expect((await rules()).rows[0]).toMatchObject({qonto_recurrence:"confirmed",ends_on:null});
+    await db.query("update bank_transactions set status='reversed',remote_updated_at=now() where id=$1",[tx]);
+    await db.query("select repair_qonto_postings($1)",[org]); await refresh();
+    expect((await rules()).rows).toHaveLength(0); expect(await count("expense_settlements")).toBe(0);
+  });
+  it("reconnaît deux débits carte au même rythme, même déjà comptabilisés, sans refaire leurs paiements", async () => {
+    await debit(tx,first,"Atlas Pro","card"); await postDebit(tx); await refresh();
+    expect((await rules()).rows).toHaveLength(0);
+    await debit(secondTx,second,"Atlas Pro","card"); await postDebit(secondTx);
+    const before = (await db.query("select id,expense_id,paid_at,amount_cents from expense_settlements order by id")).rows;
+    await refresh(); await refresh();
+    expect((await rules()).rows).toMatchObject([{qonto_recurrence:"confirmed",ends_on:null}]);
+    expect((await db.query("select count(distinct series_id)::int n from expenses")).rows).toEqual([{n:1}]);
+    expect((await db.query("select id,expense_id,paid_at,amount_cents from expense_settlements order by id")).rows).toEqual(before);
+  });
+  it("ne transforme pas deux paiements du même mois, ni un achat isolé, en abonnement", async () => {
+    await debit(tx,second,"Abonnement","card"); await debit(secondTx,second,"Abonnement","card");
+    await postDebit(tx); await postDebit(secondTx); await refresh();
+    expect((await rules()).rows).toHaveLength(0); expect(await count("expense_settlements")).toBe(2);
+  });
+  it.each(["Abonnement annuel","Prélèvement trimestriel","Paiement unique","Remboursement mensuel","Forfait hebdomadaire"])("ne projette pas %s chaque mois", async label => {
+    await debit(tx,second,label); await postDebit(tx); await refresh(); expect((await rules()).rows).toHaveLength(0);
+  });
+  it("ne crée pas une nouvelle prévision si un abonnement du fournisseur est déjà au registre", async () => {
+    await debit(tx,second,"Abonnement mensuel","card"); await postDebit(tx);
+    const proof=(await db.query("select id,paid_at,amount_cents from expense_settlements")).rows;
+    await db.query("insert into expenses(id,organization_id,series_id,supplier,description,expense_date,recurrence,amount_including_tax_cents,paid) values($1,$2,$1,'Logiciel Atlas','Prévision manuelle',$3,'monthly',2900,false)",[expense,org,second]);
+    await refresh(); await refresh(); expect((await rules()).rows).toHaveLength(0);
+    expect((await db.query("select id,paid_at,amount_cents from expense_settlements where expense_id=$1",[expense])).rows).toEqual(proof);
+    expect((await db.query("select id from expenses where archived_at is null")).rows).toEqual([{id:expense}]);
+    expect((await db.query("select expense_id,created_entry from bank_transactions where id=$1",[tx])).rows).toEqual([{expense_id:expense,created_entry:false}]);
+  });
+  it("retrouve le même abonnement si le deuxième paiement arrive dans un import tardif après retrait de l’estimation", async () => {
+    const old=(await db.query<{seed:string;due:string}>("select ($1::date-interval '2 months')::date::text as seed, ($1::date-interval '1 month')::date::text as due",[second])).rows[0]!;
+    await debit(tx,old.seed);
+    // A previously learned first payment, now long enough ago to have missed its next due date.
+    await db.query(`insert into expenses(id,organization_id,series_id,supplier,description,expense_date,recurrence,amount_including_tax_cents,paid,
+      qonto_recurrence,qonto_recurrence_key,ends_on) select $1,$2,$1,counterparty,label,$3,'monthly',amount_cents,false,'estimated',
+      qonto_subscription_key(bank_transactions),(date_trunc('month',$3::date)+interval '2 months - 1 day')::date from bank_transactions where id=$4`,[expense,org,old.seed,tx]);
+    await db.query("insert into expense_settlements(organization_id,expense_id,bank_transaction_id,paid_at,period_month,amount_cents) select $1,$2,id,settled_at,date_trunc('month',$3::date)::date,amount_cents from bank_transactions where id=$4",[org,expense,old.seed,tx]);
+    await db.query("update bank_transactions set expense_id=$1,expense_month=date_trunc('month',$2::date)::date,reconciliation='matched',posting_kind='matched',automated_at=now() where id=$3",[expense,old.seed,tx]);
+    await refresh(); await refresh();
+    expect((await rules()).rows).toMatchObject([{id:expense,qonto_recurrence:"expired"}]);
+    expect((await rules()).rows[0]!.ends_on?.slice(0,7)).toBe(old.seed.slice(0,7));
+    await debit(secondTx,old.due); expect((await postDebit(secondTx)).kind).toBe("matched"); await refresh();
+    expect((await rules()).rows).toMatchObject([{id:expense,qonto_recurrence:"confirmed",ends_on:null}]);
+    expect(await count("expenses")).toBe(1); expect(await count("expense_settlements")).toBe(2);
+  });
+  it("ne crée pas une estimation à partir d’un montant commun sans fournisseur identifiable", async () => {
+    await debit(tx,second,"Prélèvement SEPA","direct_debit",2900,"courant","");
+    await postDebit(tx); await refresh(); expect((await rules()).rows).toHaveLength(0);
+  });
+  it("retire la prévision, pas l’argent réellement payé, si le libellé est corrigé en annuel", async () => {
+    await debit(tx,second,"Forfait mensuel"); await postDebit(tx); await refresh();
+    await db.query("update bank_transactions set label='Forfait annuel', remote_updated_at=now() where id=$1",[tx]);
+    await refresh();
+    expect((await rules()).rows).toMatchObject([{qonto_recurrence:"expired"}]);
+    expect((await db.query("select amount_cents::int paid from expense_settlements")).rows).toEqual([{paid:2900}]);
+  });
+  it("ne rapproche pas par le seul montant sur un autre compte, ne réécrit pas l’historique protégé", async () => {
+    await debit(tx,first,"Forfait mensuel Atlas","card"); await postDebit(tx); await refresh();
+    const rule=(await rules()).rows[0]!;
+    await debit(secondTx,second,"Forfait mensuel Atlas","card",2900,"autre-compte");
+    expect((await postDebit(secondTx,{action:"match",kind:"expense",id:rule.id,month:second.slice(0,7)+"-01"})).kind).toBe("bank_only");
+    expect(await count("expense_settlements")).toBe(1);
+    await db.exec("set role authenticated");
+    await expect(refresh()).rejects.toThrow("permission denied");
+  });
+});
 async function group(ids = [tx, secondTx], kind = "expense", target = expense, month: string | null = "2026-09-01") {
   return db.query<{ reconcile_bank_group: string }>("select reconcile_bank_group($1,$2,$3,$4,'Saisie historique regroupée')", [ids, kind, target, month]);
 }

@@ -25,7 +25,9 @@ Les identifiants permettent de relier les tableaux détaillés.
   le mois d’échéance. Un virement groupé est ventilé entre les charges couvertes ;
   son éventuel écart d’arrondi est isolé et ne modifie pas le tarif des charges.
 - Charges : règles récurrentes et anciens tarifs conservés, avec leurs dates de
-  validité. Une ligne récurrente ne représente pas une seule dépense ponctuelle.
+  validité. Pour les abonnements détectés, la colonne **Détection Qonto**
+  distingue une mensualité estimée d’un rythme confirmé. Un montant estimé
+  figure dans les prévisions, jamais dans les règlements sans paiement réel.
 - Prestations, affectations, lignes de prestations, formules, tarifs et lignes
   de documents : onglets séparés pour préserver les détails sans multiplier les
   encaissements ni perdre les relations.

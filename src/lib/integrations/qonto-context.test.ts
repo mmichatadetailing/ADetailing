@@ -10,6 +10,16 @@ function database(rows: Record<string, Row[]>) {
 }
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-11-05T12:00:00Z")); });
 afterEach(() => vi.useRealTimers());
+it("réserve la charge apprise au rapprochement par compte, sans masquer un tarif ressaisi par un associé", async () => {
+  const expense = {series_id:"s", expense_date:"2026-09-15", recurrence:"monthly", supplier:"Atlas", amount_including_tax_cents:2900};
+  const result = await qontoContext(database({
+    expenses:[{...expense,id:"apprise",ends_on:"2026-10-14",qonto_recurrence_key:"opaque"},
+      {...expense,id:"revision",expense_date:"2026-10-15",supplier:"Nouvel Atlas"}],
+    bank_transactions:[{id:"b",side:"debit",reconciliation:"unmatched",settled_at:"2026-10-15T12:00:00Z"}],
+  }),"org");
+  expect(result.candidates.some(c=>c.id==="apprise")).toBe(false);
+  expect(result.candidates.find(c=>c.id==="revision" && c.month==="2026-10")).toMatchObject({recurringSupplier:"Nouvel Atlas"});
+});
 it("une prestation déjà encaissée en espèces ne fournit pas un candidat pour le crédit bancaire", async () => {
   const p={intervention_id:"job",amount_cents:11000,paid_at:"2026-06-20"};
   const result=await qontoContext(database({payments:[{...p,id:"cash",method:"Espèces"},{...p,id:"transfer",method:"Virement"}],
