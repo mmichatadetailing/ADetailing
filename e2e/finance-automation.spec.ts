@@ -48,7 +48,7 @@ test("le résultat suit la période sans boîte de validation Qonto, sur ordinat
   await expect(cards.nth(0)).toContainText(/1\s?761\s*€/);
   await expect(cards.nth(1)).toHaveAccessibleName(/^Objectif du mois/);
   await expect(cards.nth(1)).toContainText("40 %");
-  await expect(cards.nth(1)).toHaveAttribute("href","/parametres#objectifs-chiffre-affaires");
+  await expect(cards.nth(1)).toHaveAttribute("href","/parametres?annee=2026#objectifs-chiffre-affaires");
   await expect(cards.nth(2)).toHaveAccessibleName(/^Résultat enregistré/);
   await expect(cards.nth(2)).toContainText(/325,03\s*€/);
   await expect(expensesCard).toContainText(/Réglées\s*1\s?451,47\s*€/);

@@ -5,12 +5,14 @@ test("la charte ADetailing conserve des cartes claires et des actions contrasté
   await page.evaluate(() => document.fonts.ready);
   await expect(page.locator("body")).toHaveCSS("font-family", /montserrat/i);
   await expect(page.locator("body")).toHaveCSS("background-image", "none");
-  const cards = page.locator(".brand-kpi");
-  await expect(cards).toHaveCount(8);
+  const indicators = page.getByRole("region", { name: "Indicateurs de la période" });
+  const cards = indicators.locator(".brand-kpi");
+  await expect(indicators.locator(".brand-kpi, .finance-metric")).toHaveCount(8);
+  await expect(cards).toHaveCount(5);
   for (const card of await cards.all()) await expect(card).toHaveCSS("background-color", "rgb(255, 255, 255)");
-  await expect(cards.nth(0)).toHaveAttribute("data-tone", "emerald");
-  await expect(cards.nth(1)).toHaveAttribute("data-tone", "blue");
-  await expect(cards.nth(3)).toHaveAttribute("data-tone", "amber");
+  await expect(indicators.getByRole("link", { name: /^Objectif/ }).locator(".brand-kpi")).toHaveAttribute("data-tone", "blue");
+  await expect(indicators.getByRole("link", { name: /^Encaissements enregistrés/ }).locator("dl")).toHaveAttribute("data-tone", "teal");
+  await expect(indicators.getByRole("button", { name: /^Charges de la période/ })).toHaveAttribute("data-tone", "blue");
   expect(new Set(await cards.evaluateAll((elements) => elements.map((element) => getComputedStyle(element, "::before").backgroundColor))).size).toBeGreaterThanOrEqual(4);
   const action = page.getByRole("button", { name: "Ajouter", exact: true });
   const contrast = await action.evaluate((button) => {
@@ -49,7 +51,7 @@ test("la trésorerie complète la grille sans inventer de solde ni appeler Qonto
   const previousYear = await period.locator("option").last().getAttribute("value");
   await period.selectOption(previousYear!);
   await expect(treasury).toContainText("Indépendant de la période");
-  await expect(page.locator(".brand-kpi")).toHaveCount(8);
+  await expect(page.getByRole("region", { name: "Indicateurs de la période" }).locator(".brand-kpi, .finance-metric")).toHaveCount(8);
   expect(requests).toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("dashboard-tresorerie.png"), fullPage: true });

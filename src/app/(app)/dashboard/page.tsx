@@ -19,7 +19,11 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { Suspense, useMemo } from "react";
+import { ReportPeriodPicker, useReportPeriod } from "@/components/report-period";
+import { periodPerformance } from "@/lib/domain/performance";
+import { expenseRegisterHref } from "@/lib/domain/journal-links";
+import { weeklyWorkload } from "@/lib/domain/team-workload";
 import { Avatar } from "@/components/avatar";
 import { DashboardCharts } from "@/components/dashboard-charts";
 import { FinanceState } from "@/components/banking/finance-state";
@@ -33,11 +37,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import {
-  companyCollectedRevenue,
   collectedRevenue,
-  grossMargin,
-  averageHourlyMargin,
-  occupancyRate,
   paidExpenseAmountForMonth,
   projectedExpenseAmountForMonth,
   rankExpensesForMonths,
@@ -48,7 +48,7 @@ import { isInternalLedgerHistory } from "@/lib/domain/ledger-history";
 import { buildDashboardChartData } from "@/lib/domain/dashboard-charts";
 import { getInterventionWorkflow } from "@/lib/domain/intervention-workflow";
 import { maintenanceRenewalStatus } from "@/lib/domain/maintenance";
-import { getCompanyStatsPeriod, getCompanyStatsPeriodOptions, getPreviousCompanyStatsPeriodKey, isDateInRange, type CompanyStatsPeriodKey } from "@/lib/domain/periods";
+import { getCompanyStatsPeriod, getPreviousCompanyStatsPeriodKey, inReportingPeriod, previousReportDay } from "@/lib/domain/periods";
 import { useDemoStore } from "@/lib/demo/store";
 import { formatDate, formatMoney } from "@/lib/utils";
 
@@ -74,53 +74,40 @@ function KpiCard({ kpi, span = "xl:col-span-3" }: { kpi: DashboardKpi; span?: st
 }
 
 export default function DashboardPage() {
-  const [periodKey, setPeriodKey] = useState<CompanyStatsPeriodKey>(() => `year:${new Date().getFullYear()}`);
+  return <Suspense fallback={<p role="status" className="p-5 text-sm">Chargement du dashboard…</p>}><DashboardContent /></Suspense>;
+}
+
+function DashboardContent() {
+  const statisticsPeriod = useReportPeriod("year");
   const data = useDemoStore();
   const { workspace, mode } = useWorkspace();
   const showTreasury = mode === "demo" || Boolean(workspace?.canManageBusiness);
   const now = new Date();
   const todayLabel = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long" }).format(now);
-  const periodGroups = useMemo(() => getCompanyStatsPeriodOptions(), []);
-  const statisticsPeriod = useMemo(() => getCompanyStatsPeriod(periodKey), [periodKey]);
-  const financesUrl = statisticsPeriod.month ? `/finances?mois=${statisticsPeriod.month}` : "/finances";
+  const token = statisticsPeriod.month ?? String(statisticsPeriod.year);
+  const pilotageUrl = "/pilotage?periode=" + token;
+  const financesUrl = statisticsPeriod.month ? `/finances?mois=${statisticsPeriod.month}` : pilotageUrl;
   const previousStatisticsPeriod = useMemo(
     () => getCompanyStatsPeriod(getPreviousCompanyStatsPeriodKey(statisticsPeriod)),
     [statisticsPeriod],
   );
-  const periodRange = { start: statisticsPeriod.start, end: new Date(Math.min(now.getTime() + 1, statisticsPeriod.end.getTime())) };
-  const periodReference = new Date(Math.min(now.getTime(), statisticsPeriod.end.getTime() - 1));
-  const periodElapsed = Math.max(0, periodReference.getTime() - statisticsPeriod.start.getTime());
-  const previousPeriodEnd = new Date(Math.min(previousStatisticsPeriod.end.getTime(), previousStatisticsPeriod.start.getTime() + periodElapsed + 1));
-  const previousPeriodRange = { start: previousStatisticsPeriod.start, end: previousPeriodEnd };
-  const previousPeriodReference = new Date(Math.max(previousStatisticsPeriod.start.getTime(), previousPeriodEnd.getTime() - 1));
+  const previousDay = previousReportDay(statisticsPeriod, now);
+  const previousPeriodReference = new Date(previousDay + "T12:00:00Z");
+  const periodReference = now;
   const futureInterventions = data.interventions
     .filter((item) => item.startAt && new Date(item.startAt) >= now && ["scheduled", "confirmed", "in_progress"].includes(item.status))
     .sort((a, b) => (a.startAt ?? "").localeCompare(b.startAt ?? ""));
   const upcoming = futureInterventions.slice(0, 4);
-  const periodPayments = data.payments.filter((item) => isDateInRange(item.paidAt, periodRange));
-  const revenueInterventions = data.interventions.filter((intervention) => intervention.status !== "cancelled");
-  const completed = data.interventions.filter((item) => item.status === "completed" && isDateInRange(item.startAt, periodRange));
-  const previousPayments = data.payments.filter((item) => isDateInRange(item.paidAt, previousPeriodRange));
-  const previousCompleted = data.interventions.filter((item) => item.status === "completed" && isDateInRange(item.startAt, previousPeriodRange));
-  const averageHourly = averageHourlyMargin(completed);
-  const collected = companyCollectedRevenue(revenueInterventions, periodPayments);
-  const previousCollected = companyCollectedRevenue(revenueInterventions, previousPayments);
+  const { periodPayments, completed, collected, margin, hourly: averageHourly, basket: averageBasket } = periodPerformance(data.interventions, data.payments, token, now);
+  const { periodPayments: previousPayments, completed: previousCompleted, collected: previousCollected, margin: previousMargin, basket: previousAverageBasket } =
+    periodPerformance(data.interventions, data.payments, previousStatisticsPeriod.month ?? String(previousStatisticsPeriod.year), now, previousDay);
   const objective = data.objectives.filter((item) => statisticsPeriod.monthKeys.includes(item.month)).reduce((sum, item) => sum + item.revenueTarget, 0);
-  const fillWindowEnd = new Date(now);
-  fillWindowEnd.setDate(fillWindowEnd.getDate() + 5);
-  const plannedMinutes = futureInterventions
-    .filter((item) => new Date(item.startAt!) < fillWindowEnd)
-    .reduce((sum, item) => sum + item.workers.reduce((workerSum, worker) => workerSum + worker.plannedMinutes, 0), 0);
+  const plannedByMember = weeklyWorkload(data.interventions, now);
+  const plannedMinutes = data.team.filter(member => member.active).reduce((sum, member) => sum + (plannedByMember.get(member.id) ?? 0), 0);
   const availableMinutes = data.team
     .filter((member) => member.active)
     .reduce((sum, member) => sum + member.weeklyCapacityMinutes, 0);
-  const fillRate = occupancyRate(plannedMinutes, availableMinutes);
-  const margin = completed.reduce((sum, item) => sum + grossMargin(item), 0);
-  const previousMargin = previousCompleted.reduce((sum, item) => sum + grossMargin(item), 0);
-  const completedRevenue = completed.reduce((sum, item) => sum + item.items.reduce((itemSum, line) => itemSum + line.revenueAllocated, 0), 0);
-  const previousCompletedRevenue = previousCompleted.reduce((sum, item) => sum + item.items.reduce((itemSum, line) => itemSum + line.revenueAllocated, 0), 0);
-  const averageBasket = completed.length ? Math.round(completedRevenue / completed.length) : 0;
-  const previousAverageBasket = previousCompleted.length ? Math.round(previousCompletedRevenue / previousCompleted.length) : 0;
+  const fillRate = availableMinutes > 0 ? plannedMinutes / availableMinutes : null;
   const interventionWorkflows = data.interventions.map((intervention) => {
     const invoice = data.invoices.find((item) => item.id === intervention.invoiceId);
     return { intervention, workflow: getInterventionWorkflow(intervention, invoice, data.payments) };
@@ -135,7 +122,7 @@ export default function DashboardPage() {
     ...upcoming.filter((item) => item.status === "scheduled").map((item) => { const client = data.clients.find((entry) => entry.id === item.clientId); return { icon: Sparkles, title: `Confirmer ${client?.company || `${client?.firstName ?? ""} ${client?.lastName ?? ""}`.trim() || item.title}`, detail: `${formatDate(item.startAt, { weekday: "long", hour: "2-digit", minute: "2-digit" })} · ${item.workers.length} collaborateur(s)`, color: "text-violet-300", href: `/prestations?intervention=${item.id}` }; }),
   ].slice(0, 4);
   const activeInterventionIds = new Set(data.interventions.map((intervention) => intervention.id));
-  const receivedReviews = data.reviews.filter((review) => activeInterventionIds.has(review.interventionId) && isDateInRange(review.receivedAt, periodRange)).length;
+  const receivedReviews = data.reviews.filter((review) => activeInterventionIds.has(review.interventionId) && inReportingPeriod(review.receivedAt, token, now)).length;
   const reviewTarget = data.settings.monthlyReviewTarget * (statisticsPeriod.kind === "year" ? statisticsPeriod.monthKeys.length : 1);
   const dashboardYear = statisticsPeriod.year;
   const dashboardCharts = useMemo(() => buildDashboardChartData({
@@ -157,11 +144,11 @@ export default function DashboardPage() {
     const renewal = maintenanceRenewalStatus(contract, now);
     return renewal.state === "due" || renewal.state === "expired";
   });
-  const objectiveKpi = { label: statisticsPeriod.kind === "year" ? "Objectif annuel" : "Objectif du mois", value: objective > 0 ? `${Math.round(collected / objective * 100)} %` : "À définir", detail: objective > 0 ? `${formatMoney(Math.max(objective - collected, 0))} restant sur ${formatMoney(objective)}` : "Renseignez vos objectifs dans Paramètres", comparison: evolutionLabel(collected, previousCollected, previousLabel), icon: Target, tone: "blue", href: "/parametres#objectifs-chiffre-affaires" };
+  const objectiveKpi = { label: statisticsPeriod.kind === "year" ? "Objectif annuel" : "Objectif du mois", value: objective > 0 ? `${Math.round(collected / objective * 100)} %` : "À définir", detail: objective > 0 ? `${formatMoney(Math.max(objective - collected, 0))} restant sur ${formatMoney(objective)}` : "Renseignez vos objectifs dans Paramètres", comparison: evolutionLabel(collected, previousCollected, previousLabel), icon: Target, tone: "blue", href: `/parametres?annee=${statisticsPeriod.year}#objectifs-chiffre-affaires` };
   const operationalKpis = [
-    { label: "Prestations réalisées", value: String(completed.length), detail: statisticsPeriod.label, comparison: evolutionLabel(completed.length, previousCompleted.length, previousLabel), icon: Sparkles, tone: "amber", href: "/prestations" },
-    { label: "Panier moyen", value: formatMoney(averageBasket), detail: `${completed.length} prestation(s) terminée(s)`, comparison: evolutionLabel(averageBasket, previousAverageBasket, previousLabel), icon: Gauge, tone: "violet", href: "/pilotage" },
-    { label: "Marge brute", value: formatMoney(margin), detail: averageHourly === null ? "Durées non renseignées" : `${formatMoney(averageHourly)}/heure-personne`, comparison: evolutionLabel(margin, previousMargin, previousLabel), icon: TrendingUp, tone: margin >= 0 ? "teal" : "rose", href: "/pilotage" },
+    { label: "Prestations réalisées", value: String(completed.length), detail: statisticsPeriod.label, comparison: evolutionLabel(completed.length, previousCompleted.length, previousLabel), icon: Sparkles, tone: "amber", href: `/prestations?realisees=${token}` },
+    { label: "Panier moyen", value: formatMoney(averageBasket), detail: `${completed.length} prestation(s) terminée(s)`, comparison: evolutionLabel(averageBasket, previousAverageBasket, previousLabel), icon: Gauge, tone: "violet", href: pilotageUrl },
+    { label: "Marge brute", value: formatMoney(margin), detail: averageHourly === null ? "Durées non renseignées" : `${formatMoney(averageHourly)}/heure-personne`, comparison: evolutionLabel(margin, previousMargin, previousLabel), icon: TrendingUp, tone: margin >= 0 ? "teal" : "rose", href: pilotageUrl },
   ];
 
   // Accounts without business-management access keep their existing view, without requesting a bank report.
@@ -177,23 +164,14 @@ export default function DashboardPage() {
       { label: "CA encaissé", value: formatMoney(collected), detail: `Prestations et entretiens · ${statisticsPeriod.label}`, comparison: evolutionLabel(collected, previousCollected, previousLabel), icon: Banknote, tone: "emerald", href: financesUrl },
       objectiveKpi,
       { label: "Flux de trésorerie estimé", value: formatMoney(cashFlow), detail: `${formatMoney(cashReceipts)} reçu − ${formatMoney(paidExpenses)} déduit, prélèvements échus inclus`, comparison: evolutionLabel(cashFlow, previousCashFlow, previousLabel), icon: WalletCards, tone: cashFlow >= 0 ? "emerald" : "rose", href: financesUrl },
-      { label: "Charges prévues", value: formatMoney(projectedExpenses), detail: `${formatMoney(projectedExpenses - remainingExpenses)} couverts, prélèvements estimés inclus · ${formatMoney(remainingExpenses)} restant sur ces échéances`, comparison: evolutionLabel(projectedExpenses, previousProjectedExpenses, previousLabel), icon: TrendingDown, tone: "amber", href: financesUrl },
+      { label: "Charges prévues", value: formatMoney(projectedExpenses), detail: `${formatMoney(projectedExpenses - remainingExpenses)} réglés · ${formatMoney(remainingExpenses)} restant sur ces échéances`, comparison: evolutionLabel(projectedExpenses, previousProjectedExpenses, previousLabel), icon: TrendingDown, tone: "amber", href: financesUrl },
     ];
   }
 
   return (
     <div className="space-y-7">
       <PageHeader eyebrow={`${data.settings.locationCity || "Votre activité"} · ${todayLabel}`} title={`Bonjour ${workspace?.firstName || "Melvyn"}, voici l’essentiel.`} actions={
-        <label className="grid gap-1 text-left">
-          <span className="text-[10px] font-bold tracking-[.12em] text-zinc-500 uppercase">Période analysée</span>
-          <select value={periodKey} onChange={(event) => setPeriodKey(event.target.value as CompanyStatsPeriodKey)} className="focus-ring min-h-11 min-w-52 rounded-xl border border-line bg-surface px-3 text-sm font-semibold text-zinc-800 shadow-sm">
-            {periodGroups.map((group) => (
-              <optgroup key={group.year} label={group.year === now.getFullYear() ? `${group.year} · année en cours` : `${group.year} · N−1`}>
-                {group.options.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
-              </optgroup>
-            ))}
-          </select>
-        </label>
+        <ReportPeriodPicker period={statisticsPeriod} />
       } />
 
       {showTreasury ? <BankResultCard period={statisticsPeriod.month ?? String(statisticsPeriod.year)} label={statisticsPeriod.label}
@@ -216,7 +194,7 @@ export default function DashboardPage() {
               <p className="mt-1 text-xs text-zinc-500">Cumul des échéances ponctuelles, mensuelles et annuelles prévues sur la période.</p>
             </div>
           </div>
-          <Link href={financesUrl} className="focus-ring inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-brand-600 transition hover:bg-brand-50 hover:text-brand-700">Voir les échéances <ArrowRight className="size-3.5" /></Link>
+          <Link href={statisticsPeriod.month ? financesUrl : "/finances?registre=charges"} className="focus-ring inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-brand-600 transition hover:bg-brand-50 hover:text-brand-700">{statisticsPeriod.month ? "Voir les échéances" : "Ouvrir le registre"} <ArrowRight className="size-3.5" /></Link>
         </CardHeader>
         <CardContent className="grid gap-2">
           {expenseRanking.length === 0 ? (
@@ -226,7 +204,7 @@ export default function DashboardPage() {
               <p className="mt-1 text-xs text-zinc-500">Les charges enregistrées ou planifiées dans Finances apparaîtront ici.</p>
             </div>
           ) : expenseRanking.map((entry, index) => (
-            <Link href="/finances" key={entry.expense.id} className="focus-ring group grid gap-3 rounded-2xl border border-line bg-surface/90 p-3.5 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-md sm:grid-cols-[40px_minmax(0,1fr)_minmax(150px,.55fr)_120px] sm:items-center">
+            <Link href={expenseRegisterHref(entry.expense.id, entry.lastMonth)} key={entry.expense.id} className="focus-ring group grid gap-3 rounded-2xl border border-line bg-surface/90 p-3.5 transition hover:-translate-y-0.5 hover:border-brand-200 hover:shadow-md sm:grid-cols-[40px_minmax(0,1fr)_minmax(150px,.55fr)_120px] sm:items-center">
               <span className={`grid size-9 place-items-center rounded-xl text-sm font-extrabold ${index < 3 ? "tone-icon" : "bg-zinc-100 text-zinc-600"}`}>#{index + 1}</span>
               <span className="min-w-0">
                 <span className="block truncate text-sm font-bold text-zinc-900">{entry.expense.description || entry.expense.supplier || "Dépense sans libellé"}</span>
@@ -234,7 +212,7 @@ export default function DashboardPage() {
               </span>
               <span className="min-w-0">
                 <Progress value={largestExpense > 0 ? entry.total / largestExpense * 100 : 0} />
-                <span className="mt-1.5 block text-[10px] text-zinc-500">{formatMoney(entry.paid)} déduit, estimations incluses · {formatMoney(entry.remaining)} restant</span>
+                <span className="mt-1.5 block text-[10px] text-zinc-500">{formatMoney(entry.paid)} réglés · {formatMoney(entry.remaining)} restant</span>
               </span>
               <span className="text-left sm:text-right"><span className="block text-base font-extrabold text-zinc-900">{formatMoney(entry.total)}</span><span className="mt-0.5 block text-[10px] font-semibold text-zinc-400">sur la période</span></span>
             </Link>
@@ -281,7 +259,7 @@ export default function DashboardPage() {
             const contract = data.maintenanceContracts.find((c) => c.id === (payment.maintenanceContractId ?? due?.contractId));
             const client = data.clients.find((c) => c.id === (job?.clientId ?? contract?.clientId));
             const title = contract?.title ?? job?.title ?? payment.reference ?? "Encaissement du registre interne";
-            const href = contract && !contract.archivedAt && visibleMaintenanceContracts.some((c) => c.id === contract.id) ? "/entretiens" + (due ? "#echeance-" + encodeURIComponent(due.id) : "") : job ? "/prestations?intervention=" + encodeURIComponent(job.id) : null;
+            const href = contract && !contract.archivedAt && visibleMaintenanceContracts.some((c) => c.id === contract.id) ? "/entretiens" + (due ? "#echeance-" + encodeURIComponent(due.id) : "#contrat-" + encodeURIComponent(contract.id)) : job ? "/prestations?intervention=" + encodeURIComponent(job.id) : null;
             return <li key={payment.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
               <div className="min-w-0"><p className="break-words text-sm font-semibold">{href ? <Link href={href} className="focus-ring rounded underline decoration-dotted underline-offset-4 hover:decoration-solid">{title}</Link> : title}</p>
                 <p className="mt-1 break-words text-xs text-zinc-600">{[client?.company || [client?.firstName,client?.lastName].filter(Boolean).join(" "),formatDate(payment.paidAt),payment.method].filter(Boolean).join(" · ")}</p></div>
@@ -296,8 +274,8 @@ export default function DashboardPage() {
         <Card>
           <CardHeader><div><h2 className="font-bold">Alertes décisionnelles</h2><p className="mt-1 text-xs text-zinc-500">Des signaux, pas des décisions automatiques.</p></div></CardHeader>
           <CardContent className="grid gap-3">
-            <div className="rounded-xl border border-amber-400/15 bg-amber-400/[0.055] p-4"><div className="flex items-center gap-2 text-sm font-semibold text-amber-200"><CalendarClock className="size-4" /> Planning sous-rempli</div><p className="mt-2 text-xs leading-5 text-zinc-500">Le taux de remplissage des 5 prochains jours est de {Math.round(fillRate * 100)} %. Planifiez d’abord les prestations sans créneau avant d’ouvrir de nouvelles disponibilités.</p><Progress value={fillRate * 100} className="mt-3" /></div>
-            <div className="rounded-xl border border-sky-400/15 bg-sky-400/[0.045] p-4"><div className="flex items-center gap-2 text-sm font-semibold text-sky-800"><CheckCircle2 className="size-4" /> Avis à consolider</div><p className="mt-2 text-xs leading-5 text-zinc-500">{receivedReviews} avis reçu(s) sur {statisticsPeriod.label.toLocaleLowerCase("fr-FR")} pour un objectif de {reviewTarget}. Les prestations terminées sans avis peuvent encore être sollicitées.</p></div>
+            <div className="rounded-xl border border-amber-400/15 bg-amber-400/[0.055] p-4"><div className="flex items-center gap-2 text-sm font-semibold text-amber-200"><CalendarClock className="size-4" /> Charge de l’équipe · semaine en cours</div><p className="mt-2 text-xs leading-5 text-zinc-500">{fillRate === null ? "Aucune capacité hebdomadaire renseignée." : `${Math.round(fillRate * 100)} % de la capacité affectée aux prestations de lundi à dimanche, réalisations comprises.`}</p>{fillRate !== null && <Progress value={fillRate * 100} className="mt-3" />}</div>
+            <div className="rounded-xl border border-sky-400/15 bg-sky-400/[0.045] p-4"><div className="flex items-center gap-2 text-sm font-semibold text-sky-800"><CheckCircle2 className="size-4" /> Suivi des avis</div><p className="mt-2 text-xs leading-5 text-zinc-500">{receivedReviews} avis reçu(s) sur {statisticsPeriod.label.toLocaleLowerCase("fr-FR")} pour un objectif de {reviewTarget}. Les prestations terminées sans avis peuvent encore être sollicitées.</p></div>
             <Link href="/entretiens" className={`focus-ring rounded-xl border p-4 transition hover:-translate-y-0.5 ${maintenanceRenewals.length ? "border-amber-300 bg-amber-50 hover:bg-amber-100/70" : "border-emerald-200 bg-emerald-50/70"}`}><div className={`flex items-center gap-2 text-sm font-semibold ${maintenanceRenewals.length ? "text-amber-800" : "text-emerald-800"}`}><BellRing className="size-4" /> Renouvellements d’entretien</div><p className="mt-2 text-xs leading-5 text-zinc-600">{maintenanceRenewals.length ? `${maintenanceRenewals.length} client(s) sont à relancer pour prolonger leur forfait de 6 mois ou 1 an.` : "Aucun forfait d’entretien n’arrive prochainement à échéance."}</p></Link>
           </CardContent>
         </Card>

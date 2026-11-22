@@ -1,6 +1,8 @@
 import Decimal from "decimal.js";
-import { historicalRecurringPayment, manualExpensePayment } from "./expense-ledger";
-import { financialDateKey } from "./periods";
+import { expenseScheduleKey, paymentsByExpenseOccurrence, registeredOutflowsByMonth } from "./expense-ledger";
+import { financialDateKey, isRecordedBy } from "./periods";
+import { interventionBalance } from "./intervention-balance";
+import { maintenanceBillingState } from "./maintenance";
 import { isInternalLedgerHistory } from "./ledger-history";
 import type {
   Expense,
@@ -16,7 +18,7 @@ import type {
 
 const cents = (value: Decimal.Value): Money => new Decimal(value).toDecimalPlaces(0).toNumber();
 
-export type ExpenseSchedule = Pick<Expense, "date" | "endsAt" | "seriesId" | "recurrence" | "amountIncludingTax" | "paid" | "paidAt" | "settlements">;
+export type ExpenseSchedule = Pick<Expense, "date" | "endsAt" | "seriesId" | "recurrence" | "amountIncludingTax" | "paid" | "paidAt" | "settlements" | "paymentMethod" | "legacyRow" | "legacyId">;
 
 export type ExpenseOccurrenceStatus = "paid" | "due" | "upcoming";
 
@@ -26,6 +28,7 @@ export interface ExpenseOccurrence<T extends ExpenseSchedule = ExpenseSchedule> 
   dueDate: string;
   amount: Money;
   status: ExpenseOccurrenceStatus;
+  estimatedDebit: boolean;
 }
 
 export interface ExpenseMonthSummary<T extends ExpenseSchedule = ExpenseSchedule> {
@@ -45,6 +48,7 @@ export interface RankedExpense<T extends ExpenseSchedule & { id: string } = Expe
   paid: Money;
   remaining: Money;
   occurrenceCount: number;
+  lastMonth: string;
 }
 
 export interface ExpenseForecastPoint {
@@ -119,7 +123,7 @@ function latestSeriesVersions<T extends ExpenseSchedule>(expenses: T[]): T[] {
 }
 
 export function nextExpenseOccurrenceDateKey(expense: ExpenseSchedule, reference = new Date()): string | null {
-  const referenceDate = dateKey(reference);
+  const referenceDate = financialDateKey(reference.toISOString());
   const referenceMonth = referenceDate.slice(0, 7);
   const searchMonths = expense.recurrence === "annual" ? 25 : 14;
 
@@ -138,23 +142,22 @@ export function projectedExpensesForMonth<T extends ExpenseSchedule>(expenses: T
 }
 
 export function projectedExpenseAmountForMonth(expenses: ExpenseSchedule[], month: string): Money {
-  return projectedExpensesForMonth(expenses, month).reduce((sum, expense) => sum + (manualExpensePayment(expense)?.amount ?? expense.settlements?.find((s) => s.month === month)?.amount ?? expense.amountIncludingTax), 0);
+  return expenseOccurrencesForMonth(expenses, month).reduce((sum, entry) => sum + entry.amount, 0);
 }
 
-export function expenseOccurrencesForMonth<T extends ExpenseSchedule>(expenses: T[], month: string, reference = new Date()): ExpenseOccurrence<T>[] {
-  const referenceDate = dateKey(reference);
+export function expenseOccurrencesForMonth<T extends ExpenseSchedule>(expenses: T[], month: string, reference: Date | string = new Date(), register = paymentsByExpenseOccurrence(expenses)): ExpenseOccurrence<T>[] {
+  const referenceDate = typeof reference === "string" ? reference : financialDateKey(reference.toISOString());
   return projectedExpensesForMonth(expenses, month)
     .map((expense) => {
       const dueDate = expenseOccurrenceDateKey(expense, month)!;
-      const settlement = expense.settlements?.find((entry) => entry.month === month);
-      const manual = manualExpensePayment(expense);
-      const paymentDate = manual?.day ?? (settlement ? financialDateKey(settlement.paidAt) : dueDate);
-      const isPaid = Boolean(settlement || expense.paid) && Boolean(paymentDate) && paymentDate <= referenceDate;
+      const payment = register.get(expenseScheduleKey(expense))?.get(month);
+      const isPaid = payment && payment.day <= referenceDate;
       return {
         expense,
         month,
         dueDate,
-        amount: manual?.amount ?? settlement?.amount ?? expense.amountIncludingTax,
+        amount: payment?.amount ?? expense.amountIncludingTax,
+        estimatedDebit: !payment && expense.recurrence !== "one_off" && expense.paid && dueDate <= referenceDate,
         status: isPaid ? "paid" as const : dueDate <= referenceDate ? "due" as const : "upcoming" as const,
       };
     })
@@ -178,9 +181,10 @@ export function rankExpensesForMonths<T extends ExpenseSchedule & { id: string }
   reference = new Date(),
 ): RankedExpense<T>[] {
   const ranking = new Map<string, RankedExpense<T>>();
+  const register = paymentsByExpenseOccurrence(expenses);
 
   for (const month of new Set(months)) {
-    for (const occurrence of expenseOccurrencesForMonth(expenses, month, reference)) {
+    for (const occurrence of expenseOccurrencesForMonth(expenses, month, reference, register)) {
       const seriesId = occurrence.expense.seriesId ?? occurrence.expense.id;
       const current = ranking.get(seriesId) ?? {
         expense: occurrence.expense,
@@ -188,8 +192,10 @@ export function rankExpensesForMonths<T extends ExpenseSchedule & { id: string }
         paid: 0,
         remaining: 0,
         occurrenceCount: 0,
+        lastMonth: month,
       };
       if (occurrence.expense.date > current.expense.date) current.expense = occurrence.expense;
+      if (month > current.lastMonth) current.lastMonth = month;
       current.total += occurrence.amount;
       current.occurrenceCount += 1;
       if (occurrence.status === "paid") current.paid += occurrence.amount;
@@ -202,9 +208,11 @@ export function rankExpensesForMonths<T extends ExpenseSchedule & { id: string }
 }
 
 export function expenseForecast(expenses: ExpenseSchedule[], startMonth: string, monthCount = 12): ExpenseForecastPoint[] {
+  const register = paymentsByExpenseOccurrence(expenses);
+  const today = financialDateKey(new Date().toISOString());
   return Array.from({ length: Math.max(0, monthCount) }, (_, index) => {
     const month = nextMonth(startMonth, index);
-    const occurrences = expenseOccurrencesForMonth(expenses, month);
+    const occurrences = expenseOccurrencesForMonth(expenses, month, today, register);
     const totalFor = (r: Expense["recurrence"]) => occurrences.reduce((sum, o) => sum + (o.expense.recurrence === r ? o.amount : 0), 0);
     const monthly = totalFor("monthly"), annual = totalFor("annual"), oneOff = totalFor("one_off");
     return { month, total: monthly + annual + oneOff, monthly, annual, oneOff };
@@ -212,23 +220,10 @@ export function expenseForecast(expenses: ExpenseSchedule[], startMonth: string,
 }
 
 export function paidExpenseAmountForMonth(expenses: ExpenseSchedule[], month: string, reference = new Date()): Money {
-  const referenceDate = dateKey(reference);
-  const inMonth = (day: string) => day.startsWith(month) && day <= referenceDate;
-  const actual = expenses.reduce((sum, expense) => {
-    const manual = manualExpensePayment(expense);
-    if (manual) return sum + (inMonth(manual.day) ? manual.amount : 0);
-    const legacy = historicalRecurringPayment(expense);
-    if (legacy && inMonth(legacy.day)) sum += legacy.amount;
-    // The split difference affects cash flow only, not recorded activity costs.
-    for (const entry of expense.settlements ?? []) if (inMonth(financialDateKey(entry.paidAt))) sum += entry.amount + (entry.cashDelta ?? 0);
-    return sum;
-  }, 0);
-  return actual + projectedExpensesForMonth(expenses, month).reduce((sum, expense) => {
-    if (expense.recurrence === "one_off" || expense.settlements?.some((entry) => entry.month === month) || historicalRecurringPayment(expense)?.month === month) return sum;
-    if (!expense.paid) return sum;
-    const occurrence = expenseOccurrenceDateKey(expense, month);
-    return occurrence && occurrence <= referenceDate ? sum + expense.amountIncludingTax : sum;
-  }, 0);
+  // Estimated cash movement (not the register's confirmed expense total).
+  const referenceDate = financialDateKey(reference.toISOString());
+  const actual = registeredOutflowsByMonth(expenses, referenceDate).get(month);
+  return (actual?.paid ?? 0) + (actual?.cashDelta ?? 0) + expenseOccurrencesForMonth(expenses, month, referenceDate).reduce((sum, e) => sum + (e.estimatedDebit ? e.amount : 0), 0);
 }
 
 export function recurringExpenseMetrics(expenses: ExpenseSchedule[], month: string) {
@@ -259,33 +254,33 @@ export interface ServicePerformance {
 }
 
 export function servicePerformance(serviceId: string, interventions: Intervention[]): ServicePerformance {
-  const completed = interventions.filter((intervention) => intervention.status === "completed");
-  let sales = 0;
-  let revenue = 0;
-  let margin = 0;
+  return performanceByService(interventions).get(serviceId) ?? { sales: 0, revenue: 0, margin: 0, averageMargin: 0 };
+}
 
-  for (const intervention of completed) {
-    const matchingLines = intervention.items.filter((line) => line.serviceId === serviceId);
-    if (matchingLines.length === 0) continue;
-
-    const serviceRevenue = matchingLines.reduce((sum, line) => sum + line.revenueAllocated, 0);
-    const interventionRevenue = intervention.items.reduce((sum, line) => sum + line.revenueAllocated, 0);
-    const directCosts = intervention.productCost + intervention.travelCost + intervention.otherDirectCosts;
-    const allocatedCosts = interventionRevenue > 0
-      ? cents(new Decimal(directCosts).mul(serviceRevenue).div(interventionRevenue))
-      : 0;
-
-    sales += 1;
-    revenue += serviceRevenue;
-    margin += serviceRevenue - allocatedCosts;
+export function performanceByService(jobs: Intervention[]) {
+  const result = new Map<string | undefined, ServicePerformance>();
+  for (const job of jobs) {
+    if (job.status !== "completed") continue;
+    const amounts = new Map<string | undefined, number>();
+    for (const line of job.items) amounts.set(line.serviceId, (amounts.get(line.serviceId) ?? 0) + line.revenueAllocated);
+    if (!amounts.size) amounts.set(undefined, 0);
+    const revenue = [...amounts.values()].reduce((sum, n) => sum + n, 0);
+    const costs = job.productCost + job.travelCost + job.otherDirectCosts;
+    // Largest remainders allocate every cent, including to offers outside the catalogue.
+    const denominator = revenue || amounts.size;
+    const shares = [...amounts].map(([id, amount]) => {
+      const numerator = new Decimal(costs).mul(revenue ? amount : 1);
+      return { id, amount, cost: numerator.divToInt(denominator).toNumber(), remainder: numerator.mod(denominator).toNumber() };
+    }).sort((a, b) => b.remainder - a.remainder || (a.id ?? "").localeCompare(b.id ?? ""));
+    const extra = costs - shares.reduce((sum, part) => sum + part.cost, 0);
+    shares.forEach((part, i) => {
+      const stat = result.get(part.id) ?? { sales: 0, revenue: 0, margin: 0, averageMargin: 0 };
+      stat.sales++; stat.revenue += part.amount; stat.margin += part.amount - part.cost - Number(i < extra);
+      result.set(part.id, stat);
+    });
   }
-
-  return {
-    sales,
-    revenue,
-    margin,
-    averageMargin: sales > 0 ? cents(new Decimal(margin).div(sales)) : 0,
-  };
+  for (const stat of result.values()) stat.averageMargin = cents(new Decimal(stat.margin).div(stat.sales));
+  return result;
 }
 
 export function actualPersonMinutes(intervention: Intervention): number {
@@ -309,9 +304,9 @@ export function averageHourlyMargin(interventions: Intervention[]): Money | null
 }
 
 export function remainingExpenseAmountForMonths(expenses: ExpenseSchedule[], months: string[], reference = new Date()): Money {
+  const register = paymentsByExpenseOccurrence(expenses);
   return [...new Set(months)].reduce((sum, month) => {
-    const summary = expenseMonthSummary(expenses, month, reference);
-    return sum + summary.due + summary.upcoming;
+    return sum + expenseOccurrencesForMonth(expenses, month, reference, register).reduce((subtotal, entry) => subtotal + (entry.status !== "paid" ? entry.amount : 0), 0);
   }, 0);
 }
 
@@ -349,12 +344,13 @@ export function clientRevenueMetrics(
   interventions: Intervention[],
   payments: Payment[],
   maintenanceContracts: Array<Pick<MaintenanceContract, "id" | "clientId">> = [],
-  maintenanceBillingPeriods: Array<Pick<MaintenanceBillingPeriod, "id" | "contractId"> & Partial<Pick<MaintenanceBillingPeriod, "status" | "amount">>> = [],
+  maintenanceBillingPeriods: Array<Pick<MaintenanceBillingPeriod, "id" | "contractId"> & Partial<Pick<MaintenanceBillingPeriod, "status" | "amount" | "dueOn" | "paidAt">>> = [],
+  reference = new Date(),
 ) {
   const clientInvoices = invoices.filter((invoice) => invoice.clientId === clientId);
   const issuedInvoices = clientInvoices.filter((invoice) => invoice.status === "issued");
   const clientInterventions = interventions.filter((intervention) => intervention.clientId === clientId);
-  const completedInterventions = clientInterventions.filter((intervention) => intervention.status === "completed");
+  const completedInterventions = clientInterventions.filter((intervention) => intervention.status === "completed" && (!intervention.startAt || isRecordedBy(intervention.startAt, reference)));
   const invoiced = issuedInvoices.reduce((sum, invoice) => sum + invoice.totalIncludingTax, 0);
   const completedRevenue = completedInterventions.reduce(
     (sum, intervention) => sum + intervention.items.reduce((itemSum, item) => itemSum + item.revenueAllocated, 0),
@@ -369,6 +365,7 @@ export function clientRevenueMetrics(
     maintenanceBillingPeriods.map((period) => [period.id, period.contractId]),
   );
   const clientPayments = payments.filter((payment) => {
+    if (!isRecordedBy(payment.paidAt, reference)) return false;
     if (!payment.maintenanceContractId && !payment.maintenanceBillingPeriodId) return true;
     const contractId = payment.maintenanceContractId
       ?? (payment.maintenanceBillingPeriodId ? billingPeriodContractIds.get(payment.maintenanceBillingPeriodId) : undefined);
@@ -385,13 +382,15 @@ export function clientRevenueMetrics(
   const outstanding = completedInterventions
     .filter((intervention) => !intervention.maintenanceContractId)
     .reduce((sum, intervention) => {
-      const total = intervention.items.reduce((amount, item) => amount + item.revenueAllocated, 0);
       const invoice = clientInvoices.find((item) => item.id === intervention.invoiceId);
-      const payable = total > 0 ? total : invoice?.totalIncludingTax ?? 0;
-      const paid = paymentsForIntervention(intervention.id, payments) + (invoice ? paymentsForInvoice(invoice.id, payments) : 0);
-      return sum + Math.max(payable - paid, 0);
+      return sum + interventionBalance(intervention, invoice, clientPayments, reference).outstanding;
     }, 0) + maintenanceBillingPeriods
-      .filter((period) => clientContractIds.has(period.contractId) && period.status === "due")
+      .filter((period) => {
+        if (!clientContractIds.has(period.contractId) || !period.status) return false;
+        if (!period.dueOn) return period.status === "due";
+        const state = maintenanceBillingState({ status: period.status, dueOn: period.dueOn, paidAt: period.paidAt }, reference);
+        return state === "due" || state === "overdue";
+      })
       .reduce((sum, period) => sum + (period.amount ?? 0), 0);
 
   return {
@@ -411,10 +410,10 @@ export function paymentStatusForInvoice(
   payments: Payment[],
   now = new Date(),
 ): Invoice["paymentStatus"] {
-  const paid = paymentsForInvoice(invoice.id, payments);
+  const paid = paymentsForInvoice(invoice.id, payments.filter(p => isRecordedBy(p.paidAt, now)));
   if (paid >= invoice.totalIncludingTax) return "paid";
   if (paid > 0) return "partial";
-  if (invoice.dueAt && new Date(invoice.dueAt).getTime() < now.getTime()) return "overdue";
+  if (invoice.dueAt && financialDateKey(invoice.dueAt) < financialDateKey(now.toISOString())) return "overdue";
   return "unpaid";
 }
 
@@ -489,17 +488,15 @@ export function unpaidAmount(invoices: Invoice[], payments: Payment[]): Money {
 }
 
 export function cashBalance(initialCash: Money, payments: Payment[], expenses: Expense[], reference = new Date()): Money {
-  let paidExpenses = 0;
-  const firstMonth = expenses.reduce<string | null>((earliest, expense) => {
-    const month = [expense.date, expense.paidAt ?? expense.date, ...(expense.settlements ?? []).map((entry) => entry.paidAt)].sort()[0]!.slice(0, 7);
-    return earliest === null || month < earliest ? month : earliest;
-  }, null);
-  const lastMonth = dateKey(reference).slice(0, 7);
-  if (firstMonth) {
-    for (let month = firstMonth; month <= lastMonth; month = nextMonth(month, 1)) {
-      paidExpenses += paidExpenseAmountForMonth(expenses, month, reference);
-    }
+  const today = financialDateKey(reference.toISOString());
+  const outflows = registeredOutflowsByMonth(expenses, today);
+  let paidExpenses = [...outflows.values()].reduce((sum, flow) => sum + flow.paid + flow.cashDelta, 0);
+  const recurring = expenses.filter(e => e.recurrence !== "one_off");
+  const register = paymentsByExpenseOccurrence(recurring);
+  const firstMonth = recurring.filter(e => e.paid).map(e => e.date.slice(0, 7)).filter(m => /^\d{4}-(0[1-9]|1[0-2])$/.test(m)).sort()[0];
+  for (let month = firstMonth; month && month <= today.slice(0, 7); month = nextMonth(month, 1)) {
+    paidExpenses += expenseOccurrencesForMonth(recurring, month, today, register).reduce((sum, entry) => sum + (entry.estimatedDebit ? entry.amount : 0), 0);
   }
-  const received = payments.filter((payment) => new Date(payment.paidAt).getTime() <= reference.getTime());
+  const received = payments.filter((payment) => isRecordedBy(payment.paidAt, reference));
   return initialCash + collectedRevenue(received) - paidExpenses;
 }

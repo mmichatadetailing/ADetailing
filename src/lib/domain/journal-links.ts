@@ -9,7 +9,7 @@ export function expenseRegisterHref(id: string, month: string) {
 type Ledger = {
   expenses: Pick<Expense,"id" | "date">[];
   interventions: Pick<Intervention,"id" | "invoiceId">[];
-  payments: Pick<Payment,"id" | "interventionId" | "invoiceId" | "maintenanceBillingPeriodId">[];
+  payments: Pick<Payment,"id" | "interventionId" | "invoiceId" | "maintenanceBillingPeriodId" | "maintenanceContractId">[];
   maintenanceContracts: Pick<MaintenanceContract,"id" | "archivedAt">[];
   maintenanceBillingPeriods: Pick<MaintenanceBillingPeriod,"id" | "contractId">[];
 };
@@ -34,7 +34,9 @@ export function journalLinks(ledger: Ledger) {
     if (!payment) return;
     if (payment.maintenanceBillingPeriodId && periods.has(payment.maintenanceBillingPeriodId))
       return {href:"/entretiens#echeance-" + encodeURIComponent(payment.maintenanceBillingPeriodId), label:"Voir l’échéance du contrat"};
-    const job = payment.interventionId ?? (payment.invoiceId && byInvoice.get(payment.invoiceId));
+    if (payment.maintenanceContractId && contracts.has(payment.maintenanceContractId))
+      return {href:"/entretiens#contrat-" + encodeURIComponent(payment.maintenanceContractId), label:"Voir le contrat d’entretien"};
+    const job = payment.interventionId && jobs.has(payment.interventionId) ? payment.interventionId : payment.invoiceId && byInvoice.get(payment.invoiceId);
     if (job && jobs.has(job)) return {href:"/prestations?intervention=" + encodeURIComponent(job), label:"Voir la prestation"};
   };
 }

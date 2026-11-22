@@ -89,7 +89,7 @@ function ContractForm({ contract, onCancel, onSave, onDirtyChange, onBusyChange 
   const members = data.team.filter((member) => member.active);
   const financialTermsLocked = Boolean(contract && (
     data.maintenanceBillingPeriods.some((period) => period.contractId === contract.id && period.status === "paid")
-    || data.interventions.some((intervention) => intervention.maintenanceContractId === contract.id && (intervention.status === "completed" || Boolean(intervention.startAt && intervention.startAt.slice(0, 10) < localDateKey())))
+    || data.interventions.some((intervention) => intervention.maintenanceContractId === contract.id && (intervention.status === "completed" || Boolean(intervention.startAt && financialDateKey(intervention.startAt) < financialDateKey(new Date().toISOString()))))
   ));
   const defaultClient = clients.find((client) => client.id === contract?.clientId) ?? clients[0];
   const defaultService = services.find((service) => service.id === contract?.serviceId) ?? services[0];
@@ -234,7 +234,7 @@ export default function EntretiensPage() {
   const [editingContract, setEditingContract] = useState<MaintenanceContract | "new" | null>(null);
   const [deletingContract, setDeletingContract] = useState<MaintenanceContract | null>(null);
   const [paymentPeriod, setPaymentPeriod] = useState<MaintenanceBillingPeriod | null>(null);
-  const [paymentDate, setPaymentDate] = useState(localDateKey());
+  const [paymentDate, setPaymentDate] = useState(() => financialDateKey(new Date().toISOString()));
   const [paymentMethod, setPaymentMethod] = useState("Virement");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [contractDirty, setContractDirty] = useState(false);
@@ -252,7 +252,7 @@ export default function EntretiensPage() {
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [editingContract, contractDirty, contractBusy]);
-  const today = localDateKey();
+  const today = financialDateKey(new Date().toISOString());
   const currentMonth = today.slice(0, 7);
   const currentContracts = data.maintenanceContracts.filter((contract) => !contract.archivedAt);
   const visibleContracts = canManage || !workspace
@@ -260,15 +260,16 @@ export default function EntretiensPage() {
     : currentContracts.filter((contract) => contract.assignedMemberIds.includes(workspace.userId));
   const visibleContractIds = new Set(visibleContracts.map((contract) => contract.id));
   const visibleBillingPeriods = data.maintenanceBillingPeriods.filter((period) => visibleContractIds.has(period.contractId));
+  const linkedContract = useFinanceAnchor("contrat-", visibleContracts);
   const linkedPeriod = useFinanceAnchor("echeance-", visibleBillingPeriods);
   const activeContracts = visibleContracts.filter((contract) => isMaintenanceContractActive(contract));
   const mrr = activeContracts.reduce((sum, contract) => sum + maintenanceMonthlyRevenue(contract), 0);
   const annualValue = activeContracts.reduce((sum, contract) => sum + maintenanceAnnualValue(contract), 0);
-  const monthlyVisits = data.interventions.filter((intervention) => intervention.maintenanceContractId && visibleContractIds.has(intervention.maintenanceContractId) && intervention.startAt?.slice(0, 7) === currentMonth && intervention.status !== "cancelled");
+  const monthlyVisits = data.interventions.filter((intervention) => intervention.maintenanceContractId && visibleContractIds.has(intervention.maintenanceContractId) && financialDateKey(intervention.startAt ?? "").slice(0, 7) === currentMonth && intervention.status !== "cancelled");
   const completedVisits = monthlyVisits.filter((intervention) => intervention.status === "completed").length;
   const collection = maintenanceCollectionSummary(visibleBillingPeriods);
   const upcomingVisits = data.interventions
-    .filter((intervention) => intervention.maintenanceContractId && visibleContractIds.has(intervention.maintenanceContractId) && intervention.startAt && intervention.startAt.slice(0, 10) >= today && !["cancelled", "completed"].includes(intervention.status))
+    .filter((intervention) => intervention.maintenanceContractId && visibleContractIds.has(intervention.maintenanceContractId) && intervention.startAt && financialDateKey(intervention.startAt) >= today && !["cancelled", "completed"].includes(intervention.status))
     .sort((left, right) => left.startAt!.localeCompare(right.startAt!))
     .slice(0, 12);
   const routes = maintenanceRouteGroups(data.interventions.filter((intervention) => !intervention.maintenanceContractId || visibleContractIds.has(intervention.maintenanceContractId)), visibleContracts, data.clients).slice(0, 8);
@@ -348,7 +349,7 @@ export default function EntretiensPage() {
     finally { setBusyId(null); }
   };
   const openPayment = (period: MaintenanceBillingPeriod) => {
-    setPaymentDate(period.paidAt ? financialDateKey(period.paidAt) : localDateKey());
+    setPaymentDate(period.paidAt ? financialDateKey(period.paidAt) : financialDateKey(new Date().toISOString()));
     setPaymentMethod(period.paymentMethod || "Virement");
     setPaymentPeriod(period);
   };
@@ -383,7 +384,7 @@ export default function EntretiensPage() {
             const contractCollection = maintenanceCollectionSummary(periods);
             const renewal = maintenanceRenewalStatus(contract);
             const renewalAlert = renewal.state === "due" || renewal.state === "expired";
-            return <div key={contract.id} id={`contrat-${contract.id}`} className="scroll-mt-28 target:ring-2 target:ring-orange-300 grid gap-4 rounded-2xl border border-line bg-zinc-50/70 p-4 transition hover:border-violet-200 hover:bg-violet-50/30 lg:grid-cols-[minmax(220px,1.25fr)_180px_180px_180px_auto] lg:items-center">
+            return <div key={contract.id} id={`contrat-${contract.id}`} tabIndex={-1} data-linked={linkedContract === contract.id} className="finance-target scroll-mt-28 target:ring-2 target:ring-orange-300 grid gap-4 rounded-2xl border border-line bg-zinc-50/70 p-4 transition hover:border-violet-200 hover:bg-violet-50/30 lg:grid-cols-[minmax(220px,1.25fr)_180px_180px_180px_auto] lg:items-center">
               <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-bold text-zinc-900">{contract.title}</p><Badge variant={renewal.state === "expired" ? "red" : renewal.state === "due" ? "yellow" : contract.status === "active" ? "green" : contract.status === "paused" ? "yellow" : "neutral"}>{renewal.state === "expired" ? "À renouveler" : renewal.state === "due" ? "Relance à faire" : statusLabels[contract.status]}</Badge></div><p className="mt-1 truncate text-xs text-zinc-500">{clientName(client)} · {contract.vehicleCount} véhicule(s)</p><p className="mt-2 flex items-center gap-1 text-[11px] text-zinc-600"><MapPinned className="size-3" /> {client?.city || contract.address || "Adresse à compléter"}</p></div>
               <div><p className="text-[10px] font-bold text-zinc-500 uppercase">Paiement</p><p className="mt-1 text-sm font-bold text-zinc-900">{formatMoney(contract.billingAmount)}</p><p className="mt-1 text-[10px] text-zinc-500">{billingLabel(contract)}</p>{contract.billingFrequency === "prepaid" && contract.endsOn && <p className={`mt-1 text-[10px] ${renewalAlert ? "font-bold text-amber-700" : "text-zinc-500"}`}>Couvert jusqu’au {formatDate(contract.endsOn)}</p>}</div>
               <div><p className="text-[10px] font-bold text-zinc-500 uppercase">Prochaine visite</p><p className="mt-1 text-sm font-bold text-zinc-900">{nextVisit?.startAt ? formatDate(nextVisit.startAt, { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "À prolonger"}</p><p className="mt-1 text-[10px] text-zinc-500">{member ? `${member.firstName} ${member.lastName}` : "Équipe à vérifier"}</p></div>
@@ -457,7 +458,7 @@ export default function EntretiensPage() {
       </Modal>
 
       <Modal open={Boolean(paymentPeriod)} onClose={() => { if (!busyId) setPaymentPeriod(null); }} title={paymentPeriod?.status === "paid" ? "Modifier l’encaissement" : "Enregistrer l’encaissement"} description={paymentPeriod ? `${formatMoney(paymentPeriod.amount)} · échéance du ${formatDate(paymentPeriod.dueOn)}` : undefined}>
-        <div className="grid gap-4"><div className="grid gap-4 sm:grid-cols-2"><Field label="Date du paiement"><Input type="date" max={localDateKey()} value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} /></Field><Field label="Moyen de paiement"><Select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option>Virement</option><option>Carte bancaire</option><option>Prélèvement</option><option>Espèces</option><option>Chèque</option><option>Autre</option></Select></Field></div><div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs leading-5 text-emerald-900"><CheckCircle2 className="mr-2 inline size-4" />Ne ressaisissez pas un règlement déjà importé par Qonto. Ce paiement sera compté à la date choisie, sans facture obligatoire.</div><div className="flex justify-end gap-2"><Button variant="ghost" disabled={busyId !== null} onClick={() => setPaymentPeriod(null)}>Annuler</Button><Button disabled={!paymentPeriod || busyId === paymentPeriod.id} onClick={() => paymentPeriod && void setPaid(paymentPeriod, true)}><Banknote className="size-4" /> Valider l’encaissement</Button></div></div>
+        <div className="grid gap-4"><div className="grid gap-4 sm:grid-cols-2"><Field label="Date du paiement"><Input type="date" max={financialDateKey(new Date().toISOString())} value={paymentDate} onChange={(event) => setPaymentDate(event.target.value)} /></Field><Field label="Moyen de paiement"><Select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option>Virement</option><option>Carte bancaire</option><option>Prélèvement</option><option>Espèces</option><option>Chèque</option><option>Autre</option></Select></Field></div><div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-xs leading-5 text-emerald-900"><CheckCircle2 className="mr-2 inline size-4" />Ne ressaisissez pas un règlement déjà importé par Qonto. Ce paiement sera compté à la date choisie, sans facture obligatoire.</div><div className="flex justify-end gap-2"><Button variant="ghost" disabled={busyId !== null} onClick={() => setPaymentPeriod(null)}>Annuler</Button><Button disabled={!paymentPeriod || busyId === paymentPeriod.id} onClick={() => paymentPeriod && void setPaid(paymentPeriod, true)}><Banknote className="size-4" /> Valider l’encaissement</Button></div></div>
       </Modal>
     </div>
   );

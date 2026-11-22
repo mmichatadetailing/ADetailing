@@ -87,7 +87,7 @@ function Navigation({ close }: { close?: () => void }) {
         <div key={group.label}>
           <p className="mb-2 px-3 text-[9px] font-semibold tracking-[.17em] text-zinc-600 uppercase">{group.label}</p>
           <div className="grid gap-1">
-            {group.items.filter((item) => item.href !== "/factures" || canViewInvoices).map((item) => {
+            {group.items.filter((item) => (item.href !== "/factures" && item.href !== "/banque") || canViewInvoices).map((item) => {
               const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
               return (
                 <Link key={item.href} href={item.href} onClick={close} aria-current={active ? "page" : undefined} data-tone={sectionTone(item.href)} className="app-nav-link focus-ring row-interactive group flex min-h-10 items-center gap-3 rounded-full px-3 text-[12px] font-medium text-zinc-500">

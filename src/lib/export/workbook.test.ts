@@ -66,6 +66,27 @@ describe("export Excel de l’entreprise", () => {
     expect(row?.getCell(9).value).toBe(480);
   });
 
+  it("retrouve dans le classeur le règlement en espèces d’octobre payé en novembre, sans transformer novembre en charge réglée", () => {
+    const data = structuredClone(demoSeed);
+    const base = { ...data.expenses[0]!, settlements: [], paidAt: undefined, date: "2026-11-01", amountIncludingTax: 6000 };
+    data.expenses = [
+      { ...base, id: "cash", date: "2026-10-31", description: "Matériel", family: "investment", recurrence: "one_off", paid: true, paidAt: "2026-11-02", paymentMethod: "Espèces" },
+      { ...base, id: "estimate", description: "Mensualité", family: "fixed", recurrence: "monthly", paid: true, amountIncludingTax: 8200 },
+    ];
+    const book = buildExportWorkbook(data, { exportedAt: reference });
+    const details = book.getWorksheet("Règlements charges")!;
+    expect(details.rowCount).toBe(5);
+    expect(details.getCell("C5").value).toBe(60);
+    expect(details.getCell("D5").value).toEqual(new Date("2026-11-02T00:00:00Z"));
+    expect(details.getCell("E5").value).toBe("Espèces");
+    const monthly = book.getWorksheet("Bilan mensuel")!;
+    const rows = Array.from({ length: monthly.rowCount - 4 }, (_, index) => monthly.getRow(index + 5));
+    const november = rows.find(row => (row.getCell(1).value as Date).toISOString().startsWith("2026-11"))!;
+    expect(november.getCell(8).value).toBe(0); // Hors charges d’activité : investissement.
+    expect(november.getCell(10).value).toBe(60);
+    expect(november.getCell(11).value).toBe(82);
+  });
+
   it("préserve les téléphones et les saisies ressemblant à des formules comme du texte", async () => {
     const data = structuredClone(demoSeed);
     data.clients[0]!.company = '=HYPERLINK("https://invalid.example")';

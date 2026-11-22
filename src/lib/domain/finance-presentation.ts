@@ -35,8 +35,8 @@ export function expenseAccess(expense: Pick<Expense, "endsAt" | "recurrence" | "
   return { edit: !expense.endsAt && !(linked && expense.recurrence === "one_off"), remove: !expense.endsAt && !linked };
 }
 
-export function isEstimatedDebit({ expense, month, status }: ExpenseOccurrence<Expense>) {
-  return status === "paid" && expense.recurrence !== "one_off" && !expense.settlements?.some((s) => s.month === month) && historicalRecurringPayment(expense)?.month !== month;
+export function isEstimatedDebit(occurrence: ExpenseOccurrence<Expense>) {
+  return occurrence.estimatedDebit;
 }
 
 export function registerState(expense: Expense, month: string, today = financialDateKey(new Date().toISOString())): FinanceState {
@@ -54,7 +54,8 @@ export function registerState(expense: Expense, month: string, today = financial
 
 const cashState = (hasLink: boolean): FinanceState => hasLink ? {label:"Espèces · lien bancaire à vérifier",tone:"amber"} : {label:"Réglée · espèces",tone:"emerald"};
 
-export function occurrenceState({ expense, month, status }: ExpenseOccurrence<Expense>): FinanceState {
+export function occurrenceState({ expense, month, status, estimatedDebit }: ExpenseOccurrence<Expense>): FinanceState {
+  if (estimatedDebit) return { label:"Prélèvement estimé",tone:"amber" };
   if (status === "upcoming") return { label: "À venir", tone: "blue" };
   if (status === "due") return { label: "Échue · non réglée", tone: "amber" };
   const settlement = expense.settlements?.find((s) => s.month === month);
@@ -62,7 +63,7 @@ export function occurrenceState({ expense, month, status }: ExpenseOccurrence<Ex
   if (settlement) return { label: settlement.splitLeg ? "Réglée · virement groupé" : "Réglée · Qonto", tone: "emerald" };
   if (historicalRecurringPayment(expense)?.month === month) return isCashExpenseMethod(expense.paymentMethod) ? cashState(false) : {label:"Règlement historique enregistré",tone:"emerald"};
   if (expense.recurrence === "one_off") return { label: "Règlement enregistré", tone: "emerald" };
-  return { label: "Prélèvement estimé", tone: "amber" };
+  return { label: "Règlement enregistré", tone: "emerald" };
 }
 
 export function journalState(tx: BankTransaction, postingFrom?: string): FinanceState {

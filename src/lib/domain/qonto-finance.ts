@@ -1,6 +1,7 @@
 import { normalizeText } from "@/lib/utils";
 import { bankDate, type BankTransaction } from "./banking";
 import { recordedExpenses } from "./expense-ledger";
+import { inReportingPeriod } from "./periods";
 import { isInternalLedgerHistory } from "./ledger-history";
 import type { Payment } from "./types";
 
@@ -68,10 +69,8 @@ export function bankCashSummary(transactions: BankTransaction[], period: string,
 
 export function recordedActivity(payments: Pick<Payment,"paidAt"|"amount">[], expenses: Parameters<typeof recordedExpenses>[0],
   period: string, customerRefunds = 0, now = new Date()) {
-  const today = bankDate(now.toISOString());
-  const inPeriod = (day: string) => day.startsWith(period) && day <= today;
   let received = 0 - customerRefunds;
-  for (const p of payments) if (Date.parse(p.paidAt) <= now.getTime() && inPeriod(bankDate(p.paidAt))) received += p.amount;
+  for (const p of payments) if (inReportingPeriod(p.paidAt, period, now)) received += p.amount;
   const charges = recordedExpenses(expenses, period, now);
   return { received, spent: charges.total, result: received - charges.total, charges };
 }

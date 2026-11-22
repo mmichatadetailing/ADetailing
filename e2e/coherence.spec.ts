@@ -73,3 +73,48 @@ test("la messagerie conserve un brouillon distinct par conversation sans requêt
   await expect(draft).toHaveValue("Brouillon pour toute l’équipe");
   expect(requests).toEqual([]);
 });
+
+test("le dashboard conserve sa période jusqu’au pilotage, au dossier et aux objectifs", async ({ page }) => {
+  await page.clock.setFixedTime(new Date("2026-11-21T12:00:00Z"));
+  await page.addInitScript(() => {
+    const key = "adetailing-pilotage-demo-v1";
+    if (localStorage.getItem(key)) return;
+    const visits = [
+      ["old", "Entretien octobre", "2025-10-08T12:00:00Z"],
+      ["other", "Prestation du mois suivant", "2025-11-03T12:00:00Z"],
+    ].map(([id, title, startAt]) => ({ id, title, startAt, clientId: "c", status: "completed", workers: [], plannedDurationMinutes: 60, checklistDone: 0, checklistTotal: 0, depositAmount: 0,
+      address: "", items: [{id: "line", label: "Lavage", quantity: 1, revenueAllocated: 12500}], productCost: 500, travelCost: 0, otherDirectCosts: 0 }));
+    localStorage.setItem(key, JSON.stringify({ version: 1, state: { interventions: visits, clients: [{ id: "c", firstName: "Client", lastName: "Test", city: "", phone: "", email: "" }],
+      payments: [], objectives: [], expenses: [], maintenanceContracts: [], maintenanceBillingPeriods: [] } }));
+  });
+  await page.goto("/dashboard");
+  const period = page.getByRole("combobox", { name: "Période analysée" });
+  await period.selectOption("month:2025-10");
+  await expect(page).toHaveURL(/\/dashboard\?periode=2025-10$/);
+  await page.reload();
+  await expect(period).toHaveValue("month:2025-10");
+  const basket = page.getByRole("link", { name: /^Panier moyen/ });
+  await expect(basket).toContainText(/125\s*€/);
+  await basket.click();
+  await expect(page).toHaveURL(/\/pilotage\?periode=2025-10$/);
+  await expect(period).toHaveValue("month:2025-10");
+  await expect(page.getByText("Panier moyen", { exact: true }).locator("..")).toContainText(/125\s*€/);
+  await expect(page.getByText("Marge brute", { exact: true }).first().locator("..")).toContainText(/120\s*€/);
+  await page.goBack();
+  await expect(period).toHaveValue("month:2025-10");
+  await page.getByRole("link", { name: /^Prestations réalisées/ }).click();
+  await expect(page.getByRole("heading", { name: /Prestations réalisées · Octobre 2025/ })).toBeVisible();
+  await expect(page.getByText("Prestation du mois suivant", { exact: true })).toHaveCount(0);
+  const edit = page.getByRole("button", { name: "Modifier Entretien octobre" });
+  await edit.click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(edit).toBeVisible();
+  await page.goBack();
+  await expect(period).toHaveValue("month:2025-10");
+  await period.selectOption("year:2025");
+  await page.getByRole("link", { name: /^Objectif annuel/ }).click();
+  await expect(page).toHaveURL(/\/parametres\?annee=2025#objectifs-chiffre-affaires$/);
+  await expect(page.getByRole("combobox", { name: "Année", exact: true })).toHaveValue("2025");
+});
