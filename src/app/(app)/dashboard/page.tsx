@@ -175,7 +175,7 @@ function DashboardContent() {
       } />
 
       {showTreasury ? <BankResultCard period={statisticsPeriod.month ?? String(statisticsPeriod.year)} label={statisticsPeriod.label}
-        dashboard={{ financesHref: financesUrl, objective: <KpiCard kpi={objectiveKpi} />,
+        dashboard={{ activityHref: pilotageUrl, objective: <KpiCard kpi={objectiveKpi} />,
           expenses: <DashboardExpensesCard key={statisticsPeriod.key} expenses={data.expenses} months={statisticsPeriod.monthKeys} label={statisticsPeriod.label} />,
           otherIndicators: <>{operationalKpis.map((kpi) => <KpiCard key={kpi.label} kpi={kpi} />)}<QontoTreasuryCard /></> }} />
       : <section aria-label="Indicateurs de la période" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-12">

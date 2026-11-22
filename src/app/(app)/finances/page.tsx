@@ -11,7 +11,6 @@ import { expensePaymentMethods, manualExpensePayment } from "@/lib/domain/expens
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
-import { BankResultCard } from "@/components/banking/bank-result-card";
 import { useWorkspace } from "@/components/workspace-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -210,7 +209,7 @@ function FinancesContent({ selectedMonth, view, tab }: { selectedMonth: string; 
       <PageHeader
         eyebrow="Trésorerie & charges"
         title="Finances"
-        description="Les charges réglées proviennent du registre, espèces comprises. Comparez leur part bancaire avec Qonto ou consultez les dépenses à venir."
+        description="Consultez les échéances du mois, les charges réglées (espèces comprises) et les dépenses à venir."
         actions={<label className="grid gap-1 text-sm font-semibold"><span>Mois analysé</span>
           <Input className="w-[170px]" type="month" min="2000-01" max="2099-12" value={selectedMonth} onChange={(event) => { if (/^20\d{2}-(0[1-9]|1[0-2])$/.test(event.target.value)) navigate(view, event.target.value); }} /></label>}
       />
@@ -229,7 +228,6 @@ function FinancesContent({ selectedMonth, view, tab }: { selectedMonth: string; 
         <div className="mt-5 flex justify-end gap-2"><Button variant="ghost" onClick={() => setDeletingExpense(null)}>Annuler</Button><Button variant="danger" onClick={deleteExpense}><Trash2 className="size-4" /> Supprimer définitivement</Button></div>
       </Modal>
 
-      {canManage && <BankResultCard period={selectedMonth} label={monthLabel} />}
       <nav aria-label="Vues des finances" className="finance-nav" data-tone="teal">
         {([{id:"month", label:"Échéances du mois", icon:CalendarClock}, {id:"forecast", label:"Prévisions", icon:Banknote}, {id:"register", label:"Charges et matériel", icon:ReceiptText}] as const).map(({id,label,icon:Icon}) =>
           <button key={id} className="focus-ring" type="button" aria-pressed={view === id} onClick={() => navigate(id)}><Icon className="size-4" />{label}</button>)}
