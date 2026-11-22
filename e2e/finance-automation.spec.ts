@@ -14,9 +14,12 @@ test("une mensualité estimée ouvre la bonne charge et ne s’étend pas au moi
   await expect(link).toContainText("Mensualité estimée");
   await expect(link).toContainText("Non réglée");
   await expect(link).toContainText(/29\s*€/);
+  const activity = page.getByRole("heading",{name:/^Résultat d’activité/});
+  await expect(activity).toHaveCount(0);
   await link.click();
   await expect(page).toHaveURL(/registre=charges&mois=2026-12#charge-subscription-atlas$/);
   await expect(page.locator("#charge-subscription-atlas")).toBeFocused();
+  await expect(activity).toHaveCount(0);
   await page.goto("/finances?vue=previsions&mois=2027-01");
   await expect(list).toHaveCount(0);
   await expect(page.getByText("Aucun abonnement détecté avec une échéance ce mois-ci.")).toBeVisible();
@@ -73,6 +76,8 @@ test("le résultat suit la période sans boîte de validation Qonto, sur ordinat
   await expect(cards.nth(1)).toHaveAttribute("href","/parametres?annee=2026#objectifs-chiffre-affaires");
   await expect(cards.nth(2)).toHaveAccessibleName(/^Résultat enregistré/);
   await expect(cards.nth(2)).toContainText(/325,03\s*€/);
+  await expect(cards.nth(0)).toHaveAttribute("href","/pilotage?periode=2026-11");
+  await expect(cards.nth(2)).toHaveAttribute("href","/pilotage?periode=2026-11");
   await expect(expensesCard).toContainText(/Réglées\s*1\s?451,47\s*€/);
   await expect(expensesCard).toContainText(/dont 100\s*€ en espèces/);
   await expect(expensesCard).toContainText(/Reste à payer\s*208,25\s*€/);
@@ -96,8 +101,8 @@ test("le résultat suit la période sans boîte de validation Qonto, sur ordinat
   await expect(page.locator("#charge-planned")).toBeFocused();
   await page.getByRole("button",{name:"Échéances du mois",exact:true}).click();
   await page.getByLabel("Mois analysé").fill("2026-09");
-  await expect(page.getByRole("heading", {name:/Résultat d’activité · septembre 2026/i})).toBeVisible();
-  await expect(page.getByText("Charges d’activité réglées", {exact:true})).toBeVisible();
+  await expect(page.getByRole("heading", {name:/Échéances de septembre 2026/i})).toBeVisible();
+  await expect(page.getByRole("heading", {name:/^Résultat d’activité/})).toHaveCount(0);
   await expect(page.getByRole("button", {name:/valider l’intégration|rapprocher/i})).toHaveCount(0);
   await page.goto("/banque");
   await expect(page.getByRole("heading", {name:"Journal bancaire"})).toBeVisible();
@@ -123,15 +128,17 @@ test("une dépense en espèces peut être créée, puis datée au mois du règle
   await dialog.getByRole("button",{name:"Enregistrer la dépense"}).click();
   const item = page.getByRole("listitem").filter({hasText:"Nettoyant payé en liquide"});
   await expect(item).toContainText("Réglée · espèces");
-  const charges = page.locator("dl").filter({has:page.getByText("Charges d’activité réglées",{exact:true})});
-  await expect(charges).toContainText(/dont 42,50\s*€ en espèces/);
+  await expect(item).toContainText(/42,50\s*€/);
   await item.getByRole("button",{name:"Modifier",exact:true}).click();
   await dialog.getByLabel("Date du règlement").fill("2026-10-30");
   await dialog.getByRole("button",{name:"Enregistrer les modifications"}).click();
-  await expect(charges.locator("dd")).toHaveText(/^0\s*€/);
-  await page.getByLabel("Mois analysé").fill("2026-10");
-  await expect(charges).toContainText(/dont 42,50\s*€ en espèces/);
+  await expect(dialog).not.toBeVisible();
   await expect(item).toHaveCount(1);
+  await page.goto("/pilotage?periode=2026-11");
+  const charges = page.locator("dl").filter({has:page.getByText("Charges d’activité réglées",{exact:true})});
+  await expect(charges.locator("dd")).toHaveText(/^0\s*€/);
+  await page.getByRole("combobox",{name:"Période analysée"}).selectOption("month:2026-10");
+  await expect(charges).toContainText(/dont 42,50\s*€ en espèces/);
 });
 
 test("juin : les anciens encaissements, même en espèces sans prestation, alimentent le résultat et les objectifs", async ({page}) => {
@@ -165,7 +172,9 @@ test("juin : les anciens encaissements, même en espèces sans prestation, alime
   await period.selectOption("year:2026");
   await expect(cards.getByRole("link",{name:/^Encaissements enregistrés/})).toContainText(/110\s*€/);
   await expect(cards.getByRole("link",{name:/^Objectif annuel/})).toContainText("55 %");
-  await page.goto("/finances?mois=2026-06");
+  await period.selectOption("month:2026-06");
+  await cards.getByRole("link",{name:/^Résultat enregistré/}).click();
+  await expect(page).toHaveURL(/\/pilotage\?periode=2026-06$/);
   await expect(page.locator("dl").filter({has:page.getByText("Charges d’activité réglées",{exact:true})})).toContainText(/dont 30\s*€ en espèces/);
 });
 

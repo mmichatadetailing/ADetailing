@@ -174,7 +174,7 @@ Aucune migration supplémentaire n’est nécessaire pour cette vue.
 
 ### Journal et résultat d’activité
 
-Dans **Finances**, **Dashboard**, **Pilotage** et le bilan mensuel exporté, les charges d’activité réglées viennent du **registre interne**, au mois de leur règlement. Un paiement confirmé, importé ou saisi, ne compte qu’une fois. Une prévision, un investissement ou un remboursement fournisseur visible seulement sur Qonto ne modifient pas ces charges. Le traitement des encaissements et des remboursements clients est inchangé.
+Le résultat d’activité se consulte sur le **Dashboard**, dans **Pilotage** et dans le bilan mensuel exporté. Les charges d’activité réglées viennent du **registre interne**, au mois de leur règlement. Un paiement confirmé, importé ou saisi, ne compte qu’une fois. Une prévision, un investissement ou un remboursement fournisseur visible seulement sur Qonto ne modifient pas ces charges. **Finances** reste consacré aux échéances, aux prévisions et au registre.
 
 Sur le **Dashboard → Charges de la période**, **Réglées** inclut toutes les dépenses payées au cours du mois ou de l’année sélectionnée, espèces comprises. **Reste à payer** regroupe les échéances de cette période qui ne sont toujours pas réglées, même si leur date est à venir. Par exemple, une échéance d’octobre payée en novembre ne reste pas à payer en octobre et figure dans les règlements de novembre. **Voir le détail** donne accès à chaque ligne du registre. La carte inclut aussi les investissements et les dépenses personnelles ; le **Résultat enregistré** ne déduit que les charges fixes et variables réglées.
 

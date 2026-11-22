@@ -13,7 +13,7 @@ import { useDemoStore } from "@/lib/demo/store";
 import { formatDate, formatMoney } from "@/lib/utils";
 
 type Report = { summary: ReturnType<typeof bankCashSummary> | null; syncedAt?: string; importSince?: string; incomplete?: boolean; paused?: boolean };
-type DashboardLayout = { financesHref: string; objective: ReactNode; expenses: ReactNode; otherIndicators: ReactNode };
+type DashboardLayout = { activityHref: string; objective: ReactNode; expenses: ReactNode; otherIndicators: ReactNode };
 type ResultProps = { period: string; label: string; dashboard?: DashboardLayout };
 
 export function ExpenseCheck({ charges, bank, partial }: {
@@ -84,8 +84,8 @@ function PeriodResult({ period, label, demo, dashboard }: ResultProps & { demo: 
   const customerRefunds = report?.summary?.customerRefunds ?? 0;
   const activity = useMemo(() => recordedActivity(payments, expenses, period, customerRefunds), [payments, expenses, period, customerRefunds]);
   const resultTone = activity.result > 0 ? "emerald" : activity.result < 0 ? "rose" : "neutral";
-  const received = <ActivityMetric label="Encaissements enregistrés" value={activity.received} detail="Tous moyens de paiement, espèces comprises" tone="teal" icon={ArrowDownLeft} href={dashboard?.financesHref} />;
-  const result = <ActivityMetric label="Résultat enregistré" value={activity.result} detail="Encaissements moins charges fixes et variables réglées" tone={resultTone} icon={Scale} lead href={dashboard?.financesHref} />;
+  const received = <ActivityMetric label="Encaissements enregistrés" value={activity.received} detail="Tous moyens de paiement, espèces comprises" tone="teal" icon={ArrowDownLeft} href={dashboard?.activityHref} />;
+  const result = <ActivityMetric label="Résultat enregistré" value={activity.result} detail="Encaissements moins charges fixes et variables réglées" tone={resultTone} icon={Scale} lead href={dashboard?.activityHref} />;
   const spent = <ActivityMetric label="Charges d’activité réglées" value={activity.spent} detail={activity.charges.cash ? `Registre interne · dont ${formatMoney(activity.charges.cash)} en espèces` : "Registre interne · tous moyens de paiement"} tone="blue" icon={ArrowUpRight} />;
   const content = <>
     <div className="flex flex-wrap items-center justify-between gap-3">
