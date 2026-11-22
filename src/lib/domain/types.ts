@@ -284,6 +284,7 @@ export interface PlanningEvent extends BaseEntity {
 }
 
 export interface Expense extends BaseEntity {
+  qontoRecurrence?: "estimated" | "confirmed" | "expired";
   settlements?: Array<{ id: string; month: string; amount: Money; paidAt: ISODate; bankTransactionId: string; splitLeg?: number; cashDelta?: Money }>;
   date: ISODate;
   endsAt?: ISODate;

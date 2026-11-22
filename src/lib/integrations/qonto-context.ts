@@ -58,7 +58,11 @@ export async function qontoContext(db: SupabaseClient, org: string) {
   }
   // A cash purchase cannot be the bank debit, even for the same supplier,
   // day and amount. Don't offer it to either live or historical matching.
-  const expenses = rows.expenses.filter((expense) => !expense.archived_at && !(expense.recurrence === "one_off" && expense.paid && isCashPaymentMethod(String(expense.payment_method ?? "")))).map((expense) => ({
+  // Learned monthly series are resolved under lock by bank account, payee and
+  // payment channel. A generic name/amount match must not claim them first.
+  // A successor written by a user is once again an explicit register tariff.
+  const expenses = rows.expenses.filter((expense) => !expense.archived_at && !(expense.recurrence === "monthly" && expense.qonto_recurrence_key)
+    && !(expense.recurrence === "one_off" && expense.paid && isCashPaymentMethod(String(expense.payment_method ?? "")))).map((expense) => ({
     id: String(expense.id), date: String(expense.expense_date), endsAt: expense.ends_on ? String(expense.ends_on) : undefined, seriesId: expense.series_id ? String(expense.series_id) : undefined,
     amountIncludingTax: Number(expense.amount_including_tax_cents), recurrence: String(expense.recurrence) as "monthly" | "annual" | "one_off", paid: Boolean(expense.paid),
     paidAt: expense.paid_at ? String(expense.paid_at) : undefined, paymentMethod: expense.payment_method ? String(expense.payment_method) : undefined,

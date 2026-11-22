@@ -30,6 +30,13 @@ export async function automateQonto(db: SupabaseClient, organizationId: string, 
   if (Date.now() >= deadline) return { ...stats, pending: true };
   const { error: repairError } = await db.rpc("repair_qonto_postings", { target_org: organizationId });
   if (repairError) throw new Error("Automatisation Qonto indisponible. Vérifiez la migration financière.");
+  const refreshSubscriptions = async () => {
+    const { error } = await db.rpc("refresh_qonto_subscriptions", { target_org: organizationId });
+    if (error) throw new Error("Détection des mensualités indisponible. Vérifiez la migration Supabase 033 puis relancez la synchronisation.");
+  };
+  // Backfill already posted debits (including a sync interrupted after booking).
+  await refreshSubscriptions();
+  if (Date.now() >= deadline) return { ...stats, pending: true };
   const context = await qontoContext(db, organizationId);
   const drafts = new Map(context.drafts.map((draft) => [draft.transaction.id, draft]));
   const cutoff = Date.parse(from);
@@ -73,5 +80,9 @@ export async function automateQonto(db: SupabaseClient, organizationId: string, 
     else if (data?.kind === "ignored") stats.ignored++;
   }
   if (errors) throw new Error(`Automatisation Qonto : ${errors} opération(s) seront retentées automatiquement. Les écritures validées sont conservées.`);
+  if (stats.expenses > 0) {
+    if (Date.now() < deadline) await refreshSubscriptions();
+    else stats.pending = true;
+  }
   return stats;
 }

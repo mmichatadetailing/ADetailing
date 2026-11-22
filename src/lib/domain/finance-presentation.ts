@@ -8,6 +8,12 @@ import type { Expense, Payment } from "./types";
 export type FinanceTone = "emerald" | "amber" | "blue" | "violet" | "neutral" | "rose" | "teal";
 export type FinanceState = { label: string; tone: FinanceTone };
 
+export const subscriptionLabels = {
+  estimated: "Mensualité estimée",
+  confirmed: "Rythme mensuel confirmé",
+  expired: "Estimation non reconduite",
+} as const;
+
 export const expenseFamilyLabels: Record<Expense["family"], string> = {
   fixed: "Fixe", variable: "Variable", investment: "Investissement", personal: "Personnel",
 };
@@ -47,6 +53,7 @@ export function registerState(expense: Expense, month: string, today = financial
   if (settlement && financialDateKey(settlement.paidAt) <= today) return {label:settlement.splitLeg ? "Réglée · virement groupé" : "Réglée · Qonto", tone:"emerald"};
   const legacy = historicalRecurringPayment(expense);
   if (legacy?.month === month && legacy.day <= today) return isCashExpenseMethod(expense.paymentMethod) ? cashState(false) : {label:"Règlement historique enregistré",tone:"emerald"};
+  if (expense.qontoRecurrence === "estimated" && (!expense.endsAt || month <= expense.endsAt.slice(0,7)) && month >= expense.date.slice(0,7)) return { label: subscriptionLabels.estimated, tone: "amber" };
   if (expense.recurrence !== "one_off") return {label:expense.paid ? "Prélèvement prévu" : "Selon échéance",tone:"blue"};
   if (financialDateKey(expense.paidAt ?? expense.date) > today) return {label:"À venir",tone:"blue"};
   return expense.paid ? {label:"Règlement enregistré",tone:"emerald"} : {label:"Non réglée",tone:"amber"};
@@ -55,6 +62,7 @@ export function registerState(expense: Expense, month: string, today = financial
 const cashState = (hasLink: boolean): FinanceState => hasLink ? {label:"Espèces · lien bancaire à vérifier",tone:"amber"} : {label:"Réglée · espèces",tone:"emerald"};
 
 export function occurrenceState({ expense, month, status, estimatedDebit }: ExpenseOccurrence<Expense>): FinanceState {
+  if (expense.qontoRecurrence === "estimated" && status !== "paid") return { label: "Mensualité estimée · non réglée", tone: "amber" };
   if (estimatedDebit) return { label:"Prélèvement estimé",tone:"amber" };
   if (status === "upcoming") return { label: "À venir", tone: "blue" };
   if (status === "due") return { label: "Échue · non réglée", tone: "amber" };

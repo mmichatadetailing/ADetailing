@@ -4,7 +4,9 @@ import { AlertCircle, Banknote, CalendarClock, CircleDollarSign, Landmark, Packa
 import { Suspense, useState, type FormEvent } from "react";
 import { FinanceState } from "@/components/banking/finance-state";
 import { useFinanceAnchor } from "@/components/banking/use-finance-anchor";
-import { expenseAccess, expenseFamilyLabels as familyLabels, isEstimatedDebit, occurrenceState, registerState } from "@/lib/domain/finance-presentation";
+import { expenseAccess, expenseFamilyLabels as familyLabels, isEstimatedDebit, occurrenceState, registerState, subscriptionLabels } from "@/lib/domain/finance-presentation";
+import Link from "next/link";
+import { expenseRegisterHref } from "@/lib/domain/journal-links";
 import { expensePaymentMethods, manualExpensePayment } from "@/lib/domain/expense-ledger";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
@@ -20,6 +22,7 @@ import {
   cashBalance,
   collectedRevenue,
   expenseForecast,
+  forecastExpensePrice,
   expenseMonthSummary,
   nextExpenseOccurrenceDateKey,
   recurringExpenseMetrics,
@@ -159,6 +162,7 @@ function FinancesContent({ selectedMonth, view, tab }: { selectedMonth: string; 
 
   const monthLabel = formatMonth(selectedMonth);
   const monthSummary = expenseMonthSummary(data.expenses, selectedMonth);
+  const subscriptions = monthSummary.occurrences.filter(({ expense }) => expense.qontoRecurrence && expense.qontoRecurrence !== "expired");
   const selectedExpenses = monthSummary.occurrences.map((occurrence) => occurrence.expense);
   const splitLegs = selectedExpenses.flatMap((expense) => (expense.settlements ?? []).filter((s) => s.month === selectedMonth && s.splitLeg));
   const splitTotal = splitLegs.reduce((sum, s) => sum + s.amount, 0);
@@ -271,6 +275,15 @@ function FinancesContent({ selectedMonth, view, tab }: { selectedMonth: string; 
 
       </>}
       {view === "forecast" && <>
+      <Card><CardContent className="space-y-3 p-5">
+        <h2 className="flex items-center gap-2 font-bold"><Repeat2 aria-hidden="true" className="size-4" /> Abonnements détectés · {monthLabel}</h2>
+        <p className="text-sm text-zinc-600">La mention « mensuel » confirme le rythme dès le premier débit. Sans fréquence précisée, une seule échéance est estimée en attendant un second débit cohérent. Seul un paiement enregistré compte comme réglé.</p>
+        {subscriptions.length ? <ul className="divide-y divide-line" aria-label="Abonnements détectés">{subscriptions.map(({ expense, month, dueDate, amount, status }) => <li key={expense.id}>
+          <Link href={expenseRegisterHref(expense.id, month)} className="focus-ring flex flex-wrap items-center justify-between gap-2 rounded-lg px-2 py-3 hover:bg-brand-50">
+            <span><strong className="block text-sm">{expense.supplier || expense.description}</strong><span className="text-xs text-zinc-500">Échéance du {formatDate(dueDate)} · {status === "paid" ? "Réglée" : "Non réglée"}</span></span>
+            <span className="flex flex-wrap items-center gap-3"><FinanceState label={subscriptionLabels[expense.qontoRecurrence!]} tone={expense.qontoRecurrence === "estimated" ? "amber" : "teal"} /><strong>{formatMoney(amount)}</strong></span>
+          </Link></li>)}</ul> : <p className="text-sm text-zinc-500">Aucun abonnement détecté avec une échéance ce mois-ci.</p>}
+      </CardContent></Card>
       <section aria-label="Repères de prévision" className="grid gap-3 sm:grid-cols-2">
         <dl data-tone="amber" className="finance-metric"><dt><WalletCards className="size-4" />Solde prévisionnel · {monthLabel}</dt><dd>{formatMoney(collected - projectedExpenses)}</dd><p>Encaissements enregistrés moins toutes les charges prévues du mois.</p></dl>
         <dl data-tone="violet" className="finance-metric"><dt><Landmark className="size-4" />Trésorerie estimée aujourd’hui</dt><dd>{formatMoney(cash)}</dd><p>Inclut les prélèvements estimés. Hors solde : {formatMoney(toCollect)} restant à encaisser.</p></dl>
@@ -303,7 +316,7 @@ function FinancesContent({ selectedMonth, view, tab }: { selectedMonth: string; 
         <CardContent>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-xl border border-violet-100 bg-violet-50/70 p-4"><p className="text-[10px] font-bold text-violet-700 uppercase">Équivalent mensuel récurrent</p><p className="mt-2 text-xl font-bold text-zinc-900">{formatMoney(recurring.monthlyEquivalent)}</p><p className="mt-1 text-[10px] text-zinc-500">Mensuel + annuel réparti sur 12 mois</p></div>
-            <div className="rounded-xl border border-orange-100 bg-orange-50/70 p-4"><p className="text-[10px] font-bold text-orange-700 uppercase">Engagement annuel récurrent</p><p className="mt-2 text-xl font-bold text-zinc-900">{formatMoney(recurring.annualCommitment)}</p><p className="mt-1 text-[10px] text-zinc-500">12 mensualités + échéances annuelles</p></div>
+            <div className="rounded-xl border border-orange-100 bg-orange-50/70 p-4"><p className="text-[10px] font-bold text-orange-700 uppercase">Engagement annuel récurrent</p><p className="mt-2 text-xl font-bold text-zinc-900">{formatMoney(recurring.annualCommitment)}</p><p className="mt-1 text-[10px] text-zinc-500">12 mensualités + échéances annuelles, hors simples estimations.</p></div>
             <div className="rounded-xl border border-sky-100 bg-sky-50/70 p-4"><p className="text-[10px] font-bold text-sky-700 uppercase">Ponctuel · {monthLabel}</p><p className="mt-2 text-xl font-bold text-zinc-900">{formatMoney(oneOff)}</p><p className="mt-1 text-[10px] text-zinc-500">Compté uniquement sur le mois choisi</p></div>
             <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-4"><p className="text-[10px] font-bold text-emerald-700 uppercase">TVA récupérable · {monthLabel}</p><p className="mt-2 text-xl font-bold text-zinc-900">{formatMoney(recoverableVat)}</p><p className="mt-1 text-[10px] text-zinc-500">Calculée sur toutes les échéances du mois</p></div>
           </div>
@@ -334,10 +347,10 @@ function FinancesContent({ selectedMonth, view, tab }: { selectedMonth: string; 
               const manual = manualExpensePayment(expense);
               const paidDay = manual?.day ?? settled?.paidAt;
               return <li id={`charge-${expense.id}`} key={expense.id} tabIndex={-1} data-linked={linkedExpense === expense.id} className="finance-target grid min-w-0 gap-3 py-4 lg:grid-cols-[minmax(0,1fr)_minmax(12rem,auto)_auto] lg:items-center">
-                <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="break-words text-sm font-bold">{expense.description}</h3>{expense.endsAt && <FinanceState label="Historique" tone="neutral" />}</div>
+                <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="break-words text-sm font-bold">{expense.description}</h3>{expense.qontoRecurrence && <FinanceState label={subscriptionLabels[expense.qontoRecurrence]} tone={expense.qontoRecurrence === "confirmed" ? "teal" : "amber"} />}{expense.endsAt && !expense.qontoRecurrence && <FinanceState label="Historique" tone="neutral" />}</div>
                   <p className="mt-1 break-words text-sm text-zinc-600">{[expense.supplier, expense.category, familyLabels[expense.family]].filter(Boolean).join(" · ")}</p>
                   <p className="mt-1 text-xs text-zinc-500">{recurrenceLabels[expense.recurrence]} · {formatDate(expense.date)}{expense.endsAt && " – " + formatDate(expense.endsAt)}</p></div>
-                <div><p className="font-bold tabular-nums">{formatMoney(manual?.amount ?? settled?.amount ?? expense.amountIncludingTax)} <span className="text-xs font-normal text-zinc-500">TTC · TVA {formatMoney(expense.vatAmount)}</span></p>
+                <div><p className="font-bold tabular-nums">{formatMoney(manual?.amount ?? settled?.amount ?? forecastExpensePrice(expense, selectedMonth))} <span className="text-xs font-normal text-zinc-500">TTC · TVA {formatMoney(expense.vatAmount)}</span></p>
                   <div className="mt-1 flex flex-wrap items-center gap-2"><FinanceState {...registerState(expense, selectedMonth)} />{paidDay && <span className="text-xs text-zinc-500">{formatDate(paidDay)}</span>}</div></div>
                 {canManage && access.edit && <div className="flex flex-wrap gap-1"><Button size="sm" variant="secondary" onClick={() => setEditingExpense(expense)}><Pencil className="size-3.5" />{expense.recurrence === "one_off" ? "Modifier" : "Modifier le tarif"}</Button>{access.remove && <Button size="sm" variant="ghost" aria-label={`Supprimer ${expense.description}`} onClick={() => setDeletingExpense(expense)}><Trash2 className="size-4 text-red-600" /></Button>}</div>}
               </li>;

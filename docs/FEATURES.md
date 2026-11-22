@@ -44,6 +44,9 @@ consultée. Les dates de rattachement sont celles de Paris.
 - **Charges de la période** : les dépenses réglées sont datées au paiement, toutes
   familles confondues. Le reste à payer correspond aux échéances de la période
   encore ouvertes aujourd’hui. Un prélèvement estimé n’est pas un paiement.
+- **Finances → Prévisions → Abonnements détectés** : distingue une mensualité
+  estimée dès le premier débit d’un rythme mensuel confirmé. Le débit réel solde
+  l’échéance au lieu de créer une deuxième dépense.
 - **Résultat d’activité** : seuls les frais fixes et variables réglés sont déduits
   des encaissements enregistrés, nets des remboursements clients identifiés. Il
   ne s’agit ni de la marge des prestations ni du solde bancaire.

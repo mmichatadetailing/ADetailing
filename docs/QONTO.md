@@ -29,7 +29,7 @@ npx supabase db push
 ```
 
 Le projet doit être celui déjà lié à votre base de production. Vérifiez le projet
-affiché par Supabase avant de valider. Appliquez toutes les migrations jusqu’à `202611210032_qonto_credit_services.sql` incluse. La 031 protège les règlements en espèces ; la 032 ajoute la détection des justificatifs et la déclaration de prestations. Au prochain passage, la synchronisation relit progressivement les pages déjà importées, sans modifier la date de début des créations automatiques. Aucune clé à régénérer.
+affiché par Supabase avant de valider. Appliquez toutes les migrations jusqu’à `202611220033_qonto_monthly_subscriptions.sql` incluse, avant de déployer l’application. La 031 protège les règlements en espèces ; la 032 permet de déclarer les prestations ; la 033 détecte les abonnements fournisseurs. Les synchronisations suivantes utilisent la connexion existante : aucune clé à régénérer.
 
 Ne passez pas cette étape : elle crée les tables bancaires, le suivi des règlements
 des charges et les protections contre les doublons. Les anciennes données ne sont
@@ -118,6 +118,16 @@ Une entreprise interne ne peut pas être reconnectée à une autre entreprise Qo
 en mélangeant leurs historiques.
 
 ## 6. Lire les chiffres
+
+### Prévoir les abonnements fournisseurs
+
+Dans **Finances → Prévisions → Abonnements détectés**, choisissez le mois pour voir le fournisseur, le montant, l’échéance et si elle est réglée. Cliquez sur la ligne pour ouvrir la charge dans le registre.
+
+- **Mensualité estimée** : dès le premier prélèvement ou paiement libellé « abonnement » chez un fournisseur identifiable, le logiciel prévoit **une seule échéance supplémentaire**. Elle reste dans le reste à payer, ne déduit rien du résultat enregistré et n’est pas multipliée par douze dans l’engagement annuel. Si le débit attendu ne se présente pas, la synchronisation retire l’estimation dix jours après l’échéance ; le paiement initial reste compté.
+- **Rythme mensuel confirmé** : une mention explicite « mensuel » suffit. Sinon, un deuxième débit cohérent au même fournisseur, sur le même compte et par le même moyen, confirme le rythme. Pour deux achats ordinaires sans mention d’abonnement, le montant doit aussi être identique. Les paiements aux dates proches de l’échéance (jusqu’à sept jours d’écart) peuvent y être rattachés, y compris autour d’une fin de mois.
+- **Un débit, un règlement** : le paiement réel solde l’échéance existante, sans nouvelle charge. Par exemple, après un premier prélèvement de 29 €, un règlement de 31,90 € le mois suivant laisse le premier mois à 29 € et sert de base aux prévisions suivantes. Un tarif saisi à la main reste prioritaire. Un prélèvement explicitement annuel ou trimestriel ne devient pas une mensualité.
+
+À l’activation, la détection part des débits **déjà comptabilisés automatiquement dans les 45 derniers jours** et peut comparer le mois précédent. Elle ne crée pas de dépenses dans l’ancien historique. Les règlements en espèces et les virements groupés conservent leur traitement. Un montant commun à plusieurs opérations ne suffit pas pour choisir un abonnement.
 
 ### Consulter la trésorerie actuelle sur le dashboard
 

@@ -18,7 +18,7 @@ import type {
 
 const cents = (value: Decimal.Value): Money => new Decimal(value).toDecimalPlaces(0).toNumber();
 
-export type ExpenseSchedule = Pick<Expense, "date" | "endsAt" | "seriesId" | "recurrence" | "amountIncludingTax" | "paid" | "paidAt" | "settlements" | "paymentMethod" | "legacyRow" | "legacyId">;
+export type ExpenseSchedule = Pick<Expense, "date" | "endsAt" | "seriesId" | "recurrence" | "amountIncludingTax" | "paid" | "paidAt" | "settlements" | "paymentMethod" | "legacyRow" | "legacyId" | "qontoRecurrence">;
 
 export type ExpenseOccurrenceStatus = "paid" | "due" | "upcoming";
 
@@ -145,6 +145,17 @@ export function projectedExpenseAmountForMonth(expenses: ExpenseSchedule[], mont
   return expenseOccurrencesForMonth(expenses, month).reduce((sum, entry) => sum + entry.amount, 0);
 }
 
+/** For learned tariffs only. A later debit must not reprice earlier months
+ * or supersede a tariff that someone explicitly entered in the register. */
+export function forecastExpensePrice(expense: ExpenseSchedule, month: string, today = financialDateKey(new Date().toISOString())) {
+  if (!expense.qontoRecurrence) return expense.amountIncludingTax;
+  let latest: NonNullable<Expense["settlements"]>[number] | undefined;
+  for (const paid of expense.settlements ?? []) {
+    if (paid.month < month && financialDateKey(paid.paidAt) <= today && (!latest || paid.month > latest.month)) latest = paid;
+  }
+  return latest?.amount ?? expense.amountIncludingTax;
+}
+
 export function expenseOccurrencesForMonth<T extends ExpenseSchedule>(expenses: T[], month: string, reference: Date | string = new Date(), register = paymentsByExpenseOccurrence(expenses)): ExpenseOccurrence<T>[] {
   const referenceDate = typeof reference === "string" ? reference : financialDateKey(reference.toISOString());
   return projectedExpensesForMonth(expenses, month)
@@ -156,7 +167,7 @@ export function expenseOccurrencesForMonth<T extends ExpenseSchedule>(expenses: 
         expense,
         month,
         dueDate,
-        amount: payment?.amount ?? expense.amountIncludingTax,
+        amount: payment && (isPaid || !expense.qontoRecurrence) ? payment.amount : forecastExpensePrice(expense, month, referenceDate),
         estimatedDebit: !payment && expense.recurrence !== "one_off" && expense.paid && dueDate <= referenceDate,
         status: isPaid ? "paid" as const : dueDate <= referenceDate ? "due" as const : "upcoming" as const,
       };
@@ -229,9 +240,11 @@ export function paidExpenseAmountForMonth(expenses: ExpenseSchedule[], month: st
 export function recurringExpenseMetrics(expenses: ExpenseSchedule[], month: string) {
   const active = latestSeriesVersions(expenses.filter((expense) => {
     if (expense.recurrence === "one_off" || expense.date.slice(0, 7) > month) return false;
+    if (expense.qontoRecurrence === "estimated" || expense.qontoRecurrence === "expired") return false;
     return !expense.endsAt || expense.endsAt.slice(0, 7) >= month;
   }));
-  const monthly = active.filter((expense) => expense.recurrence === "monthly").reduce((sum, expense) => sum + expense.amountIncludingTax, 0);
+  const monthly = active.filter((expense) => expense.recurrence === "monthly").reduce((sum, expense) => sum + (expense.qontoRecurrence
+    ? expense.settlements?.find(s => s.month === month)?.amount ?? forecastExpensePrice(expense, month) : expense.amountIncludingTax), 0);
   const annual = active.filter((expense) => expense.recurrence === "annual").reduce((sum, expense) => sum + expense.amountIncludingTax, 0);
   return { monthly, annual, monthlyEquivalent: monthly + Math.round(annual / 12), annualCommitment: monthly * 12 + annual };
 }

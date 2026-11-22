@@ -7,6 +7,18 @@ import type { BankDraft } from "@/lib/domain/bank-drafts";
 const reference = new Date("2026-11-05T10:00:00Z");
 
 describe("export Excel de l’entreprise", () => {
+  it("nomme l’estimation Qonto et la distingue des règlements dans le bilan", () => {
+    const data = structuredClone(demoSeed);
+    data.expenses = [{...data.expenses[0]!, id:"abonnement",date:"2026-10-02",endsAt:"2026-11-30",allocatedMonth:"2026-10",paid:false,
+      qontoRecurrence:"estimated",recurrence:"monthly",amountIncludingTax:2900,settlements:[{id:"s",bankTransactionId:"t",amount:2900,month:"2026-10",paidAt:"2026-10-02"}]}];
+    const book = buildExportWorkbook(data,{exportedAt:reference});
+    const sheet=book.getWorksheet("Charges")!;
+    const column=(sheet.getRow(4).values as unknown[]).indexOf("Détection Qonto");
+    expect(sheet.getRow(5).getCell(column).value).toBe("Mensualité estimée");
+    const monthSheet=book.getWorksheet("Bilan mensuel")!;
+    const nov=Array.from({length:monthSheet.rowCount},(_,i)=>monthSheet.getRow(i+1)).find(row=>(row.getCell(1).value as Date)?.toISOString?.().startsWith("2026-11"));
+    expect([nov?.getCell(5).value,nov?.getCell(10).value,nov?.getCell(11).value]).toEqual([29,0,29]);
+  });
   it("sauvegarde les propositions Qonto séparément sans les compter dans les encaissements", () => {
     const draft: BankDraft = {
       id: "draft", side: "credit", status: "pending", created_at: "2026-11-05", updated_at: "2026-11-05",
