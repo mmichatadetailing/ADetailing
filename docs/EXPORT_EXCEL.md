@@ -16,8 +16,14 @@ Les identifiants permettent de relier les tableaux détaillés.
 
 - Paiements : chaque encaissement apparaît une fois, y compris les forfaits payés
   d’avance. La valeur analytique des visites n’ajoute aucun paiement.
-- Bilan mensuel : mêmes règles d’objectifs, d’encaissements et de charges que
-  l’application. Les charges futures ne sont pas affichées comme déjà décaissées.
+- Bilan mensuel : « Dépenses réglées, toutes familles » suit la date du règlement
+  dans le registre interne, espèces comprises. « Reste à payer sur les échéances » suit le mois d’échéance et ne
+  retient que les dépenses encore ouvertes à la date de l’export. Un paiement en
+  novembre pour une charge d’octobre figure dans les règlements de novembre et
+  solde l’échéance d’octobre. Un prélèvement estimé n’est pas un règlement.
+- Règlements charges : détail des paiements du registre, avec la date réelle et
+  le mois d’échéance. Un virement groupé est ventilé entre les charges couvertes ;
+  son éventuel écart d’arrondi est isolé et ne modifie pas le tarif des charges.
 - Charges : règles récurrentes et anciens tarifs conservés, avec leurs dates de
   validité. Une ligne récurrente ne représente pas une seule dépense ponctuelle.
 - Prestations, affectations, lignes de prestations, formules, tarifs et lignes

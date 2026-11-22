@@ -1,4 +1,5 @@
 import type { Client, Intervention, MaintenanceBillingPeriod, MaintenanceContract, Money } from "./types";
+import { financialDateKey, isRecordedBy } from "./periods";
 
 export interface MaintenanceScheduleEntry {
   month: string;
@@ -53,20 +54,28 @@ export function maintenanceMonthlyRevenue(contract: Pick<MaintenanceContract, "b
 }
 
 export function maintenanceAnnualValue(contract: Pick<MaintenanceContract, "billingFrequency" | "billingAmount" | "termMonths">) {
-  return maintenanceMonthlyRevenue(contract) * 12;
+  return Math.round(contract.billingAmount * 12 / recognitionMonths(contract));
+}
+
+export function billingPeriodForVisit(visit: Pick<Intervention, "maintenanceContractId" | "maintenancePeriod" | "startAt">, contract: MaintenanceContract, periods: MaintenanceBillingPeriod[]) {
+  if (contract.id !== visit.maintenanceContractId) return undefined;
+  const month = (visit.maintenancePeriod ?? financialDateKey(visit.startAt ?? "")).slice(0, 7);
+  return periods.filter(p => p.contractId === contract.id && p.status !== "cancelled" && p.periodStart.slice(0, 7) <= month
+    && month < monthOffset(p.periodStart.slice(0, 7), recognitionMonths(contract)))
+    .sort((a, b) => b.periodStart.localeCompare(a.periodStart))[0];
 }
 
 export function isMaintenanceContractActive(
   contract: Pick<MaintenanceContract, "status" | "firstVisitOn" | "endsOn" | "archivedAt">,
   reference = new Date(),
 ) {
-  const today = dateKey(reference);
+  const today = financialDateKey(reference.toISOString());
   return !contract.archivedAt && contract.status === "active" && contract.firstVisitOn <= today && (!contract.endsOn || contract.endsOn >= today);
 }
 
-export function maintenanceBillingState(period: Pick<MaintenanceBillingPeriod, "status" | "dueOn">, reference = new Date()) {
-  if (period.status === "paid" || period.status === "cancelled") return period.status;
-  const today = dateKey(reference);
+export function maintenanceBillingState(period: Pick<MaintenanceBillingPeriod, "status" | "dueOn" | "paidAt">, reference = new Date()) {
+  if (period.status === "cancelled" || (period.status === "paid" && (!period.paidAt || isRecordedBy(period.paidAt, reference)))) return period.status;
+  const today = financialDateKey(reference.toISOString());
   return period.dueOn < today ? "overdue" : period.dueOn === today ? "due" : "upcoming";
 }
 
@@ -105,15 +114,16 @@ export function maintenanceRenewalStatus(
   if (contract.status !== "active" || contract.billingFrequency !== "prepaid" || !contract.endsOn) {
     return { state: "not_applicable" as const, daysRemaining: null, reminderOn: undefined };
   }
-  const today = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate(), 12);
-  const end = new Date(`${contract.endsOn}T12:00:00`);
+  const today = new Date(financialDateKey(reference.toISOString()) + "T00:00:00Z");
+  const end = new Date(`${contract.endsOn}T00:00:00Z`);
+  if (!Number.isFinite(end.getTime())) return { state: "not_applicable" as const, daysRemaining: null, reminderOn: undefined };
   const reminder = new Date(end);
-  reminder.setDate(reminder.getDate() - contract.renewalReminderDays);
-  const daysRemaining = Math.ceil((end.getTime() - today.getTime()) / 86_400_000);
+  reminder.setUTCDate(reminder.getUTCDate() - contract.renewalReminderDays);
+  const daysRemaining = (end.getTime() - today.getTime()) / 86_400_000;
   return {
     state: end < today ? "expired" as const : reminder <= today ? "due" as const : "later" as const,
     daysRemaining,
-    reminderOn: dateKey(reminder),
+    reminderOn: reminder.toISOString().slice(0, 10),
   };
 }
 
@@ -122,19 +132,19 @@ export function nextMaintenanceVisit(
   interventions: Array<Pick<Intervention, "maintenanceContractId" | "startAt" | "status">>,
   reference = new Date(),
 ) {
-  const referenceKey = dateKey(reference);
+  const referenceKey = financialDateKey(reference.toISOString());
   return interventions
-    .filter((intervention) => intervention.maintenanceContractId === contractId && intervention.startAt && intervention.startAt.slice(0, 10) >= referenceKey && !["cancelled", "completed"].includes(intervention.status))
+    .filter((intervention) => intervention.maintenanceContractId === contractId && intervention.startAt && financialDateKey(intervention.startAt) >= referenceKey && !["cancelled", "completed"].includes(intervention.status))
     .sort((left, right) => left.startAt!.localeCompare(right.startAt!))[0];
 }
 
 export function maintenanceCollectionSummary(periods: MaintenanceBillingPeriod[], reference = new Date()) {
-  const referenceKey = dateKey(reference);
   return periods.reduce((summary, period) => {
-    if (period.status === "cancelled") return summary;
+    const status = maintenanceBillingState(period, reference);
+    if (status === "cancelled") return summary;
     summary.total += period.amount;
-    if (period.status === "paid") summary.paid += period.amount;
-    else if (period.dueOn < referenceKey) summary.overdue += period.amount;
+    if (status === "paid") summary.paid += period.amount;
+    else if (status === "overdue") summary.overdue += period.amount;
     else summary.upcoming += period.amount;
     return summary;
   }, { total: 0, paid: 0, overdue: 0, upcoming: 0 });
@@ -147,17 +157,17 @@ export function maintenanceRouteGroups(
   reference = new Date(),
   horizonDays = 60,
 ): MaintenanceRouteGroup[] {
-  const firstDay = dateKey(reference);
-  const last = new Date(reference);
-  last.setDate(last.getDate() + horizonDays);
-  const lastDay = dateKey(last);
+  const firstDay = financialDateKey(reference.toISOString());
+  const last = new Date(firstDay + "T00:00:00Z");
+  last.setUTCDate(last.getUTCDate() + horizonDays);
+  const lastDay = last.toISOString().slice(0, 10);
   const contractsById = new Map(contracts.map((contract) => [contract.id, contract]));
   const clientsById = new Map(clients.map((client) => [client.id, client]));
   const groups = new Map<string, MaintenanceRouteGroup>();
 
   for (const intervention of interventions) {
     if (!intervention.maintenanceContractId || !intervention.startAt || ["cancelled", "completed"].includes(intervention.status)) continue;
-    const date = intervention.startAt.slice(0, 10);
+    const date = financialDateKey(intervention.startAt);
     if (date < firstDay || date > lastDay) continue;
     const contract = contractsById.get(intervention.maintenanceContractId);
     const client = clientsById.get(contract?.clientId ?? intervention.clientId);

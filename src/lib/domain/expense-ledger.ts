@@ -39,7 +39,7 @@ interface RegisterPayment {
 }
 
 /** One entry per confirmed register payment, never one per raw bank movement. */
-export function expenseRegisterPayments(expense: LedgerExpense): RegisterPayment[] {
+export function expenseRegisterPayments(expense: Omit<LedgerExpense, "family">): RegisterPayment[] {
   const manual = manualExpensePayment(expense);
   const dueMonth = expense.date.slice(0, 7);
   const cash = isCashExpenseMethod(expense.paymentMethod);
@@ -55,6 +55,38 @@ export function expenseRegisterPayments(expense: LedgerExpense): RegisterPayment
       month: expense.recurrence === "one_off" ? dueMonth : settlement.month, source: "linked", settlement });
   }
   return payments;
+}
+
+type Schedule = Omit<LedgerExpense, "family"> & Partial<Pick<Expense, "id" | "seriesId">>;
+export const expenseScheduleKey = (expense: Schedule) => expense.seriesId ?? expense.id ?? expense;
+
+/** Keep the evidence against the original obligation, even if its tariff was revised. */
+export function paymentsByExpenseOccurrence(expenses: Schedule[]) {
+  const index = new Map<ReturnType<typeof expenseScheduleKey>, Map<string, RegisterPayment>>();
+  for (const expense of expenses) {
+    const key = expenseScheduleKey(expense);
+    for (const payment of expenseRegisterPayments(expense)) {
+      if (!payment.day) continue;
+      let months = index.get(key);
+      if (!months) { months = new Map(); index.set(key, months); }
+      months.set(payment.month, payment);
+    }
+  }
+  return index;
+}
+
+/** All families. The bank transfer's signed rounding belongs in cash movement only. */
+export function registeredOutflowsByMonth(expenses: Schedule[], today: string) {
+  const months = new Map<string, { paid: number; cashDelta: number }>();
+  for (const e of expenses) for (const p of expenseRegisterPayments(e)) {
+    if (!p.day || p.day > today) continue;
+    const key = p.day.slice(0, 7);
+    const entry = months.get(key) ?? { paid: 0, cashDelta: 0 };
+    entry.paid += p.amount;
+    if (p.source === "linked") entry.cashDelta += p.settlement?.cashDelta ?? 0;
+    months.set(key, entry);
+  }
+  return months;
 }
 
 /** Confirmed payments in the internal register, by payment date (not due date).

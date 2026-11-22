@@ -13,10 +13,11 @@ export interface CompanyStatsPeriod {
 }
 
 export function getCompanyStatsPeriodOptions(reference = new Date()) {
-  const currentYear = reference.getFullYear();
+  const today = financialDateKey(reference.toISOString());
+  const currentYear = Number(today.slice(0, 4));
   const formatter = new Intl.DateTimeFormat("fr-FR", { month: "long" });
   return [currentYear, currentYear - 1].map((year) => {
-    const latestMonth = year === currentYear ? reference.getMonth() + 1 : 12;
+    const latestMonth = year === currentYear ? Number(today.slice(5, 7)) : 12;
     const options: Array<{ key: CompanyStatsPeriodKey; label: string }> = [{ key: `year:${year}`, label: `Année ${year}` }];
     for (let month = latestMonth; month >= 1; month -= 1) {
       const monthKey = `${year}-${String(month).padStart(2, "0")}` as `${number}-${string}`;
@@ -101,4 +102,36 @@ export function financialDateKey(value: string) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
   const date = new Date(value);
   return Number.isFinite(date.getTime()) ? financialDayFormat.format(date) : "";
+}
+
+/** Date-only records belong to the Paris civil day; timestamps represent actual instants. */
+export function isRecordedBy(value: string | undefined, reference: Date) {
+  if (!value) return false;
+  return /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? value <= financialDateKey(reference.toISOString())
+    : Date.parse(value) <= reference.getTime();
+}
+
+export function inReportingPeriod(value: string | undefined, period: string, reference: Date) {
+  return !!value && isRecordedBy(value, reference) && financialDateKey(value).startsWith(period);
+}
+
+export function reportKey(value: string | null, fallback: "month" | "year", reference = new Date()): CompanyStatsPeriodKey {
+  const today = financialDateKey(reference.toISOString());
+  if (value && /^(?:\d{4}|\d{4}-(?:0[1-9]|1[0-2]))$/.test(value)
+    && Number(value.slice(0, 4)) >= Number(today.slice(0, 4)) - 1 && value <= today.slice(0, 7)) {
+    return value.length === 4 ? `year:${Number(value)}` : `month:${value}` as CompanyStatsPeriodKey;
+  }
+  return fallback === "year" ? `year:${Number(today.slice(0, 4))}` : `month:${today.slice(0, 7)}` as CompanyStatsPeriodKey;
+}
+
+/** For a current period, compare through the same civil day N−1 (including leap years).
+ * For a closed period, include the whole previous month/year. */
+export function previousReportDay(period: CompanyStatsPeriod, reference: Date) {
+  const today = financialDateKey(reference.toISOString());
+  const token = period.month ?? String(period.year);
+  const month = today.startsWith(token) ? Number(today.slice(5, 7)) : period.month ? Number(period.month.slice(5, 7)) : 12;
+  const last = new Date(Date.UTC(period.year - 1, month, 0)).getUTCDate();
+  const day = today.startsWith(token) ? Math.min(Number(today.slice(8)), last) : last;
+  return new Date(Date.UTC(period.year - 1, month - 1, day)).toISOString().slice(0, 10);
 }

@@ -26,7 +26,7 @@ import {
 } from "@/lib/domain/calculations";
 import { getInterventionWorkflow } from "@/lib/domain/intervention-workflow";
 import { dueMaintenanceAmount } from "@/lib/domain/maintenance";
-import { financialDateKey, monthKey } from "@/lib/domain/periods";
+import { financialDateKey, inReportingPeriod } from "@/lib/domain/periods";
 import type { Expense } from "@/lib/domain/types";
 import { useDemoStore, type NewExpenseInput } from "@/lib/demo/store";
 import { formatDate, formatMoney } from "@/lib/utils";
@@ -133,18 +133,26 @@ export default function FinancesPage() {
 function FinancePeriod() {
   const params = useSearchParams();
   const requested = params.get("mois");
-  const register = params.get("registre") === "charges";
-  const month = requested && /^20\d{2}-(0[1-9]|1[0-2])$/.test(requested) ? requested : monthKey(new Date());
-  return <FinancesContent key={month + ":" + register} initialMonth={month} initialRegister={register} />;
+  const month = requested && /^20\d{2}-(0[1-9]|1[0-2])$/.test(requested) ? requested : financialDateKey(new Date().toISOString()).slice(0, 7);
+  const register = params.get("registre");
+  const view = register === "charges" || register === "materiel" ? "register" : params.get("vue") === "previsions" ? "forecast" : "month";
+  return <FinancesContent selectedMonth={month} view={view} tab={register === "materiel" ? "assets" : "expenses"} />;
 }
 
-function FinancesContent({ initialMonth, initialRegister }: { initialMonth: string; initialRegister: boolean }) {
+type FinanceView = "month" | "forecast" | "register";
+type RegisterTab = "expenses" | "assets";
+function FinancesContent({ selectedMonth, view, tab }: { selectedMonth: string; view: FinanceView; tab: RegisterTab }) {
   const data = useDemoStore();
   const { mode, workspace } = useWorkspace();
   const canManage = mode === "demo" || Boolean(workspace?.canManageBusiness);
-  const [view, setView] = useState<"month" | "forecast" | "register">(initialRegister ? "register" : "month");
-  const [tab, setTab] = useState<"expenses" | "assets">("expenses");
-  const [selectedMonth, setSelectedMonth] = useState(initialMonth);
+  const navigate = (nextView: FinanceView, month = selectedMonth, nextTab: RegisterTab = tab) => {
+    const url = new URL(window.location.href);
+    url.search = ""; url.hash = "";
+    if (nextView === "register") url.searchParams.set("registre", nextTab === "assets" ? "materiel" : "charges");
+    if (nextView === "forecast") url.searchParams.set("vue", "previsions");
+    url.searchParams.set("mois", month);
+    window.history.replaceState(null, "", url);
+  };
   const [recurrenceFilter, setRecurrenceFilter] = useState<"all" | Expense["recurrence"]>("all");
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [deletingExpense, setDeletingExpense] = useState<Expense | null>(null);
@@ -157,8 +165,9 @@ function FinancesContent({ initialMonth, initialRegister }: { initialMonth: stri
   const splitDelta = splitLegs.reduce((sum, s) => sum + (s.cashDelta ?? 0), 0);
   const projectedExpenses = monthSummary.total;
   const estimatedDebits = monthSummary.occurrences.reduce((sum, entry) => sum + (isEstimatedDebit(entry) ? entry.amount : 0), 0);
-  const confirmedDues = monthSummary.paid - estimatedDebits;
-  const collected = collectedRevenue(data.payments.filter((payment) => financialDateKey(payment.paidAt).slice(0, 7) === selectedMonth));
+  const confirmedDues = monthSummary.paid;
+  const now = new Date();
+  const collected = collectedRevenue(data.payments.filter((payment) => inReportingPeriod(payment.paidAt, selectedMonth, now)));
   const cash = cashBalance(data.settings.initialCash, data.payments, data.expenses);
   const toCollect = data.interventions
     .filter((intervention) => intervention.status === "completed")
@@ -199,7 +208,7 @@ function FinancesContent({ initialMonth, initialRegister }: { initialMonth: stri
         title="Finances"
         description="Les charges réglées proviennent du registre, espèces comprises. Comparez leur part bancaire avec Qonto ou consultez les dépenses à venir."
         actions={<label className="grid gap-1 text-sm font-semibold"><span>Mois analysé</span>
-          <Input className="w-[170px]" type="month" min="2000-01" max="2099-12" value={selectedMonth} onChange={(event) => { if (/^20\d{2}-(0[1-9]|1[0-2])$/.test(event.target.value)) setSelectedMonth(event.target.value); }} /></label>}
+          <Input className="w-[170px]" type="month" min="2000-01" max="2099-12" value={selectedMonth} onChange={(event) => { if (/^20\d{2}-(0[1-9]|1[0-2])$/.test(event.target.value)) navigate(view, event.target.value); }} /></label>}
       />
 
 
@@ -219,15 +228,15 @@ function FinancesContent({ initialMonth, initialRegister }: { initialMonth: stri
       {canManage && <BankResultCard period={selectedMonth} label={monthLabel} />}
       <nav aria-label="Vues des finances" className="finance-nav" data-tone="teal">
         {([{id:"month", label:"Échéances du mois", icon:CalendarClock}, {id:"forecast", label:"Prévisions", icon:Banknote}, {id:"register", label:"Charges et matériel", icon:ReceiptText}] as const).map(({id,label,icon:Icon}) =>
-          <button key={id} className="focus-ring" type="button" aria-pressed={view === id} onClick={() => setView(id)}><Icon className="size-4" />{label}</button>)}
+          <button key={id} className="focus-ring" type="button" aria-pressed={view === id} onClick={() => navigate(id)}><Icon className="size-4" />{label}</button>)}
       </nav>
       {view === "month" && <>
       <section aria-label="Répartition des échéances du mois" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
           {label:"Total des échéances", value:projectedExpenses, detail:"Charges ponctuelles et récurrentes", tone:"blue"},
           {label:"Échéances réglées", value:confirmedDues, detail:"Un règlement est enregistré pour ces échéances", tone:"emerald"},
-          {label:"Prélèvements estimés", value:estimatedDebits, detail:"Date passée, sans débit confirmé", tone:"amber"},
-          {label:"Autres échéances", value:remainingExpenses, detail:formatMoney(monthSummary.due) + " échu · " + formatMoney(monthSummary.upcoming) + " à venir", tone:"violet"},
+          {label:"Dont prélèvements estimés", value:estimatedDebits, detail:"Inclus dans le reste à payer, sans règlement confirmé", tone:"amber"},
+          {label:"Reste à payer", value:remainingExpenses, detail:formatMoney(monthSummary.due) + " échu · " + formatMoney(monthSummary.upcoming) + " à venir", tone:"violet"},
         ].map((item) => <dl key={item.label} data-tone={item.tone} className="finance-metric"><dt>{item.label}</dt><dd>{formatMoney(item.value)}</dd><div className="mt-1 text-xs text-zinc-600">{item.detail}</div></dl>)}
       </section>
 
@@ -275,7 +284,7 @@ function FinancesContent({ initialMonth, initialRegister }: { initialMonth: stri
         <CardContent>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             {forecast.map((month) => (
-              <button key={month.month} type="button" aria-label={`Voir les échéances de ${formatMonth(month.month)}`} onClick={() => { setSelectedMonth(month.month); setView("month"); }} className={`focus-ring rounded-2xl border p-3 text-left transition hover:-translate-y-0.5 hover:border-orange-300 hover:shadow-md ${month.month === selectedMonth ? "border-orange-300 bg-orange-50 shadow-sm" : "border-line bg-surface"}`}>
+              <button key={month.month} type="button" aria-label={`Voir les échéances de ${formatMonth(month.month)}`} onClick={() => navigate("month", month.month)} className={`focus-ring rounded-2xl border p-3 text-left transition hover:-translate-y-0.5 hover:border-orange-300 hover:shadow-md ${month.month === selectedMonth ? "border-orange-300 bg-orange-50 shadow-sm" : "border-line bg-surface"}`}>
                 <div className="flex items-center justify-between gap-2"><p className="text-[11px] font-bold capitalize text-zinc-600">{formatMonth(month.month, "short")}</p>{month.annual > 0 && <Badge variant="blue">annuelle</Badge>}</div>
                 <p className="mt-3 text-lg font-extrabold text-zinc-900">{formatMoney(month.total)}</p>
                 <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-zinc-100"><div className="h-full rounded-full bg-brand-500" style={{ width: `${Math.max(month.total > 0 ? 8 : 0, Math.round(month.total / forecastMaximum * 100))}%` }} /></div>
@@ -306,8 +315,8 @@ function FinancesContent({ initialMonth, initialRegister }: { initialMonth: stri
       {view === "register" && <>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="finance-nav" data-tone="blue" role="group" aria-label="Type de registre">
-        <Button aria-pressed={tab === "expenses"} variant={tab === "expenses" ? "secondary" : "ghost"} onClick={() => setTab("expenses")}><CircleDollarSign className="size-4" /> Charges</Button>
-        <Button aria-pressed={tab === "assets"} variant={tab === "assets" ? "secondary" : "ghost"} onClick={() => setTab("assets")}><PackageSearch className="size-4" /> Investissements & matériel</Button>
+        <Button aria-pressed={tab === "expenses"} variant={tab === "expenses" ? "secondary" : "ghost"} onClick={() => navigate("register", selectedMonth, "expenses")}><CircleDollarSign className="size-4" /> Charges</Button>
+        <Button aria-pressed={tab === "assets"} variant={tab === "assets" ? "secondary" : "ghost"} onClick={() => navigate("register", selectedMonth, "assets")}><PackageSearch className="size-4" /> Investissements & matériel</Button>
         </div>
         {canManage && tab === "expenses" && <Button variant="secondary" onClick={openExpenseForm}><Plus className="size-4" />Prévoir une charge ou saisir hors banque</Button>}
       </div>

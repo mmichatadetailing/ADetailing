@@ -16,13 +16,14 @@ describe("finances : ce qui est confirmé, estimé ou simplement prévu", () => 
   });
   it("ouvre seulement un dossier rattaché et visible, jamais un homonyme ni un ancien contrat supprimé", () => {
     const link = journalLinks({expenses:[{id:"charge",date:"2026-03-01"}],interventions:[{id:"dossier",invoiceId:"facture"}],
-      payments:[{id:"vente",invoiceId:"facture"}, {id:"forfait",maintenanceBillingPeriodId:"periode"}, {id:"ancien",maintenanceBillingPeriodId:"archive"}],
+      payments:[{id:"vente",invoiceId:"facture"}, {id:"forfait",maintenanceBillingPeriodId:"periode",maintenanceContractId:"actif"}, {id:"ancien",maintenanceBillingPeriodId:"archive",maintenanceContractId:"supprime"}, {id:"sans-echeance",maintenanceContractId:"actif"}],
       maintenanceContracts:[{id:"actif"},{id:"supprime",archivedAt:"2026-02-02"}],
       maintenanceBillingPeriods:[{id:"periode",contractId:"actif"},{id:"archive",contractId:"supprime"}]});
     const tx = {status:"completed",reconciliation:"matched" as const,expense_id:null,expense_month:null,payment_id:null};
     expect(link({...tx,expense_id:"charge",expense_month:"2026-09-01"})?.href).toBe("/finances?registre=charges&mois=2026-09#charge-charge");
     expect(link({...tx,payment_id:"vente"})?.href).toBe("/prestations?intervention=dossier");
     expect(link({...tx,payment_id:"forfait"})?.href).toBe("/entretiens#echeance-periode");
+    expect(link({...tx,payment_id:"sans-echeance"})?.href).toBe("/entretiens#contrat-actif");
     expect(link({...tx,payment_id:"ancien"})).toBeUndefined();
     expect(link({...tx,expense_id:"invisible"})).toBeUndefined();
     expect(link({...tx,monthly_split_rule_id:"rule",expense_month:"2026-09-01"})).toEqual({href:"/finances?mois=2026-09",label:"Voir les échéances du mois"});

@@ -16,7 +16,7 @@ export function GlobalSearch() {
   const clients = useDemoStore((state) => state.clients);
   const vehicles = useDemoStore((state) => state.vehicles);
   const { mode, workspace } = useWorkspace();
-  const canViewInvoices = mode === "demo" || Boolean(workspace?.canManageBusiness);
+  const canManage = mode === "demo" || Boolean(workspace?.canManageBusiness);
   const interventions = useDemoStore((state) => state.interventions);
   const maintenanceContracts = useDemoStore((state) => state.maintenanceContracts);
 
@@ -53,13 +53,13 @@ export function GlobalSearch() {
         ["Mon compte", "/compte", "Profil connexion"],
         ["Boîte de réception", "/inbox", "Messages discussions"],
         ["Factures", "/factures", "Factures clients Qonto échéances retards"],
-      ].filter(([, href]) => href !== "/factures" || canViewInvoices).map(([title, href, detail]) => ({ type: "Page", title: title!, href: href!, detail: detail! })),
+      ].filter(([, href]) => (href !== "/factures" && href !== "/banque") || canManage).map(([title, href, detail]) => ({ type: "Page", title: title!, href: href!, detail: detail! })),
       ...activeClients.map((client) => ({ type: "Client", title: client.company || `${client.firstName} ${client.lastName}`, detail: [client.phone, client.email, client.city].filter(Boolean).join(" · ") || "Coordonnées à compléter", href: `/clients?client=${client.id}` })),
       ...vehicles.filter((vehicle) => activeClientIds.has(vehicle.clientId)).map((vehicle) => ({ type: "Véhicule", title: `${vehicle.make} ${vehicle.model}`.trim() || vehicle.format, detail: [vehicle.registration, vehicle.format, clientNames.get(vehicle.clientId)].filter(Boolean).join(" · "), href: `/clients?client=${vehicle.clientId}&vehicle=${vehicle.id}` })),
       ...interventions.filter((intervention) => activeClientIds.has(intervention.clientId)).map((intervention) => ({ type: "Prestation", title: intervention.title, detail: [clientNames.get(intervention.clientId), interventionStatusLabels[intervention.status], formatDate(intervention.startAt, { day: "2-digit", month: "short", year: "numeric" }), formatMoney(intervention.items.reduce((sum, item) => sum + item.revenueAllocated, 0))].filter(Boolean).join(" · "), href: `/prestations?intervention=${intervention.id}` })),
-      ...maintenanceContracts.filter((contract) => !contract.archivedAt && activeClientIds.has(contract.clientId)).map((contract) => ({ type: "Entretien", title: contract.title, detail: [clientNames.get(contract.clientId), contract.billingFrequency === "monthly" ? "Paiement mensuel" : contract.billingFrequency === "annual" ? "Paiement annuel" : `Paiement unique ${contract.termMonths ?? 12} mois`, formatMoney(contract.billingAmount)].join(" · "), href: `/entretiens#contrat-${contract.id}` })),
+      ...maintenanceContracts.filter((contract) => !contract.archivedAt && (canManage || Boolean(workspace && contract.assignedMemberIds.includes(workspace.userId))) && activeClientIds.has(contract.clientId)).map((contract) => ({ type: "Entretien", title: contract.title, detail: [clientNames.get(contract.clientId), contract.billingFrequency === "monthly" ? "Paiement mensuel" : contract.billingFrequency === "annual" ? "Paiement annuel" : `Paiement unique ${contract.termMonths ?? 12} mois`, formatMoney(contract.billingAmount)].join(" · "), href: `/entretiens#contrat-${contract.id}` })),
     ].filter((item) => normalizeText(`${item.title} ${item.detail}`).includes(needle)).slice(0, 9);
-  }, [canViewInvoices, clients, interventions, maintenanceContracts, query, vehicles]);
+  }, [canManage, workspace, clients, interventions, maintenanceContracts, query, vehicles]);
 
   return (
     <>

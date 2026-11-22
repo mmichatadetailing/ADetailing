@@ -1,6 +1,7 @@
 import type { Intervention, MonthlyObjective, Payment } from "./types";
-import { companyCollectedRevenue, paidExpenseAmountForMonth, projectedExpenseAmountForMonth, type ExpenseSchedule } from "./calculations";
-import { financialDateKey } from "./periods";
+import { companyCollectedRevenue, expenseOccurrencesForMonth, type ExpenseSchedule } from "./calculations";
+import { paymentsByExpenseOccurrence, registeredOutflowsByMonth } from "./expense-ledger";
+import { financialDateKey, isRecordedBy } from "./periods";
 
 export interface RevenueChartPoint {
   key: string;
@@ -15,6 +16,8 @@ export interface CashFlowChartPoint {
   receipts: number;
   expenses: number;
   paidExpenses: number;
+  registeredExpenses: number;
+  outstandingExpenses: number;
   cashFlow: number;
   actualCashFlow: number;
 }
@@ -45,16 +48,31 @@ export function buildDashboardChartData({
 }) {
   const revenue: RevenueChartPoint[] = [];
   const cashFlow: CashFlowChartPoint[] = [];
+  const receiptsByMonth = new Map<string, typeof payments>();
+  for (const payment of payments) {
+    if (!isRecordedBy(payment.paidAt, reference)) continue;
+    const key = financialDateKey(payment.paidAt).slice(0, 7);
+    if (!receiptsByMonth.has(key)) receiptsByMonth.set(key, []);
+    receiptsByMonth.get(key)!.push(payment);
+  }
+  const activeJobs = interventions.filter(job => job.status !== "cancelled");
+  const today = financialDateKey(reference.toISOString());
+  const register = paymentsByExpenseOccurrence(expenses);
+  const outflows = registeredOutflowsByMonth(expenses, today);
 
   for (let monthIndex = 0; monthIndex < 12; monthIndex += 1) {
     const key = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
     const label = monthLabel(year, monthIndex);
     const objective = objectives.find((item) => item.month === key)?.revenueTarget ?? null;
-    const monthPayments = payments.filter((payment) => financialDateKey(payment.paidAt).slice(0, 7) === key);
-    const collected = companyCollectedRevenue(interventions.filter((intervention) => intervention.status !== "cancelled"), monthPayments);
+    const monthPayments = receiptsByMonth.get(key) ?? [];
+    const collected = companyCollectedRevenue(activeJobs, monthPayments);
     const receipts = monthPayments.reduce((sum, payment) => sum + payment.amount, 0);
-    const paidExpenses = paidExpenseAmountForMonth(expenses, key, reference);
-    const scheduledExpenses = projectedExpenseAmountForMonth(expenses, key);
+    const occurrences = expenseOccurrencesForMonth(expenses, key, today, register);
+    const actual = outflows.get(key);
+    const registeredExpenses = actual?.paid ?? 0;
+    const paidExpenses = registeredExpenses + (actual?.cashDelta ?? 0) + occurrences.reduce((sum, e) => sum + (e.estimatedDebit ? e.amount : 0), 0);
+    const scheduledExpenses = occurrences.reduce((sum, e) => sum + e.amount, 0);
+    const outstandingExpenses = occurrences.reduce((sum, e) => sum + (e.status !== "paid" ? e.amount : 0), 0);
 
     revenue.push({ key, month: label, objective, collected });
     cashFlow.push({
@@ -63,6 +81,7 @@ export function buildDashboardChartData({
       receipts,
       expenses: scheduledExpenses,
       paidExpenses,
+      registeredExpenses, outstandingExpenses,
       cashFlow: receipts - scheduledExpenses,
       actualCashFlow: receipts - paidExpenses,
     });

@@ -1,4 +1,5 @@
 import { paymentSource, type FinanceState } from "./finance-presentation";
+import { interventionBalance } from "./intervention-balance";
 import type { Intervention, Invoice, Payment } from "./types";
 
 export type WorkflowStepId = "appointment" | "service" | "payment";
@@ -15,18 +16,15 @@ export function getInterventionWorkflow(
   intervention: Intervention,
   invoice: Invoice | undefined,
   payments: Payment[],
+  reference = new Date(),
 ) {
   const serviceDone = intervention.status === "completed";
   const appointmentDone = serviceDone || (Boolean(intervention.startAt) && intervention.status !== "to_schedule");
-  const relatedPayments = payments.filter((p) => p.interventionId === intervention.id || (invoice && p.invoiceId === invoice.id));
+  const { relatedPayments, paidAmount, payableTotal, outstanding } = interventionBalance(intervention, invoice, payments, reference);
   const source = paymentSource(relatedPayments);
   const bankLinked = source === "qonto" || source === "mixed";
-  const interventionTotal = intervention.items.reduce((sum, item) => sum + item.revenueAllocated, 0);
-  const payableTotal = interventionTotal > 0 ? interventionTotal : (invoice?.totalIncludingTax ?? 0);
-  const paidAmount = relatedPayments.reduce((sum, p) => sum + p.amount, 0);
   const contractManaged = Boolean(intervention.maintenanceContractId);
   const paid = contractManaged || (payableTotal > 0 && paidAmount >= payableTotal);
-  const outstanding = contractManaged ? 0 : Math.max(payableTotal - paidAmount, 0);
   const paymentState: FinanceState = contractManaged ? { label: "Incluse au contrat", tone: "violet" }
     : paidAmount > 0 ? { label: (paid ? "Encaissée" : "Paiement partiel") + (source === "qonto" ? " · Qonto" : source === "mixed" ? " · sources mixtes" : ""), tone: paid ? "emerald" : "amber" }
     : intervention.status === "cancelled" ? { label: "Annulée", tone: "neutral" }

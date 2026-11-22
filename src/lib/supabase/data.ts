@@ -125,12 +125,14 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User, 
   const organizationId = text(membership, "organization_id");
   const locationId = text(membership, "location_id");
 
-  // Dashboard results must not stop at PostgREST's first page of payments/expenses.
+  // A truncated related table can hide a customer, a maintenance payment or a planning entry.
   const paymentsQuery = supabase.from("payments").select("*,bank_link:bank_transactions!bank_transactions_payment_id_fkey(id),bank_group:bank_reconciliation_groups!bank_reconciliation_groups_payment_id_fkey(id)").eq("organization_id", organizationId).order("paid_at", { ascending: false });
   const expensesQuery = supabase.from("expenses").select("*,expense_settlements(*)").eq("organization_id", organizationId).is("archived_at", null).order("expense_date", { ascending: false });
   const clientsQuery = supabase.from("clients").select("*,lead_sources(name)").eq("organization_id", organizationId).order("created_at", { ascending: false });
   const invoicesQuery = supabase.from("invoices").select("*,invoice_items(*)").eq("organization_id", organizationId).is("archived_at", null).order("issued_at", { ascending: false });
   const jobsQuery = supabase.from("interventions").select("*,intervention_items(*),intervention_workers(*),intervention_checklist_items(*)").eq("organization_id", organizationId).is("archived_at", null).order("start_at");
+  const activityQuery = supabase.from("activity_logs").select("*").eq("organization_id", organizationId).order("occurred_at", { ascending: false }).limit(options.allRows ? 1000 : 100);
+  const messagesQuery = supabase.from("messages").select("*,conversations(kind,entity_type,entity_id,conversation_members(profile_id,last_read_at))").eq("organization_id", organizationId).is("deleted_at", null).order("created_at");
   const results = await Promise.all([
     supabase.from("organization_members").select("id,organization_id,profile_id,provisional_first_name,provisional_last_name,provisional_email,role,location_id,active,weekly_capacity_minutes,color,created_at,updated_at,profiles(id,first_name,last_name,email,phone,created_at,updated_at)").eq("organization_id", organizationId),
     supabase.from("lead_sources").select("id,name,display_order").eq("organization_id", organizationId).eq("active", true).order("display_order"),
@@ -154,12 +156,14 @@ export async function loadSupabaseAppData(supabase: SupabaseClient, user: User, 
     supabase.from("assets").select("*").eq("organization_id", organizationId).is("archived_at", null).order("created_at", { ascending: false }),
     supabase.from("monthly_objectives").select("*").eq("organization_id", organizationId).order("month"),
     supabase.from("reviews").select("*").eq("organization_id", organizationId).order("created_at", { ascending: false }),
-    supabase.from("activity_logs").select("*").eq("organization_id", organizationId).order("occurred_at", { ascending: false }).limit(options.allRows ? 1000 : 100),
-    supabase.from("messages").select("*,conversations(kind,entity_type,entity_id,conversation_members(profile_id,last_read_at))").eq("organization_id", organizationId).is("deleted_at", null).order("created_at"),
+    activityQuery,
+    messagesQuery,
     supabase.from("app_settings").select("key,value").eq("organization_id", organizationId),
     supabase.from("organization_invitations").select("id,pending_member_id,invited_first_name,invited_last_name,email,role,weekly_capacity_minutes,expires_at,accepted_at,revoked_at,created_at").eq("organization_id", organizationId).order("created_at", { ascending: false }),
   ].map(async (query) => {
-    if (!options.allRows && query !== paymentsQuery && query !== expensesQuery && query !== clientsQuery && query !== invoicesQuery && query !== jobsQuery) return query;
+    // Seul le flux d’activité est explicitement limité aux dernières actions.
+    // La boîte de réception utilise ces messages pour ses fils et ses non-lus.
+    if (!options.allRows && query === activityQuery) return query;
     // Taille inférieure au plafond Supabase standard et tri stable pour ne pas
     // tronquer l’export aux 1 000 premiers clients, paiements ou prestations.
     const paginatedQuery = query.order("id");

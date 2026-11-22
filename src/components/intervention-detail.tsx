@@ -30,6 +30,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/field";
 import { Progress } from "@/components/ui/progress";
 import { useDraftChanges } from "@/components/use-draft-changes";
+import { billingPeriodForVisit, maintenanceBillingState } from "@/lib/domain/maintenance";
 import { useWorkspace } from "@/components/workspace-provider";
 import { grossMargin, hourlyMargin, paymentStatusForInvoice } from "@/lib/domain/calculations";
 import { getInterventionWorkflow, type WorkflowStepId } from "@/lib/domain/intervention-workflow";
@@ -38,6 +39,7 @@ import { getServicePricingMode, servicePriceRuleLabel, suggestedServicePrice } f
 import type { InterventionStatus } from "@/lib/domain/types";
 import { useDemoStore } from "@/lib/demo/store";
 import { paymentTimestamp } from "@/lib/domain/payment-date";
+import { financialDateKey } from "@/lib/domain/periods";
 import { formatDate, formatMoney } from "@/lib/utils";
 
 const stepIcons = { appointment: CalendarCheck2, service: Sparkles, payment: CircleDollarSign } satisfies Record<WorkflowStepId, typeof CalendarCheck2>;
@@ -51,8 +53,7 @@ function localDateParts(value?: string) {
 }
 
 function todayDateValue() {
-  const now = new Date();
-  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+  return financialDateKey(new Date().toISOString());
 }
 
 function hours(minutes: number) {
@@ -128,8 +129,9 @@ export function InterventionDetail({ interventionId, startEditing = false, onDir
   const workflow = getInterventionWorkflow(current, invoice, data.payments);
   const maintenanceContract = current.maintenanceContractId ? data.maintenanceContracts.find((item) => item.id === current.maintenanceContractId) : undefined;
   const maintenancePeriods = maintenanceContract ? data.maintenanceBillingPeriods.filter((period) => period.contractId === maintenanceContract.id) : [];
-  const maintenancePaid = maintenancePeriods.some((period) => period.status === "paid");
-  const maintenanceDue = maintenancePeriods.filter((period) => period.status === "due");
+  const coveredPeriod = maintenanceContract ? billingPeriodForVisit(current, maintenanceContract, maintenancePeriods) : undefined;
+  const maintenancePaid = coveredPeriod && maintenanceBillingState(coveredPeriod) === "paid";
+  const canOpenContract = maintenanceContract && !maintenanceContract.archivedAt && (canManage || (workspace && maintenanceContract.assignedMemberIds.includes(workspace.userId)));
   const isMaintenanceVisit = workflow.paymentMode === "maintenance";
   const interventionTotal = current.items.reduce((sum, item) => sum + item.revenueAllocated, 0);
   const directPayments = data.payments.filter((payment) => payment.interventionId === current.id);
@@ -270,8 +272,8 @@ export function InterventionDetail({ interventionId, startEditing = false, onDir
     setEditingPaymentId(payment.id);
     setEditingPaymentEuros(payment.amount / 100);
     setEditingPaymentMethod(payment.method);
-    setEditingPaymentDate(localDateParts(payment.paidAt).date);
-    markSaved(["paymentEdit"], { paymentEdit: { id: payment.id, amount: payment.amount / 100, method: payment.method, date: localDateParts(payment.paidAt).date } });
+    setEditingPaymentDate(financialDateKey(payment.paidAt));
+    markSaved(["paymentEdit"], { paymentEdit: { id: payment.id, amount: payment.amount / 100, method: payment.method, date: financialDateKey(payment.paidAt) } });
   };
 
   const savePayment = () => {
@@ -386,10 +388,10 @@ export function InterventionDetail({ interventionId, startEditing = false, onDir
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="max-w-2xl">
                 <p className="flex items-center gap-2 text-sm font-bold text-emerald-800"><CheckCircle2 className="size-4" /> 0 € à encaisser sur cette visite</p>
-                <p className="mt-2 text-xs leading-5 text-zinc-600">{maintenanceContract?.billingFrequency === "prepaid" ? maintenancePaid && maintenanceDue.length === 0 ? `Le paiement unique de ${formatMoney(maintenanceContract.billingAmount)} a déjà été enregistré. Les ${maintenanceContract.termMonths ?? ""} visites du forfait sont incluses et ne doivent pas être encaissées une seconde fois.` : `Le contrat prévoit un seul paiement de ${formatMoney(maintenanceContract.billingAmount)}. Une fois ce paiement enregistré sur le contrat, toutes les visites de la période sont couvertes.` : maintenanceContract?.billingFrequency === "annual" ? "Le client règle une échéance annuelle depuis le contrat. Les visites mensuelles servent uniquement au planning et au suivi de réalisation." : maintenanceContract ? "Les échéances mensuelles sont suivies depuis le contrat. Aucun paiement ne doit être ajouté directement sur cette visite." : "Le paiement est centralisé dans le contrat d’entretien mensuel, jamais sur les visites générées."}</p>
+                <p className="mt-2 text-xs leading-5 text-zinc-600">{maintenanceContract?.billingFrequency === "prepaid" ? maintenancePaid ? `Le paiement unique de ${formatMoney(coveredPeriod!.amount)} a déjà été enregistré. Les ${maintenanceContract.termMonths ?? ""} visites du forfait sont incluses et ne doivent pas être encaissées une seconde fois.` : `Le contrat prévoit un seul paiement de ${formatMoney(maintenanceContract.billingAmount)}. Une fois ce paiement enregistré sur le contrat, toutes les visites de la période sont couvertes.` : maintenanceContract?.billingFrequency === "annual" ? "Le client règle une échéance annuelle depuis le contrat. Les visites mensuelles servent uniquement au planning et au suivi de réalisation." : maintenanceContract ? "Les échéances mensuelles sont suivies depuis le contrat. Aucun paiement ne doit être ajouté directement sur cette visite." : "Le paiement est centralisé dans le contrat d’entretien mensuel, jamais sur les visites générées."}</p>
                 {interventionTotal > 0 && <p className="mt-2 text-[10px] text-zinc-500">La part de {formatMoney(interventionTotal)} conservée en interne sert uniquement au calcul de la marge et des statistiques de la période.</p>}
               </div>
-              <Link href="/entretiens" className={buttonVariants({ size: "sm", variant: "secondary" })}>Ouvrir le contrat</Link>
+              {canOpenContract && <Link href={"/entretiens#contrat-" + encodeURIComponent(maintenanceContract.id)} className={buttonVariants({ size: "sm", variant: "secondary" })}>Ouvrir le contrat</Link>}
             </div>
           </div>
         ) : !relatedPayments.length && (workflow.isCancelled || (current.status !== "completed" && !invoice)) ? (

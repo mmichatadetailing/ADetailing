@@ -229,7 +229,8 @@ describe("charges récurrentes", () => {
       { id: "annuelle", total: 25_000, occurrenceCount: 1 },
       { id: "ponctuelle", total: 20_000, occurrenceCount: 1 },
     ]);
-    expect(ranking[0]).toMatchObject({ paid: 30_000, remaining: 0 });
+    // Le prélèvement prévu ne prouve aucun des trois règlements.
+    expect(ranking[0]).toMatchObject({ paid: 0, remaining: 30_000 });
     expect(ranking[2]).toMatchObject({ paid: 0, remaining: 20_000 });
   });
 

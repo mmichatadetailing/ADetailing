@@ -2,7 +2,9 @@
 
 import { CalendarRange, CheckCircle2, Database, KeyRound, RefreshCcw, Save, Settings2, ShieldCheck, Target, TriangleAlert } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { financialDateKey } from "@/lib/domain/periods";
 import { toast } from "sonner";
 import { GoogleCalendarSettings } from "@/components/google-calendar-settings";
 import { DataExport } from "@/components/data-export";
@@ -18,6 +20,15 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { formatMoney } from "@/lib/utils";
 
 export default function SettingsPage() {
+  return <Suspense fallback={<p role="status" className="p-5 text-sm">Chargement des paramètres…</p>}><SettingsByYear /></Suspense>;
+}
+function SettingsByYear() {
+  const year = Number(useSearchParams().get("annee"));
+  const current = Number(financialDateKey(new Date().toISOString()).slice(0, 4));
+  const initialYear = year === current - 1 || year === current + 1 ? year : current;
+  return <SettingsContent key={initialYear} initialYear={initialYear} currentYear={current} />;
+}
+function SettingsContent({ initialYear, currentYear }: { initialYear: number; currentYear: number }) {
   const data = useDemoStore();
   const { mode, workspace, refresh } = useWorkspace();
   const canManage = mode === "demo" || Boolean(workspace?.canManageBusiness);
@@ -27,8 +38,8 @@ export default function SettingsPage() {
   const [sources, setSources] = useState(data.settings.leadSources.join("\n"));
   const [resetOpen, setResetOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const currentYear = new Date().getFullYear();
-  const [objectiveYear, setObjectiveYear] = useState(currentYear);
+
+  const [objectiveYear, setObjectiveYear] = useState(initialYear);
   const objectiveMonths = useMemo(() => Array.from({ length: 12 }, (_, index) => {
     const month = `${objectiveYear}-${String(index + 1).padStart(2, "0")}`;
     const label = new Intl.DateTimeFormat("fr-FR", { month: "long" }).format(new Date(objectiveYear, index, 1));

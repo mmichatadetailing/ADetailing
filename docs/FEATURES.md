@@ -29,6 +29,25 @@ Les déplacements sont appliqués immédiatement puis enregistrés en arrière-p
 
 Les événements Google synchronisés sont projetés sur la ligne de leur propriétaire. Les associés et administrateurs voient les créneaux Google de tous les membres connectés, alors que les employés restent limités à leur propre calendrier. Les jetons OAuth et les liens privés Google ne sont jamais partagés entre comptes.
 
+## Lire les chiffres d’une période
+
+Le dashboard et Pilotage utilisent le même mois ou la même année. Les liens vers
+les prestations réalisées, les échéances et les objectifs ouvrent la période
+consultée. Les dates de rattachement sont celles de Paris.
+
+- **Objectif et CA encaissé** : c’est la date du paiement qui compte, espèces et
+  contrats d’entretien inclus. Une visite prépayée ne génère pas un deuxième
+  encaissement. L’objectif annuel est la somme des douze objectifs mensuels.
+- **Panier et marge** : c’est la date de la prestation terminée qui compte. Le
+  panier est sa valeur moyenne, même si elle sera payée plus tard. La marge
+  déduit les coûts directs ; sa valeur horaire utilise les heures-personnes.
+- **Charges de la période** : les dépenses réglées sont datées au paiement, toutes
+  familles confondues. Le reste à payer correspond aux échéances de la période
+  encore ouvertes aujourd’hui. Un prélèvement estimé n’est pas un paiement.
+- **Résultat d’activité** : seuls les frais fixes et variables réglés sont déduits
+  des encaissements enregistrés, nets des remboursements clients identifiés. Il
+  ne s’agit ni de la marge des prestations ni du solde bancaire.
+
 ## À configurer
 
 - Supabase pour remplacer la persistance navigateur par PostgreSQL/Storage/Realtime ;

@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Avatar } from "@/components/avatar";
 import { PageHeader } from "@/components/page-header";
+import { weeklyWorkload } from "@/lib/domain/team-workload";
 import { useWorkspace } from "@/components/workspace-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,7 @@ function formatHours(minutes: number) {
 
 export default function TeamPage() {
   const data = useDemoStore();
+  const plannedByMember = weeklyWorkload(data.interventions);
   const { mode, workspace, invitations, refresh } = useWorkspace();
   const [addOpen, setAddOpen] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -214,10 +216,8 @@ export default function TeamPage() {
       <section className="grid gap-4 lg:grid-cols-2">
         {data.team.map((member) => {
           const pendingAccount = mode === "supabase" && !member.profileId;
-          const planned = data.interventions
-            .filter((item) => item.workers.some((worker) => worker.memberId === member.id) && ["scheduled", "confirmed", "in_progress"].includes(item.status))
-            .reduce((sum, item) => sum + (item.workers.find((worker) => worker.memberId === member.id)?.plannedMinutes ?? 0), 0);
-          const rate = member.weeklyCapacityMinutes ? planned / member.weeklyCapacityMinutes * 100 : 0;
+          const planned = plannedByMember.get(member.id) ?? 0;
+          const rate = member.weeklyCapacityMinutes ? planned / member.weeklyCapacityMinutes * 100 : null;
           return (
             <Card key={member.id}>
               <CardContent className="p-5">
@@ -266,8 +266,8 @@ export default function TeamPage() {
                 )}
 
                 <div className="mt-5 rounded-xl border border-line bg-zinc-50 p-4">
-                  <div className="flex items-center justify-between"><p className="flex items-center gap-2 text-xs font-semibold"><CalendarClock className="size-3.5 text-sky-500" /> Charge planifiée</p><p className="text-xs font-bold">{Math.round(rate)} %</p></div>
-                  <Progress value={rate} className="mt-3" />
+                  <div className="flex items-center justify-between"><p className="flex items-center gap-2 text-xs font-semibold"><CalendarClock className="size-3.5 text-sky-500" /> Semaine en cours</p><p className="text-xs font-bold">{rate === null ? "Capacité non définie" : Math.round(rate) + " %"}</p></div>
+                  {rate !== null && <Progress value={rate} className="mt-3" />}
                   <p className="mt-2 text-[10px] text-zinc-600">{formatHours(planned)} h planifiées sur {formatHours(member.weeklyCapacityMinutes)} h disponibles</p>
                 </div>
               </CardContent>
